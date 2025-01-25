@@ -35,6 +35,8 @@ public class Gemini2DBoundingBoxDetector : MonoBehaviour
     // A reference to our API client
     private GeminiAPI geminiClient;
 
+    public GeminiRaycast m_geminiRaycast;
+
     [Serializable]
     public class GeminiRoot
     {
@@ -131,6 +133,10 @@ public class Gemini2DBoundingBoxDetector : MonoBehaviour
         else
         {
             Debug.Log($"Got {boxResults.Count} boxes from Gemini!");
+            if (m_geminiRaycast != null && boxResults.Count > 0)
+            {
+                m_geminiRaycast.OnBoxesUpdated(boxResults);
+            }
         }
 
         // 6) Clear old boxes

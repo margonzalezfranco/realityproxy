@@ -7249,6 +7249,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1557741982}
   - component: {fileID: 1557741981}
+  - component: {fileID: 1557741983}
   m_Layer: 0
   m_Name: Gemini2DBoundingBoxDetector
   m_TagString: Untagged
@@ -7274,6 +7275,7 @@ MonoBehaviour:
   overlayCanvas: {fileID: 349830609}
   boundingBoxPrefab: {fileID: 4748099091582676251, guid: 8f190f4c2167b4f82b2e0e8bca5f1d2d, type: 3}
   boxesAreInPixelCoords: 0
+  m_geminiRaycast: {fileID: 1557741983}
 --- !u!4 &1557741982
 Transform:
   m_ObjectHideFlags: 0
@@ -7289,6 +7291,21 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1557741983
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1557741980}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6cc9b116530d44aa59ce9c6810c49976, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  xrCamera: {fileID: 5030769454512039463}
+  spherePrefab: {fileID: 0}
+  maxRayDistance: 100
 --- !u!1 &1579789970
 GameObject:
   m_ObjectHideFlags: 0
