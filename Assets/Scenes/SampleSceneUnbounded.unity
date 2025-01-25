@@ -905,7 +905,7 @@ GameObject:
   - component: {fileID: 349830611}
   - component: {fileID: 349830610}
   m_Layer: 5
-  m_Name: Canvas
+  m_Name: 2DBBoxCanvas
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -982,7 +982,7 @@ RectTransform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 349830608}
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0.921}
+  m_LocalPosition: {x: 0, y: 0, z: -0.921}
   m_LocalScale: {x: 0.001, y: 0.001, z: 0.001}
   m_ConstrainProportionsScale: 1
   m_Children: []
@@ -3756,7 +3756,7 @@ GameObject:
   - component: {fileID: 952286107}
   - component: {fileID: 952286106}
   m_Layer: 0
-  m_Name: PreviewQuad
+  m_Name: VideoCanvas
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -3846,7 +3846,7 @@ Transform:
   m_GameObject: {fileID: 952286105}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0.821, z: 0.931}
+  m_LocalPosition: {x: 0, y: 0.821, z: -0.931}
   m_LocalScale: {x: 1.92, y: 1.08, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -7004,7 +7004,7 @@ GameObject:
   - component: {fileID: 1538632899}
   - component: {fileID: 1538632898}
   m_Layer: 0
-  m_Name: CamBridge
+  m_Name: Vision Pro Camera
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -7251,7 +7251,7 @@ GameObject:
   - component: {fileID: 1557741981}
   - component: {fileID: 1557741983}
   m_Layer: 0
-  m_Name: Gemini2DBoundingBoxDetector
+  m_Name: GEMINI
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -7305,6 +7305,10 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   xrCamera: {fileID: 5030769454512039463}
   spherePrefab: {fileID: 0}
+  sphereMaterial: {fileID: -876546973899608171, guid: 0927d29e476ce5843b1f7d2a96943c51, type: 3}
+  sphereSize: 0.05
+  labelPrefab: {fileID: 6763369549751811372, guid: 087648f9929d146718b933af6db0728f, type: 3}
+  labelOffset: 1.2
   maxRayDistance: 100
 --- !u!1 &1579789970
 GameObject:
