@@ -1,4 +1,4 @@
-Shader "Unlit/MinimalFlip"
+Shader "Custom/FlipY"
 {
     Properties
     {
@@ -7,13 +7,14 @@ Shader "Unlit/MinimalFlip"
 
     SubShader
     {
+        Tags { "Queue"="Transparent" "RenderType"="Transparent" }
         LOD 100
 
         Pass
         {
             ZWrite Off
             Cull Off
-            Blend SrcAlpha OneMinusSrcAlpha
+            ZTest Always
 
             CGPROGRAM
             #pragma vertex vert
@@ -28,29 +29,30 @@ Shader "Unlit/MinimalFlip"
 
             struct v2f
             {
-                float4 pos : SV_POSITION;
-                float2 uv  : TEXCOORD0;
+                float4 vertex : SV_POSITION;
+                float2 uv : TEXCOORD0;
             };
 
             sampler2D _MainTex;
-            float4 _MainTex_ST;
 
             v2f vert (appdata v)
             {
                 v2f o;
-                o.pos = UnityObjectToClipPos(v.vertex);
-                // 如果你要考虑 Tiling/Offset，可以用 TRANSFORM_TEX：
-                // o.uv = TRANSFORM_TEX(v.uv, _MainTex);
-                // 不需要的话就直接：
-                o.uv = v.uv;
+                // standard vertex transform
+                o.vertex = UnityObjectToClipPos(v.vertex);
+
+                // FLIP Y: For each input UV, we do uv.y = 1 - uv.y
+                // This inverts the vertical axis
+                o.uv = float2(v.uv.x, 1.0 - v.uv.y);
+
                 return o;
             }
 
             fixed4 frag (v2f i) : SV_Target
             {
-                // flip y
-                float2 uvFlipped = float2(i.uv.x, 1.0 - i.uv.y);
-                return tex2D(_MainTex, uvFlipped);
+                // Just sample the flipped UV
+                fixed4 col = tex2D(_MainTex, i.uv);
+                return col;
             }
             ENDCG
         }
