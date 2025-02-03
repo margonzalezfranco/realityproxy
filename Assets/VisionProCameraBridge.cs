@@ -14,7 +14,7 @@ public class VisionProCameraBridge : MonoBehaviour
     [DllImport("__Internal")]
     private static extern IntPtr getTexturePointer();
 
-    // (NEW) Retrieve actual chosen resolution from Swift
+    // Retrieve actual chosen resolution from Swift
 #if UNITY_VISIONOS && !UNITY_EDITOR
     [DllImport("__Internal")]
     private static extern int getCameraChosenWidth();

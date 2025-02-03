@@ -9423,7 +9423,7 @@ MonoBehaviour:
       m_SingletonActionBindings:
       - m_Name: 
         m_Id: f984a7fd-f7e2-45ef-b21d-699a5d160f29
-        m_Path: <XRHMD>/leftEyeRotation
+        m_Path: <XRHMD>/centerEyeRotation
         m_Interactions: 
         m_Processors: 
         m_Groups: 
@@ -9431,7 +9431,7 @@ MonoBehaviour:
         m_Flags: 0
       - m_Name: 
         m_Id: 36621ea0-7b14-4c42-97d9-2f6a5dd576b7
-        m_Path: <PolySpatialXRHMD>/leftEyeRotation
+        m_Path: <PolySpatialXRHMD>/centerEyeRotation
         m_Interactions: 
         m_Processors: 
         m_Groups: 
@@ -9669,7 +9669,7 @@ Camera:
     height: 1
   near clip plane: 0.1
   far clip plane: 1000
-  field of view: 112.9924
+  field of view: 72.483574
   orthographic: 0
   orthographic size: 5
   m_Depth: -1

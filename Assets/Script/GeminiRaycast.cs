@@ -1,163 +1,168 @@
 using System.Collections.Generic;
 using UnityEngine;
 using TMPro;
+using Unity.Mathematics; // for float3x3, float4x4
 
 /// <summary>
-/// When new bounding boxes arrive from Gemini2DBoundingBoxDetector,
-/// this script converts them to 3D rays (viewport-based) and spawns spheres
-/// (with optional label) where the rays intersect the scene.
-///
-/// This updated version also includes optional line rendering to visualize
-/// each ray (and optional camera frustum).
+/// Uses only the intrinsics-based unprojection, ignoring extrinsics translation.
+/// Rays start from the XR camera's left-eye position (TrackedPoseDriver).
+/// If we want to rotate directions by the extrinsics' rotation, we can embed that in extrinsicsMatrixNoTrans.
 /// </summary>
 public class GeminiRaycast : MonoBehaviour
 {
-    [Header("Camera for Raycasting (e.g. Main Camera in XR)")]
+    [Header("Camera for Raycasting (Left Eye)")]
+    [Tooltip("Assign the XR camera whose Tracked Pose Driver is set to LeftEye. " +
+             "We'll use its position as the ray origin.")]
     public Camera xrCamera;
 
     [Header("Sphere Settings")]
-    [Tooltip("Sphere prefab to use. If null, we'll create a default primitive sphere.")]
     public GameObject spherePrefab;
-    
-    [Tooltip("Optional material for spheres (if no prefab or prefab doesn't have one).")]
     public Material sphereMaterial;
-
-    [Tooltip("Sphere radius (or scale factor).")]
     public float sphereSize = 0.05f;
 
     [Header("Label Settings")]
-    [Tooltip("Prefab for a TextMeshPro label that we'll place above each sphere.")]
-    public GameObject labelPrefab;  // Should contain a TextMeshPro component
-    [Tooltip("Vertical offset above the sphere center to place the label.")]
+    public GameObject labelPrefab;
     public float labelOffset = 1.2f;
 
     [Header("Raycast Settings")]
-    [Tooltip("Max distance for raycasting.")]
     public float maxRayDistance = 100f;
 
     [Header("Ray Visualization (Optional)")]
-    [Tooltip("If true, draw lines showing the rays in 3D space.")]
     public bool visualizeRays = false;
-
-    [Tooltip("Material used by the LineRenderer to display rays.")]
     public Material lineMaterial;
-
-    [Tooltip("Width of the debug rays.")]
     public float rayWidth = 0.002f;
-
-    [Tooltip("If true, also draw a line from the ray origin to the actual hit point.")]
     public bool showHitSegment = true;
 
-    [Header("Camera Frame Visualization")]
-    [Tooltip("If true, draw the camera's near-plane rectangle (and optionally far-plane).")]
+    [Header("Camera Frame Visualization (Optional)")]
     public bool visualizeCameraFrame = false;
-
-    [Tooltip("If true, also draw the far-plane rectangle and lines connecting near/far corners.")]
     public bool visualizeFarPlane = false;
 
-    // We'll track all spawned spheres & lines so we can clear them later
+    // Track created objects (spheres, lines, labels) so we can clear them
     private List<GameObject> spawnedObjects = new List<GameObject>();
 
+    // Hard-coded camera resolution
+    private int imageWidth = 1920;
+    private int imageHeight = 1080;
+
+    // Hard-coded intrinsics (row-major).
+    // row0 = (736.6339, 0.0,     960.0)
+    // row1 = (0.0,      736.6339, 540.0)
+    // row2 = (0.0,      0.0,      1.0)
+    private float3x3 intrinsicsMatrix = new float3x3(
+        736.6339f,   0.0f,     960.0f,
+        0.0f,        736.6339f,540.0f,
+        0.0f,        0.0f,     1.0f
+    );
+
+    // Hard-coded extrinsics (row-major), but we'll zero out the translation (no translation).
+    // row0= (0.99122864,  0.006838121, -0.13198134,   0.0f)
+    // row1= (-0.0038917887, -0.99671704, -0.08086995, 0.0f)
+    // row2= (-0.13210104,   0.08067425,  -0.9879479,  0.0f)
+    // row3= (0.0f,          0.0f,         0.0f,       1.0f)  // ignoring translation
+    private float4x4 extrinsicsMatrixNoTrans = new float4x4(
+        0.99122864f,   0.006838121f, -0.13198134f,   0.0f,
+       -0.0038917887f, -0.99671704f, -0.08086995f,   0.0f,
+       -0.13210104f,    0.08067425f, -0.9879479f,    0.0f,
+        0.0f,           0.0f,         0.0f,          1.0f
+    );
+
     /// <summary>
-    /// Call this method once you have a fresh list of bounding boxes from Gemini.
-    /// Typically invoked by Gemini2DBoundingBoxDetector after detection completes.
-    /// 
-    /// This also clears old spheres/labels (and lines) before spawning new ones.
+    /// Called once we have bounding boxes from Gemini. 
+    /// For each box, we unproject using intrinsics, possibly rotate with extrinsicsMatrixNoTrans,
+    /// start from the XR camera's left-eye position, cast a ray, spawn a sphere on hit.
     /// </summary>
     public void OnBoxesUpdated(List<Box2DResult> boxes)
     {
-        if (xrCamera == null)
-        {
-            Debug.LogError("GeminiRaycast: XR Camera not set!");
-            return;
-        }
-        
-        // 1) Clear old spheres/labels/lines from a previous run
+        // Clear old objects from previous detection
         ClearSpawnedObjects();
 
         if (boxes == null || boxes.Count == 0)
         {
-            Debug.Log("No boxes to process for raycasting.");
+            Debug.Log("No bounding boxes to process.");
+            return;
         }
-        else
+
+        // 1) The XR camera's left-eye transform
+        Vector3 leftEyeOrigin = (xrCamera != null) ? xrCamera.transform.position : Vector3.zero;
+        Quaternion leftEyeRotation = (xrCamera != null) ? xrCamera.transform.rotation : Quaternion.identity;
+
+        foreach (var box in boxes)
         {
-            // 2) For each bounding box, compute center, do a raycast, spawn sphere+label
-            foreach (var box in boxes)
+            // box_2d = [ymin, xmin, ymax, xmax] in 0..1000
+            float ymin = box.box_2d[0];
+            float xmin = box.box_2d[1];
+            float ymax = box.box_2d[2];
+            float xmax = box.box_2d[3];
+
+            // Scale from 0..1000 to pixel coordinates
+            float centerX = (xmin + xmax) * 0.5f * (imageWidth / 1000f); 
+            float centerY = (ymin + ymax) * 0.5f * (imageHeight / 1000f);
+
+            // 2) Unproject into camera space via intrinsics. 
+            //    We'll also flipX and flipY if needed.
+            Vector3 directionLocal = VisionProMath.UnprojectToLocalNoTranslation(
+                centerX, centerY,
+                imageWidth, imageHeight,
+                flipX: false, 
+                flipY: true,   // top-left => bottom-left
+                intrinsicsMatrix,
+                extrinsicsMatrixNoTrans
+            );
+
+            // If your real camera uses +Z forward but you need -Z, do:
+            // directionLocal = -directionLocal;
+
+            // 3) Now transform from local "camera" space to the left eye's actual orientation
+            //    if you want the extrinsics rotation, you can skip or remove it 
+            //    and just rely on leftEyeRotation alone. 
+            //    For maximum control, let's do:
+            Vector3 directionWS = leftEyeRotation * directionLocal;
+
+            // 4) Build the final ray from the left-eye position
+            Ray finalRay = new Ray(leftEyeOrigin, directionWS.normalized);
+
+            // (Optional) visualize
+            if (visualizeRays)
             {
-                // box_2d: [ymin, xmin, ymax, xmax]
-                float ymin = box.box_2d[0];
-                float xmin = box.box_2d[1];
-                float ymax = box.box_2d[2];
-                float xmax = box.box_2d[3];
+                Vector3 endPos = finalRay.origin + finalRay.direction * maxRayDistance;
+                VisualizeRaySegment(finalRay.origin, endPos, Color.cyan);
+            }
 
-                float centerX = (xmin + xmax) * 0.5f; // 0..1000 horizontally
-                float centerY = (ymin + ymax) * 0.5f; // 0..1000 vertically
-
-                // Convert top-left–down coords to viewport (0..1, bottom-left in Unity)
-                float u = centerX / 1000f;
-                float v = 1f - (centerY / 1000f);
-
-                // Create the Ray from camera at that viewport coordinate
-                Ray ray = xrCamera.ViewportPointToRay(new Vector3(u, v, 0f));
-
-                // (Optional) visualize the full potential ray
-                if (visualizeRays)
+            // 5) Raycast
+            if (Physics.Raycast(finalRay, out RaycastHit hit, maxRayDistance))
+            {
+                if (visualizeRays && showHitSegment)
                 {
-                    VisualizeRaySegment(ray.origin, ray.origin + ray.direction * maxRayDistance, Color.cyan);
+                    VisualizeRaySegment(finalRay.origin, hit.point, Color.green);
                 }
-
-                // 3) Raycast
-                if (Physics.Raycast(ray, out RaycastHit hit, maxRayDistance))
-                {
-                    // If we want to see exactly where it hit
-                    if (visualizeRays && showHitSegment)
-                    {
-                        VisualizeRaySegment(ray.origin, hit.point, Color.green);
-                    }
-
-                    // place a sphere at hit.point
-                    SpawnSphereWithLabel(hit.point, box.label);
-                }
-                else
-                {
-                    Debug.Log($"Raycast missed for box '{box.label}' (u={u:F2}, v={v:F2}).");
-                }
+                // spawn sphere
+                SpawnSphereWithLabel(hit.point, box.label);
+            }
+            else
+            {
+                Debug.Log($"Raycast missed for box '{box.label}' center=({centerX},{centerY}).");
             }
         }
 
-        // 4) (Optional) visualize the camera's near/far planes
-        if (visualizeCameraFrame)
+        // (Optional) visualize XR camera frustum
+        if (visualizeCameraFrame && xrCamera != null)
         {
             VisualizeCameraFrustum();
         }
     }
 
-    /// <summary>
-    /// Spawns a sphere at the given position, applies a material (if set),
-    /// and spawns a label above it with the bounding box's label.
-    /// </summary>
     private void SpawnSphereWithLabel(Vector3 position, string label)
     {
-        GameObject sphereObj;
+        GameObject sphereObj = (spherePrefab != null)
+            ? Instantiate(spherePrefab, position, Quaternion.identity)
+            : GameObject.CreatePrimitive(PrimitiveType.Sphere);
 
-        // 1) Create the sphere
-        if (spherePrefab != null)
-        {
-            sphereObj = Instantiate(spherePrefab, position, Quaternion.identity);
-        }
-        else
-        {
-            sphereObj = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            sphereObj.transform.position = position;
-        }
-
+        sphereObj.transform.position = position;
         sphereObj.name = $"GeminiHit_{label}";
         spawnedObjects.Add(sphereObj);
 
-        // 2) Adjust size
         sphereObj.transform.localScale = Vector3.one * sphereSize;
 
-        // 3) If we have a material, apply it (only if the prefab/primitive doesn't have one)
         if (sphereMaterial != null)
         {
             var renderer = sphereObj.GetComponentInChildren<Renderer>();
@@ -167,81 +172,53 @@ public class GeminiRaycast : MonoBehaviour
             }
         }
 
-        // 4) Spawn the label
         if (labelPrefab != null)
         {
-            // Instantiate the label prefab above the sphere
             var labelObj = Instantiate(labelPrefab);
             labelObj.name = $"Label_{label}";
             spawnedObjects.Add(labelObj);
 
-            // Make it a child of the sphere so it moves with the sphere
             labelObj.transform.SetParent(sphereObj.transform, false);
-            
-            // Position offset above the sphere
             labelObj.transform.localPosition = new Vector3(0f, labelOffset, 0f);
 
-            // Try to set text
             var tmp = labelObj.GetComponentInChildren<TextMeshPro>();
-            if (tmp)
-            {
-                tmp.text = label;
-            }
+            if (tmp) tmp.text = label;
             else
             {
-                // Or if we have TextMeshProUGUI, depends on your label prefab
                 var tmpUGUI = labelObj.GetComponentInChildren<TextMeshProUGUI>();
-                if (tmpUGUI)
-                {
-                    tmpUGUI.text = label;
-                }
+                if (tmpUGUI) tmpUGUI.text = label;
             }
         }
     }
 
-    /// <summary>
-    /// Utility to draw a line between two points in the scene using a LineRenderer.
-    /// We'll add the line object to 'spawnedObjects' so it clears later.
-    /// </summary>
     private void VisualizeRaySegment(Vector3 start, Vector3 end, Color color)
     {
-        // Create a new GameObject for the line
         GameObject lineObj = new GameObject("RayVisualizer");
         spawnedObjects.Add(lineObj);
 
-        // Add a LineRenderer
         var lr = lineObj.AddComponent<LineRenderer>();
         lr.positionCount = 2;
         lr.SetPosition(0, start);
         lr.SetPosition(1, end);
 
-        // Set widths
         lr.startWidth = rayWidth;
         lr.endWidth = rayWidth;
 
-        // Use the user-assigned material if available, otherwise a default
         if (lineMaterial != null)
         {
             lr.material = lineMaterial;
         }
         else
         {
-            // if no line material is assigned, use a simple default
             lr.material = new Material(Shader.Find("Sprites/Default"));
         }
-        // color
         lr.material.color = color;
     }
 
-    /// <summary>
-    /// Draws a rectangle for the camera's near plane (and optionally far plane),
-    /// allowing you to visualize the camera's FOV in the scene.
-    /// </summary>
     private void VisualizeCameraFrustum()
     {
         if (xrCamera == null) return;
 
-        // 1) near-plane corners in camera space
         float near = xrCamera.nearClipPlane;
         float halfHeight = near * Mathf.Tan(0.5f * xrCamera.fieldOfView * Mathf.Deg2Rad);
         float halfWidth = halfHeight * xrCamera.aspect;
@@ -251,60 +228,22 @@ public class GeminiRaycast : MonoBehaviour
         Vector3 nearTL = new Vector3(-halfWidth, +halfHeight, near);
         Vector3 nearTR = new Vector3(+halfWidth, +halfHeight, near);
 
-        // transform them to world space
         nearBL = xrCamera.transform.TransformPoint(nearBL);
         nearBR = xrCamera.transform.TransformPoint(nearBR);
         nearTL = xrCamera.transform.TransformPoint(nearTL);
         nearTR = xrCamera.transform.TransformPoint(nearTR);
 
-        // connect the corners
         VisualizeRaySegment(nearBL, nearBR, Color.magenta);
         VisualizeRaySegment(nearBR, nearTR, Color.magenta);
         VisualizeRaySegment(nearTR, nearTL, Color.magenta);
         VisualizeRaySegment(nearTL, nearBL, Color.magenta);
-
-        if (visualizeFarPlane)
-        {
-            float farDist = xrCamera.farClipPlane;
-            float farHalfHeight = farDist * Mathf.Tan(0.5f * xrCamera.fieldOfView * Mathf.Deg2Rad);
-            float farHalfWidth = farHalfHeight * xrCamera.aspect;
-
-            Vector3 farBL = new Vector3(-farHalfWidth, -farHalfHeight, farDist);
-            Vector3 farBR = new Vector3(+farHalfWidth, -farHalfHeight, farDist);
-            Vector3 farTL = new Vector3(-farHalfWidth, +farHalfHeight, farDist);
-            Vector3 farTR = new Vector3(+farHalfWidth, +farHalfHeight, farDist);
-
-            // transform to world space
-            farBL = xrCamera.transform.TransformPoint(farBL);
-            farBR = xrCamera.transform.TransformPoint(farBR);
-            farTL = xrCamera.transform.TransformPoint(farTL);
-            farTR = xrCamera.transform.TransformPoint(farTR);
-
-            // connect corners in magenta or another color
-            VisualizeRaySegment(farBL, farBR, Color.yellow);
-            VisualizeRaySegment(farBR, farTR, Color.yellow);
-            VisualizeRaySegment(farTR, farTL, Color.yellow);
-            VisualizeRaySegment(farTL, farBL, Color.yellow);
-
-            // connect near plane corners to far plane corners with white lines
-            VisualizeRaySegment(nearBL, farBL, Color.white);
-            VisualizeRaySegment(nearBR, farBR, Color.white);
-            VisualizeRaySegment(nearTL, farTL, Color.white);
-            VisualizeRaySegment(nearTR, farTR, Color.white);
-        }
     }
 
-    /// <summary>
-    /// Clears all previously spawned spheres, labels, and line objects.
-    /// </summary>
     private void ClearSpawnedObjects()
     {
         foreach (var obj in spawnedObjects)
         {
-            if (obj != null)
-            {
-                Destroy(obj);
-            }
+            if (obj != null) Destroy(obj);
         }
         spawnedObjects.Clear();
     }

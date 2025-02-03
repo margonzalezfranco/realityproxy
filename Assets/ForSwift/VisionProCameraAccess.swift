@@ -27,6 +27,10 @@ var pointer: UnsafeMutableRawPointer? = nil
 var chosenCameraWidth: Int32 = 1920
 var chosenCameraHeight: Int32 = 1080
 
+// Add these new global variables to store the matrices
+var currentIntrinsics: simd_float3x3 = .init()
+var currentExtrinsics: simd_float4x4 = .init()
+
 // MARK: - C-Style Exported Functions
 
 /// Starts the camera capture loop asynchronously.
@@ -38,6 +42,10 @@ public func startCapture() {
     Task {
         // 1) Find supported formats for the left main camera
         let formats = CameraVideoFormat.supportedVideoFormats(for: .main, cameraPositions: [.left])
+        formats.forEach { fmt in
+            let size = fmt.frameSize
+            print("Supported format: \(size.width)x\(size.height)")
+        }
         guard !formats.isEmpty else {
             print("No camera formats found for main left camera.")
             return
@@ -80,6 +88,23 @@ public func startCapture() {
 
             // Each frame has a pixel buffer (CVPixelBuffer) in YUV format
             let pixelBuffer = frame.primarySample.pixelBuffer
+            let parameters = frame.primarySample.parameters
+            
+            // Store the current matrices
+            currentIntrinsics = parameters.intrinsics
+            currentExtrinsics = parameters.extrinsics
+            
+            // print(
+            //     """
+            //     Camera Position: \(parameters.cameraPosition) // Camera Position: left
+            //     Camera Type: \(parameters.cameraType) // Camera Type: main
+            //     Capture Timestamp: \(parameters.captureTimestamp) // Capture Timestamp: 7205.643720833334
+            //     Color Temperature: \(parameters.colorTemperature)K // Color Temperature: 4526K
+            //     Exposure Duration: \(parameters.exposureDuration)s // Exposure Duration: 0.006211s
+            //     Extrinsics Matrix: \(parameters.extrinsics) // Extrinsics Matrix: simd_float4x4([[0.99122864, 0.006838121, -0.13198134, 0.0], [-0.0038917887, -0.99671704, -0.08086995, 0.0], [-0.13210104, 0.08067425, -0.9879479, 0.0], [0.024276158, -0.02069169, -0.057551354, 1.0]])
+            //     Intrinsics Matrix: \(parameters.intrinsics) // Intrinsics Matrix: simd_float3x3([[736.6339, 0.0, 960.0], [0.0, 736.6339, 540.0], [0.0, 0.0, 1.0]])
+            //     Mid Exposure Time: \(parameters.midExposureTimestamp) // Mid Exposure Time: 10326.427177458332
+            //     """)
 
             // Convert to BGRA and create (or update) our MTLTexture
             createTexture(from: pixelBuffer)
@@ -104,7 +129,7 @@ public func getTexturePointer() -> UnsafeMutableRawPointer? {
     return pointer
 }
 
-// (NEW) Let Unity retrieve the chosen resolution
+// Let Unity retrieve the chosen resolution
 @_cdecl("getCameraChosenWidth")
 public func getCameraChosenWidth() -> Int32 {
     return chosenCameraWidth
@@ -113,6 +138,16 @@ public func getCameraChosenWidth() -> Int32 {
 @_cdecl("getCameraChosenHeight")
 public func getCameraChosenHeight() -> Int32 {
     return chosenCameraHeight
+}
+
+@_cdecl("getIntrinsicsMatrix")
+public func getIntrinsicsMatrix() -> simd_float3x3 {
+    return currentIntrinsics
+}
+
+@_cdecl("getExtrinsicsMatrix") 
+public func getExtrinsicsMatrix() -> simd_float4x4 {
+    return currentExtrinsics
 }
 
 // MARK: - Main Camera → MTLTexture Creation
