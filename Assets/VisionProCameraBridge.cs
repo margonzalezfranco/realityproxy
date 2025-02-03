@@ -138,6 +138,13 @@ public class VisionProCameraBridge : MonoBehaviour
         if (webCam == null) return;
         if (webCam.width < 16 || webCam.height < 16) return; // webcam not ready
 
+        // Ensure webcamFrameTex matches webcam dimensions
+        if (webcamFrameTex == null || webcamFrameTex.width != webCam.width || webcamFrameTex.height != webCam.height)
+        {
+            if (webcamFrameTex != null) Destroy(webcamFrameTex);
+            webcamFrameTex = new Texture2D(webCam.width, webCam.height, TextureFormat.RGBA32, false);
+        }
+
         // Copy pixels from WebCamTexture to a CPU Texture2D
         webcamFrameTex.SetPixels(webCam.GetPixels());
         webcamFrameTex.Apply();
