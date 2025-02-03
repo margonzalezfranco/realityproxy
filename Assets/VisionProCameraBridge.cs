@@ -14,6 +14,15 @@ public class VisionProCameraBridge : MonoBehaviour
     [DllImport("__Internal")]
     private static extern IntPtr getTexturePointer();
 
+    // (NEW) Retrieve actual chosen resolution from Swift
+#if UNITY_VISIONOS && !UNITY_EDITOR
+    [DllImport("__Internal")]
+    private static extern int getCameraChosenWidth();
+
+    [DllImport("__Internal")]
+    private static extern int getCameraChosenHeight();
+#endif
+
     private bool hasAcquiredTexture = false;
     private Texture2D nativeTexture;
     private IntPtr nativeTexPtr = IntPtr.Zero;
@@ -37,6 +46,20 @@ public class VisionProCameraBridge : MonoBehaviour
 
     private void Start()
     {
+#if UNITY_EDITOR || !UNITY_VISIONOS
+        // -----------------------------------------
+        // Editor or Non-visionOS: Start Webcam fallback
+        // -----------------------------------------
+        // Keep default 1920x1080 or whatever is in the inspector
+#else
+        // -----------------------------------------
+        // visionOS device: dynamically get actual camera size from Swift
+        // -----------------------------------------
+        textureWidth = getCameraChosenWidth();
+        textureHeight = getCameraChosenHeight();
+        Debug.Log($"[VisionProCameraBridge] Dynamically chosen resolution: {textureWidth}x{textureHeight}");
+#endif
+
         // Create a RenderTexture if none is assigned
         if (renderTex == null)
         {
@@ -51,27 +74,11 @@ public class VisionProCameraBridge : MonoBehaviour
         }
 
 #if UNITY_EDITOR || !UNITY_VISIONOS
-        // ------------------------------------------------
-        // 1) EDITOR or Non-visionOS: Start Webcam fallback
-        // ------------------------------------------------
+        // Editor or Non-visionOS: Start Webcam fallback
         InitWebCam(webCamDeviceName);
 
-        // Set material tiling and offset for Editor/non-visionOS
-        // if (planeMaterial != null)
-        // {
-        //     planeMaterial.mainTextureScale = new Vector2(1, 1);    // Tiling
-        //     planeMaterial.mainTextureOffset = new Vector2(0, 0);   // Offset
-        // }
-
 #else
-        // ------------------------------------------------
-        // 2) visionOS device: Use native plugin calls
-        // ------------------------------------------------
-        // if (planeMaterial != null)
-        // {
-        //     planeMaterial.mainTextureScale = new Vector2(1, -1);    // Tiling
-        //     planeMaterial.mainTextureOffset = new Vector2(0, 1);   // Offset
-        // }
+        // visionOS: Start the native camera
         startCapture();
 #endif
     }
@@ -98,7 +105,8 @@ public class VisionProCameraBridge : MonoBehaviour
     {
 #if UNITY_EDITOR || !UNITY_VISIONOS
         // Stop the webcam if we have one
-        if (webCam != null) {
+        if (webCam != null)
+        {
             webCam.Stop();
             webCam = null;
         }
@@ -113,7 +121,6 @@ public class VisionProCameraBridge : MonoBehaviour
     // =============================================================================
 
 #if UNITY_EDITOR || !UNITY_VISIONOS
-
     private void InitWebCam(string deviceName)
     {
         if (!string.IsNullOrEmpty(deviceName))
@@ -151,7 +158,6 @@ public class VisionProCameraBridge : MonoBehaviour
 
         Graphics.Blit(webcamFrameTex, renderTex);
     }
-
 #endif
 
     // =============================================================================

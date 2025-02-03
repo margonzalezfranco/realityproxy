@@ -23,6 +23,10 @@ var currentTexture: MTLTexture? = nil
 // This pointer is exposed to Unity
 var pointer: UnsafeMutableRawPointer? = nil
 
+// (NEW) We'll store the chosen resolution for Unity to query
+var chosenCameraWidth: Int32 = 1920
+var chosenCameraHeight: Int32 = 1080
+
 // MARK: - C-Style Exported Functions
 
 /// Starts the camera capture loop asynchronously.
@@ -32,20 +36,28 @@ public func startCapture() {
     isRunning = true
     
     Task {
-        // 1) Find a valid camera format. Typically, left camera is all we have right now.
+        // 1) Find supported formats for the left main camera
         let formats = CameraVideoFormat.supportedVideoFormats(for: .main, cameraPositions: [.left])
-        guard let firstFormat = formats.first else {
+        guard !formats.isEmpty else {
             print("No camera formats found for main left camera.")
             return
         }
         
-        // 2) Request camera access from ARKitSession (returns a dictionary of [AuthorizationType: AuthorizationStatus])
-        let statuses = await arKitSession.queryAuthorization(for: [.cameraAccess])
-//        if statuses[.cameraAccess] != .authorized {
-//            print("Camera access not authorized. Status was:", statuses[.cameraAccess] as Any)
-//            return
-//        }
+        // Option A: pick the first (lowest resolution):
+        // let firstFormat = formats.first!
         
+        // Option B: pick the highest resolution:
+        let firstFormat = formats.max { $0.frameSize.height < $1.frameSize.height }!
+        
+        // Store the chosen width/height so Unity can later retrieve them
+        chosenCameraWidth = Int32(firstFormat.frameSize.width)
+        chosenCameraHeight = Int32(firstFormat.frameSize.height)
+        print("Chosen camera format: \(chosenCameraWidth)x\(chosenCameraHeight)")
+
+        // 2) Request camera access from ARKitSession
+        let statuses = await arKitSession.queryAuthorization(for: [.cameraAccess])
+        // if statuses[.cameraAccess] != .authorized { ... }
+
         // 3) Create and run the CameraFrameProvider
         let cameraProvider = CameraFrameProvider()
         do {
@@ -56,7 +68,7 @@ public func startCapture() {
         }
         
         print("ARKit session running. Beginning camera capture loop...")
-        
+
         // 4) Listen for camera frames in an async for-await loop
         guard let updates = cameraProvider.cameraFrameUpdates(for: firstFormat) else {
             print("No cameraFrameUpdates available for the chosen format.")
@@ -65,10 +77,10 @@ public func startCapture() {
         
         for await frame in updates {
             if !isRunning { break }
-            
+
             // Each frame has a pixel buffer (CVPixelBuffer) in YUV format
             let pixelBuffer = frame.primarySample.pixelBuffer
-            
+
             // Convert to BGRA and create (or update) our MTLTexture
             createTexture(from: pixelBuffer)
         }
@@ -90,6 +102,17 @@ public func stopCapture() {
 @_cdecl("getTexturePointer")
 public func getTexturePointer() -> UnsafeMutableRawPointer? {
     return pointer
+}
+
+// (NEW) Let Unity retrieve the chosen resolution
+@_cdecl("getCameraChosenWidth")
+public func getCameraChosenWidth() -> Int32 {
+    return chosenCameraWidth
+}
+
+@_cdecl("getCameraChosenHeight")
+public func getCameraChosenHeight() -> Int32 {
+    return chosenCameraHeight
 }
 
 // MARK: - Main Camera → MTLTexture Creation
@@ -126,7 +149,6 @@ func createTexture(from pixelBuffer: CVPixelBuffer) {
         0,
         &cvMetalTex
     )
-    // Make sure it succeeded
     guard
         creationResult == kCVReturnSuccess,
         let cvMTLTex = cvMetalTex,
@@ -144,7 +166,7 @@ func createTexture(from pixelBuffer: CVPixelBuffer) {
             height: sourceTexture.height,
             mipmapped: false
         )
-        // On iOS/visionOS, we can't use .blit usage. If we only need GPU reads:
+        // On iOS/visionOS, typically usage is just .shaderRead if we're sampling it
         desc.usage = [.shaderRead]
         
         currentTexture = mtlDevice.makeTexture(descriptor: desc)
@@ -158,7 +180,6 @@ func createTexture(from pixelBuffer: CVPixelBuffer) {
         return
     }
     
-    // Copy the entire image
     blitEnc.copy(
         from: sourceTexture,
         sourceSlice: 0, sourceLevel: 0,
