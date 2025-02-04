@@ -64,6 +64,8 @@ public class GeminiRaycast : MonoBehaviour
         0.0f,          0.0f,           0.0f,         1.0f
     );
 
+    public GameObject InfoPanel;
+
     public void OnBoxesUpdated(List<Box2DResult> boxes)
     {
         ClearSpawnedObjects();
@@ -273,6 +275,16 @@ public class GeminiRaycast : MonoBehaviour
             if (rend != null) rend.material = sphereMaterial;
         }
 
+        SphereToggleScript toggleController = null;
+        if (InfoPanel != null)
+        {
+            toggleController = sphereObj.GetComponentInChildren<SphereToggleScript>();
+            if (toggleController != null) toggleController.InfoPanel = InfoPanel;
+
+            var menuScript = InfoPanel.GetComponentInChildren<MenuScript>();
+            if (menuScript != null) toggleController.menuScript = menuScript;
+        }
+
         if (labelPrefab != null)
         {
             var lblObj = Instantiate(labelPrefab, sphereObj.transform);
@@ -287,11 +299,10 @@ public class GeminiRaycast : MonoBehaviour
 
             var tmp = lblObj.GetComponentInChildren<TextMeshPro>();
             if (tmp) tmp.text = label;
-            else
-            {
-                var tmpUGUI = lblObj.GetComponentInChildren<TextMeshProUGUI>();
-                if (tmpUGUI) tmpUGUI.text = label;
-            }
+
+            // give tmp to toggleController
+            if (toggleController != null) toggleController.labelUnderSphere = tmp;
+            
         }
     }
 

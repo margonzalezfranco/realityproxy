@@ -6,7 +6,7 @@ namespace PolySpatial.Template
     public class SpatialUIToggle : SpatialUI
     {
         [SerializeField]
-        UnityEvent<bool> m_ToggleChanged;
+        public UnityEvent<bool> m_ToggleChanged;
 
         [SerializeField]
         MeshRenderer m_ToggleBackground;

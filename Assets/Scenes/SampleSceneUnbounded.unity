@@ -238,19 +238,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: bbb3253954b264355a3d7500f55f2655, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
---- !u!114 &9052944
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 9052940}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: c96542726335b4ceabc0a440cf8ef69a, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  m_LevelName: SampleScene
 --- !u!114 &9052945
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2253,9 +2240,6 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 9184914e7058e408db2f8b8c35bf442c, type: 3}
       insertIndex: -1
       addedObject: {fileID: 9052945}
-    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 9184914e7058e408db2f8b8c35bf442c, type: 3}
-      insertIndex: -1
-      addedObject: {fileID: 9052944}
     - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 9184914e7058e408db2f8b8c35bf442c, type: 3}
       insertIndex: -1
       addedObject: {fileID: 9052943}
@@ -7097,9 +7081,9 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   xrCamera: {fileID: 5030769454512039463}
   offsetNode: {fileID: 1875304742}
-  spherePrefab: {fileID: 0}
+  spherePrefab: {fileID: 331860115575953182, guid: 652d8b363c26044ad94d60358fe88244, type: 3}
   sphereMaterial: {fileID: -876546973899608171, guid: 0927d29e476ce5843b1f7d2a96943c51, type: 3}
-  sphereSize: 0.05
+  sphereSize: 0.025
   labelPrefab: {fileID: 6763369549751811372, guid: 087648f9929d146718b933af6db0728f, type: 3}
   labelOffset: 1.2
   maxRayDistance: 100
@@ -7112,6 +7096,7 @@ MonoBehaviour:
   offsetNodeAspect: 1.7777778
   offsetNodeNear: 0.1
   offsetNodeFar: 0.4
+  MenuForSpawn: {fileID: 90799424}
 --- !u!1 &1579789970
 GameObject:
   m_ObjectHideFlags: 0
