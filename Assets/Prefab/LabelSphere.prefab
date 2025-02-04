@@ -280,3 +280,8 @@ MonoBehaviour:
   labelUnderSphere: {fileID: 0}
   menuScript: {fileID: 0}
   InfoPanel: {fileID: 0}
+  modelName: gemini-2.0-flash-exp
+  geminiApiKey: AIzaSyAmRPcrP0JjOgeam_UqTugBAsQ21cnrenA
+  cameraRenderTex: {fileID: 8400000, guid: 78e2b50f1cd8640efa61e2994d5eaec2, type: 2}
+  questionsParent: {fileID: 0}
+  questionPrefab: {fileID: 8332209716421791987, guid: afb3b284441664fef8669ab537fb8b5f, type: 3}

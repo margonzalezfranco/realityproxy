@@ -65,6 +65,8 @@ public class GeminiRaycast : MonoBehaviour
     );
 
     public GameObject InfoPanel;
+    public GameObject answerPanel;
+    public GeminiQuestionAnswerer questionAnswerer;
 
     public void OnBoxesUpdated(List<Box2DResult> boxes)
     {
@@ -275,14 +277,18 @@ public class GeminiRaycast : MonoBehaviour
             if (rend != null) rend.material = sphereMaterial;
         }
 
-        SphereToggleScript toggleController = null;
+        SphereToggleScript sphereToggleScript = null;
         if (InfoPanel != null)
         {
-            toggleController = sphereObj.GetComponentInChildren<SphereToggleScript>();
-            if (toggleController != null) toggleController.InfoPanel = InfoPanel;
+            sphereToggleScript = sphereObj.GetComponentInChildren<SphereToggleScript>();
+            if (sphereToggleScript != null) 
+            {
+                sphereToggleScript.InfoPanel = InfoPanel;
+                sphereToggleScript.questionsParent = InfoPanel.transform;
+            }
 
             var menuScript = InfoPanel.GetComponentInChildren<MenuScript>();
-            if (menuScript != null) toggleController.menuScript = menuScript;
+            if (menuScript != null) sphereToggleScript.menuScript = menuScript;
         }
 
         if (labelPrefab != null)
@@ -300,9 +306,18 @@ public class GeminiRaycast : MonoBehaviour
             var tmp = lblObj.GetComponentInChildren<TextMeshPro>();
             if (tmp) tmp.text = label;
 
-            // give tmp to toggleController
-            if (toggleController != null) toggleController.labelUnderSphere = tmp;
-            
+            // give tmp to sphereToggleScript
+            if (sphereToggleScript != null) sphereToggleScript.labelUnderSphere = tmp;
+        }
+
+        if (questionAnswerer != null)
+        {
+            // pass the questionAnswerer to the sphereToggleScript
+            if (sphereToggleScript != null)
+            {
+                sphereToggleScript.questionAnswerer = questionAnswerer;
+                sphereToggleScript.answerPanel = answerPanel;
+            }
         }
     }
 

@@ -6,22 +6,10 @@ using Newtonsoft.Json;
 using TMPro;
 
 /// <summary>
-/// Demonstrates how to capture a camera frame from a RenderTexture, send it to Gemini,
-/// get back 2D bounding boxes, and display them on a UI Canvas.
+/// Specialized implementation for detecting 2D bounding boxes using Gemini API.
 /// </summary>
-public class Gemini2DBoundingBoxDetector : MonoBehaviour
+public class Gemini2DBoundingBoxDetector : GeminiGeneral
 {
-    [Header("Gemini Settings")]
-    [Tooltip("Your model name, e.g. 'gemini-2.0-flash-exp'")]
-    public string geminiModelName = "gemini-2.0-flash-exp";
-
-    [Tooltip("Your API key")]
-    public string geminiApiKey = "AIzaSyAmRPcrP0JjOgeam_UqTugBAsQ21cnrenA";
-
-    [Header("Capture Settings")]
-    [Tooltip("RenderTexture that displays the Vision Pro camera feed.")]
-    public RenderTexture cameraRenderTex;
-
     [Header("UI Settings")]
     [Tooltip("Canvas for drawing bounding box overlays (Screen Space - Overlay recommended).")]
     public Canvas overlayCanvas;
@@ -32,63 +20,7 @@ public class Gemini2DBoundingBoxDetector : MonoBehaviour
     [Tooltip("Coordinates might require scaling if Gemini boxes are in 1000-based coords, etc.")]
     public bool boxesAreInPixelCoords = true;
 
-    // A reference to our API client
-    private GeminiAPI geminiClient;
-
     public GeminiRaycast m_geminiRaycast;
-
-    [Serializable]
-    public class GeminiRoot
-    {
-        public List<Candidate> candidates;
-        public UsageMetadata usageMetadata;
-        public string modelVersion;
-    }
-
-    // candidates[0]
-    [Serializable]
-    public class Candidate
-    {
-        public Content content;
-        public string finishReason;
-        public List<SafetyRating> safetyRatings;
-        public float avgLogprobs; 
-    }
-
-    [Serializable]
-    public class Content
-    {
-        public List<Part> parts;
-        public string role;
-    }
-
-    [Serializable]
-    public class Part
-    {
-        public string text;
-    }
-
-    [Serializable]
-    public class SafetyRating
-    {
-        public string category;
-        public string probability;
-    }
-
-    [Serializable]
-    public class UsageMetadata
-    {
-        public int promptTokenCount;
-        public int candidatesTokenCount;
-        public int totalTokenCount;
-    }
-
-
-    private void Awake()
-    {
-        // Initialize the Gemini client
-        geminiClient = new GeminiAPI(geminiModelName, geminiApiKey);
-    }
 
     /// <summary>
     /// Example call to detect bounding boxes on the current camera frame.
@@ -96,7 +28,6 @@ public class Gemini2DBoundingBoxDetector : MonoBehaviour
     /// </summary>
     public void Request2DBoundingBoxes()
     {
-        // We'll do it in a coroutine or async
         StartCoroutine(DetectBoxesRoutine());
     }
 
@@ -108,8 +39,7 @@ public class Gemini2DBoundingBoxDetector : MonoBehaviour
         // 2) Convert to base64 (PNG)
         string base64Image = ConvertTextureToBase64(frameTex);
 
-        // 3) Build prompt 
-        // Example: "Detect SKU items, with no more than 20 items. Output a json list..."
+        // 3) Build prompt specific to bounding box detection. [need to refine]
         string prompt = "Detect SKU items, with no more than 20 items. " +
             "Output a json list where each entry contains the 2D bounding box in \"box_2d\" " +
             "and a text label of their name indicating exactly what the item is (the product name) in \"label\".";
@@ -125,7 +55,7 @@ public class Gemini2DBoundingBoxDetector : MonoBehaviour
         Debug.Log(response);
 
         // 5) Parse JSON
-        List<Box2DResult> boxResults = ParseGeminiResponse(response);
+        List<Box2DResult> boxResults = ParseBoundingBoxResponse(response);
         if (boxResults == null)
         {
             Debug.LogError("No valid boxes found or parsing error.");
@@ -153,6 +83,23 @@ public class Gemini2DBoundingBoxDetector : MonoBehaviour
 
         // Clean up texture
         Destroy(frameTex);
+    }
+
+    // Keep all the bounding box specific methods
+    private List<Box2DResult> ParseBoundingBoxResponse(string response)
+    {
+        try
+        {
+            string jsonText = ParseGeminiRawResponse(response);
+            if (string.IsNullOrEmpty(jsonText)) return null;
+            
+            return JsonConvert.DeserializeObject<List<Box2DResult>>(jsonText);
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"Error parsing bounding box JSON: {ex}");
+            return null;
+        }
     }
 
     /// <summary>
@@ -218,70 +165,6 @@ public class Gemini2DBoundingBoxDetector : MonoBehaviour
         {
             text.text = box.label;
         }
-    }
-
-    /// <summary>
-    /// Convert the raw Gemini response to a list of Box2DResult objects.
-    /// If the response has a code block with ```json, strip that out first.
-    /// </summary>
-    private List<Box2DResult> ParseGeminiResponse(string response)
-    {
-        try
-        {
-            var root = JsonConvert.DeserializeObject<GeminiRoot>(response);
-
-            if (root?.candidates == null || root.candidates.Count == 0 
-                || root.candidates[0].content?.parts == null || root.candidates[0].content.parts.Count == 0)
-            {
-                Debug.LogError("Gemini root structure incomplete, no candidates or content/parts found.");
-                return null;
-            }
-            
-            string textWithBackticks = root.candidates[0].content.parts[0].text ?? "";
-            Debug.Log("Gemini bounding box text:\n" + textWithBackticks);
-
-            if (textWithBackticks.Contains("```json"))
-            {
-                var splitted = textWithBackticks.Split(new[] { "```json" }, StringSplitOptions.None);
-                if (splitted.Length > 1)
-                {
-                    var splitted2 = splitted[1].Split(new[] { "```" }, StringSplitOptions.None);
-                    textWithBackticks = splitted2[0];
-                }
-            }
-
-            var boxList = JsonConvert.DeserializeObject<List<Box2DResult>>(textWithBackticks);
-            return boxList;
-        }
-        catch (Exception ex)
-        {
-            Debug.LogError($"Error parsing bounding box JSON: {ex}");
-            return null;
-        }
-    }
-
-    /// <summary>
-    /// Capture the current RenderTexture to a CPU Texture2D (PNG-encodable).
-    /// </summary>
-    private Texture2D CaptureFrame(RenderTexture rt)
-    {
-        Texture2D tex = new Texture2D(rt.width, rt.height, TextureFormat.RGBA32, false);
-        RenderTexture prev = RenderTexture.active;
-        RenderTexture.active = rt;
-        tex.ReadPixels(new Rect(0, 0, rt.width, rt.height), 0, 0);
-        tex.Apply();
-        RenderTexture.active = prev;
-        return tex;
-    }
-
-    /// <summary>
-    /// Encode to PNG and convert to Base64 string.
-    /// e.g. "iVBORw0KGgoAAAANSUhEUg..."
-    /// </summary>
-    private string ConvertTextureToBase64(Texture2D tex)
-    {
-        var bytes = tex.EncodeToPNG();
-        return Convert.ToBase64String(bytes);
     }
 
     /// <summary>
