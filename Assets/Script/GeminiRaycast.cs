@@ -230,7 +230,7 @@ public class GeminiRaycast : MonoBehaviour
 
         // Add direction ray visualization
         Vector3 nodePosition = node.position;
-        Vector3 directionEnd = nodePosition + node.forward * far * 1.5f; // Extend past far plane
+        Vector3 directionEnd = nodePosition + node.forward * far * 4f; // Extend past far plane
         DrawLine(nodePosition, directionEnd, Color.red);
     }
 
@@ -278,6 +278,11 @@ public class GeminiRaycast : MonoBehaviour
             var lblObj = Instantiate(labelPrefab, sphereObj.transform);
             lblObj.name = $"Label_{label}";
             lblObj.transform.localPosition = new Vector3(0f, labelOffset, 0f);
+            
+            // Add a LookAt component to make the label face the camera
+            var lookAt = lblObj.AddComponent<LookAtCamera>();
+            lookAt.targetCamera = xrCamera;
+            
             spawnedObjects.Add(lblObj);
 
             var tmp = lblObj.GetComponentInChildren<TextMeshPro>();

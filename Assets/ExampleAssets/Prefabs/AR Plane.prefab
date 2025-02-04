@@ -170,4 +170,4 @@ MonoBehaviour:
   m_DotFadeDuration: 1
   m_AlphaFadeDuration: 0.5
   m_MaximumDotViewRadius: 1.5
-  m_MaximumAlpha: 0.5
+  m_MaximumAlpha: 0
