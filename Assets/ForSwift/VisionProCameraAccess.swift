@@ -3,44 +3,43 @@ import RealityKit
 import MetalKit
 import Accelerate
 import Foundation
+import Network
+import CoreGraphics
+import UIKit // For UIImage, cgImage, etc.
 
 // MARK: - Global Variables
 
-// The ARKitSession that handles main camera frames
 var arKitSession = ARKitSession()
-
-// Flag to indicate if we're currently capturing
 var isRunning = false
 
-// Metal objects
 let mtlDevice: MTLDevice = MTLCreateSystemDefaultDevice()!
 var commandQueue: MTLCommandQueue!
 var textureCache: CVMetalTextureCache!
 
-// We'll store a single MTLTexture to reuse each frame
 var currentTexture: MTLTexture? = nil
-
-// This pointer is exposed to Unity
 var pointer: UnsafeMutableRawPointer? = nil
 
-// (NEW) We'll store the chosen resolution for Unity to query
 var chosenCameraWidth: Int32 = 1920
 var chosenCameraHeight: Int32 = 1080
 
-// Add these new global variables to store the matrices
 var currentIntrinsics: simd_float3x3 = .init()
 var currentExtrinsics: simd_float4x4 = .init()
 
+// NEW: TCP Connection
+var tcpConnection: NWConnection?
+var latestMaskData: Data? = nil
+let maskDataQueue = DispatchQueue(label: "maskData.queue")
+
 // MARK: - C-Style Exported Functions
 
-/// Starts the camera capture loop asynchronously.
 @_cdecl("startCapture")
 public func startCapture() {
     print("startCapture() called.")
     isRunning = true
     
+    connectToPythonServer(host: "192.168.1.84", port: 12345)  // Example IP/port
+    
     Task {
-        // 1) Find supported formats for the left main camera
         let formats = CameraVideoFormat.supportedVideoFormats(for: .main, cameraPositions: [.left])
         formats.forEach { fmt in
             let size = fmt.frameSize
@@ -51,22 +50,16 @@ public func startCapture() {
             return
         }
         
-        // Option A: pick the first (lowest resolution):
-        // let firstFormat = formats.first!
-        
-        // Option B: pick the highest resolution:
+        // pick the highest
         let firstFormat = formats.max { $0.frameSize.height < $1.frameSize.height }!
         
-        // Store the chosen width/height so Unity can later retrieve them
         chosenCameraWidth = Int32(firstFormat.frameSize.width)
         chosenCameraHeight = Int32(firstFormat.frameSize.height)
         print("Chosen camera format: \(chosenCameraWidth)x\(chosenCameraHeight)")
 
-        // 2) Request camera access from ARKitSession
         let statuses = await arKitSession.queryAuthorization(for: [.cameraAccess])
         // if statuses[.cameraAccess] != .authorized { ... }
 
-        // 3) Create and run the CameraFrameProvider
         let cameraProvider = CameraFrameProvider()
         do {
             try await arKitSession.run([cameraProvider])
@@ -76,37 +69,25 @@ public func startCapture() {
         }
         
         print("ARKit session running. Beginning camera capture loop...")
-
-        // 4) Listen for camera frames in an async for-await loop
+        
         guard let updates = cameraProvider.cameraFrameUpdates(for: firstFormat) else {
-            print("No cameraFrameUpdates available for the chosen format.")
+            print("No cameraFrameUpdates available.")
             return
         }
         
         for await frame in updates {
             if !isRunning { break }
-
-            // Each frame has a pixel buffer (CVPixelBuffer) in YUV format
+            
             let pixelBuffer = frame.primarySample.pixelBuffer
             let parameters = frame.primarySample.parameters
             
-            // Store the current matrices
             currentIntrinsics = parameters.intrinsics
             currentExtrinsics = parameters.extrinsics
             
-            // print(
-            //     """
-            //     Camera Position: \(parameters.cameraPosition) // Camera Position: left
-            //     Camera Type: \(parameters.cameraType) // Camera Type: main
-            //     Capture Timestamp: \(parameters.captureTimestamp) // Capture Timestamp: 7205.643720833334
-            //     Color Temperature: \(parameters.colorTemperature)K // Color Temperature: 4526K
-            //     Exposure Duration: \(parameters.exposureDuration)s // Exposure Duration: 0.006211s
-            //     Extrinsics Matrix: \(parameters.extrinsics) // Extrinsics Matrix: simd_float4x4([[0.99122864, 0.006838121, -0.13198134, 0.0], [-0.0038917887, -0.99671704, -0.08086995, 0.0], [-0.13210104, 0.08067425, -0.9879479, 0.0], [0.024276158, -0.02069169, -0.057551354, 1.0]])
-            //     Intrinsics Matrix: \(parameters.intrinsics) // Intrinsics Matrix: simd_float3x3([[736.6339, 0.0, 960.0], [0.0, 736.6339, 540.0], [0.0, 0.0, 1.0]])
-            //     Mid Exposure Time: \(parameters.midExposureTimestamp) // Mid Exposure Time: 10326.427177458332
-            //     """)
-
-            // Convert to BGRA and create (or update) our MTLTexture
+            // Send to server
+            sendFrameToServer(pixelBuffer: pixelBuffer)
+            
+            // Convert & create MTLTexture (with optional mask overlay)
             createTexture(from: pixelBuffer)
         }
         
@@ -114,22 +95,23 @@ public func startCapture() {
     }
 }
 
-/// Stops the camera capture and ARKit session.
 @_cdecl("stopCapture")
 public func stopCapture() {
     print("stopCapture() called.")
     isRunning = false
     arKitSession.stop()
     print("ARKit session stopped.")
+    
+    // close TCP
+    tcpConnection?.cancel()
+    tcpConnection = nil
 }
 
-/// Returns the pointer to our current MTLTexture, or nil if not ready.
 @_cdecl("getTexturePointer")
 public func getTexturePointer() -> UnsafeMutableRawPointer? {
     return pointer
 }
 
-// Let Unity retrieve the chosen resolution
 @_cdecl("getCameraChosenWidth")
 public func getCameraChosenWidth() -> Int32 {
     return chosenCameraWidth
@@ -145,25 +127,111 @@ public func getIntrinsicsMatrix() -> simd_float3x3 {
     return currentIntrinsics
 }
 
-@_cdecl("getExtrinsicsMatrix") 
+@_cdecl("getExtrinsicsMatrix")
 public func getExtrinsicsMatrix() -> simd_float4x4 {
     return currentExtrinsics
 }
 
-// MARK: - Main Camera → MTLTexture Creation
+// MARK: - Networking
 
-/// Converts from YUV to BGRA, creates (or updates) a Metal texture, then sets `pointer`.
+func connectToPythonServer(host: String, port: Int) {
+    guard let nwPort = NWEndpoint.Port(rawValue: UInt16(port)) else {
+        print("Invalid port number.")
+        return
+    }
+    let tcpParams = NWParameters.tcp
+    tcpConnection = NWConnection(host: NWEndpoint.Host(host), port: nwPort, using: tcpParams)
+    
+    tcpConnection?.stateUpdateHandler = { state in
+        switch state {
+        case .ready:
+            print("TCP connected to server.")
+            startReadingFromServer()
+        case .failed(let err):
+            print("TCP connect failed: \(err)")
+        default:
+            break
+        }
+    }
+    
+    tcpConnection?.start(queue: .global(qos: .background))
+}
+
+func startReadingFromServer() {
+    // We'll do a "two-step" read: 4 bytes length, then length bytes mask data
+    tcpConnection?.receive(minimumIncompleteLength: 4, maximumLength: 4) { data, _, isComplete, error in
+        if let e = error {
+            print("Receive length error: \(e)")
+            return
+        }
+        guard let lengthData = data, lengthData.count == 4 else {
+            print("No length data.")
+            return
+        }
+        let length = lengthData.withUnsafeBytes { $0.load(as: Int32.self).littleEndian }
+        if length <= 0 {
+            print("Invalid length \(length).")
+            return
+        }
+        
+        tcpConnection?.receive(minimumIncompleteLength: Int(length), maximumLength: Int(length)) { content, _, isComplete2, err2 in
+            if let e2 = err2 {
+                print("Receive content error: \(e2)")
+                return
+            }
+            guard let maskBytes = content, maskBytes.count == Int(length) else {
+                print("Mask data size mismatch.")
+                return
+            }
+            maskDataQueue.async {
+                latestMaskData = maskBytes
+            }
+            // continue reading next
+            startReadingFromServer()
+        }
+    }
+}
+
+func sendFrameToServer(pixelBuffer: CVPixelBuffer) {
+    // encode to JPEG
+    guard let jpegData = encodePixelBufferToJPEG(pixelBuffer: pixelBuffer, quality: 0.5) else {
+        return
+    }
+    let length = Int32(jpegData.count).littleEndian
+    var lengthData = withUnsafeBytes(of: length) { Data($0) }
+    lengthData.append(jpegData)
+    
+    tcpConnection?.send(content: lengthData, completion: .contentProcessed({ error in
+        if let e = error {
+            print("Send error: \(e)")
+        }
+    }))
+}
+
+func encodePixelBufferToJPEG(pixelBuffer: CVPixelBuffer, quality: CGFloat) -> Data? {
+    guard let cgImage = pixelBufferToCGImage(pixelBuffer) else { return nil }
+    let uiImage = UIImage(cgImage: cgImage)
+    return uiImage.jpegData(compressionQuality: quality)
+}
+
+func pixelBufferToCGImage(_ pixelBuffer: CVPixelBuffer) -> CGImage? {
+    // Simple approach: use CIImage + CIContext
+    let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+    let context = CIContext(options: nil)
+    return context.createCGImage(ciImage, from: ciImage.extent)
+}
+
+// MARK: - Creating/Overriding the MTLTexture
+
 func createTexture(from pixelBuffer: CVPixelBuffer) {
-    // 1) Convert from YUV (kCVPixelFormatType_420YpCbCr8BiPlanarFullRange) to BGRA
+    // 1) Attempt YUV->BGRA if extension is available
     guard let bgraBuffer = try? pixelBuffer.toBGRA() else {
-        // If conversion fails, skip
         return
     }
     
     let width = CVPixelBufferGetWidth(bgraBuffer)
     let height = CVPixelBufferGetHeight(bgraBuffer)
     
-    // 2) Lazy-initialize our texture cache and command queue
     if textureCache == nil {
         CVMetalTextureCacheCreate(kCFAllocatorDefault, nil, mtlDevice, nil, &textureCache)
     }
@@ -171,7 +239,6 @@ func createTexture(from pixelBuffer: CVPixelBuffer) {
         commandQueue = mtlDevice.makeCommandQueue()
     }
     
-    // 3) Create a CVMetalTexture from the BGRA pixel buffer
     var cvMetalTex: CVMetalTexture?
     let creationResult = CVMetalTextureCacheCreateTextureFromImage(
         kCFAllocatorDefault,
@@ -189,25 +256,39 @@ func createTexture(from pixelBuffer: CVPixelBuffer) {
         let cvMTLTex = cvMetalTex,
         let sourceTexture = CVMetalTextureGetTexture(cvMTLTex)
     else {
-        print("CVMetalTextureCacheCreateTextureFromImage failed with code:", creationResult)
+        print("CVMetalTextureCacheCreateTextureFromImage failed.")
         return
     }
     
-    // 4) Allocate our reusable MTLTexture if needed
+    // If we have a mask from server, let's do a minimal CPU overlay
+    if let maskData = maskDataQueue.sync(execute: { latestMaskData }) {
+        // decode mask as PNG
+        if let maskCG = decodePNGToCGImage(maskData) {
+            if let finalCG = overlayMaskCPU(bgTexture: sourceTexture, maskCG: maskCG) {
+                if let finalMTL = cgImageToMTLTexture(finalCG) {
+                    finalizeTextureCopy(inTex: finalMTL)
+                    return
+                }
+            }
+        }
+    }
+
+    // fallback: no mask or fail -> just copy
+    finalizeTextureCopy(inTex: sourceTexture)
+}
+
+func finalizeTextureCopy(inTex: MTLTexture) {
     if currentTexture == nil {
         let desc = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: sourceTexture.pixelFormat,
-            width: sourceTexture.width,
-            height: sourceTexture.height,
+            pixelFormat: inTex.pixelFormat,
+            width: inTex.width,
+            height: inTex.height,
             mipmapped: false
         )
-        // On iOS/visionOS, typically usage is just .shaderRead if we're sampling it
         desc.usage = [.shaderRead]
-        
         currentTexture = mtlDevice.makeTexture(descriptor: desc)
     }
     
-    // 5) Copy from the sourceTexture into our persistent currentTexture using a blit command
     guard let finalTex = currentTexture,
           let cmdBuf = commandQueue?.makeCommandBuffer(),
           let blitEnc = cmdBuf.makeBlitCommandEncoder()
@@ -215,42 +296,173 @@ func createTexture(from pixelBuffer: CVPixelBuffer) {
         return
     }
     
-    blitEnc.copy(
-        from: sourceTexture,
-        sourceSlice: 0, sourceLevel: 0,
-        sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
-        sourceSize: MTLSize(width: sourceTexture.width, height: sourceTexture.height, depth: 1),
-        to: finalTex,
-        destinationSlice: 0, destinationLevel: 0,
-        destinationOrigin: MTLOrigin(x: 0, y: 0, z: 0)
-    )
+    let region = MTLRegionMake2D(0, 0, inTex.width, inTex.height)
+    blitEnc.copy(from: inTex,
+                 sourceSlice: 0,
+                 sourceLevel: 0,
+                 sourceOrigin: region.origin,
+                 sourceSize: region.size,
+                 to: finalTex,
+                 destinationSlice: 0,
+                 destinationLevel: 0,
+                 destinationOrigin: region.origin)
     blitEnc.endEncoding()
     cmdBuf.commit()
     cmdBuf.waitUntilCompleted()
     
-    // 6) Expose finalTex as an opaque pointer for Unity
     if pointer == nil {
         pointer = Unmanaged.passUnretained(finalTex).toOpaque()
     }
 }
 
-// MARK: - YUV -> BGRA Conversion (vImage)
+// decode PNG -> CGImage
+func decodePNGToCGImage(_ pngData: Data) -> CGImage? {
+    guard let uiImg = UIImage(data: pngData) else { return nil }
+    return uiImg.cgImage
+}
+
+// CPU overlay
+func overlayMaskCPU(bgTexture: MTLTexture, maskCG: CGImage) -> CGImage? {
+    guard let bgCG = textureToCGImage(bgTexture) else { return nil }
+    
+    let width = bgCG.width
+    let height = bgCG.height
+    
+    guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
+    guard let context = CGContext(
+        data: nil,
+        width: width,
+        height: height,
+        bitsPerComponent: 8,
+        bytesPerRow: width * 4,
+        space: colorSpace,
+        bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue
+    ) else { return nil }
+    
+    // draw original
+    context.draw(bgCG, in: CGRect(x: 0, y: 0, width: width, height: height))
+    
+    // Simple approach: interpret maskCG's white area as region to color
+    // If your mask is single channel, you might do more advanced logic
+    // We'll just scale mask to fit if sizes differ
+    let maskRect = CGRect(x: 0, y: 0, width: maskCG.width, height: maskCG.height)
+    let destRect = CGRect(x: 0, y: 0, width: width, height: height)
+    
+    // We can do a blend mode
+    context.saveGState()
+    // Example: draw mask as half-transparent green
+    context.setFillColor(UIColor(red: 0, green: 1, blue: 0, alpha: 0.4).cgColor)
+    // draw maskCG as alpha channel
+    context.clip(to: destRect, mask: maskCG)
+    context.fill(destRect)
+    context.restoreGState()
+    
+    return context.makeImage()
+}
+
+// Convert MTLTexture -> CGImage
+func textureToCGImage(_ texture: MTLTexture) -> CGImage? {
+    let width = texture.width
+    let height = texture.height
+    let rowBytes = width * 4
+    
+    var bgraBytes = [UInt8](repeating: 0, count: rowBytes * height)
+    
+    let region = MTLRegionMake2D(0, 0, width, height)
+    // 修正此处: 用 mipmapLevel 参数
+    texture.getBytes(
+        &bgraBytes,
+        bytesPerRow: rowBytes,
+        from: region,
+        mipmapLevel: 0 // 不再写 mipLevel: 0
+    )
+    
+    // 改用 CGImageAlphaInfo + CGBitmapInfo 组合
+    let alphaInfo = CGImageAlphaInfo.premultipliedFirst
+    let alphaBitmapInfo = CGBitmapInfo(rawValue: alphaInfo.rawValue)
+    let finalBitmapInfo = alphaBitmapInfo.union(.byteOrder32Little)
+    
+    guard let provider = CGDataProvider(data: NSData(bytes: &bgraBytes, length: bgraBytes.count)) else {
+        return nil
+    }
+    
+    guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else {
+        return nil
+    }
+
+    return CGImage(
+        width: width,
+        height: height,
+        bitsPerComponent: 8,
+        bitsPerPixel: 32,
+        bytesPerRow: rowBytes,
+        space: colorSpace,
+        bitmapInfo: finalBitmapInfo,
+        provider: provider,
+        decode: nil,
+        shouldInterpolate: false,
+        intent: .defaultIntent
+    )
+}
+
+
+// Convert CGImage -> MTLTexture
+func cgImageToMTLTexture(_ cgImage: CGImage) -> MTLTexture? {
+    let width = cgImage.width
+    let height = cgImage.height
+    
+    guard let cmdQueue = commandQueue else { return nil }
+    guard let cmdBuf = cmdQueue.makeCommandBuffer() else { return nil }
+
+    let desc = MTLTextureDescriptor.texture2DDescriptor(
+        pixelFormat: .bgra8Unorm_srgb,
+        width: width,
+        height: height,
+        mipmapped: false
+    )
+    desc.usage = [.shaderRead, .renderTarget]
+    
+    guard let newTex = mtlDevice.makeTexture(descriptor: desc) else { return nil }
+    
+    let rowBytes = width * 4
+    var bgraBytes = [UInt8](repeating: 0, count: rowBytes * height)
+    
+    let colorSpace = CGColorSpaceCreateDeviceRGB()
+    let context = CGContext(
+        data: &bgraBytes,
+        width: width,
+        height: height,
+        bitsPerComponent: 8,
+        bytesPerRow: rowBytes,
+        space: colorSpace,
+        bitmapInfo: CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.premultipliedFirst.rawValue
+    )
+    context?.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+    
+    newTex.replace(
+        region: MTLRegionMake2D(0, 0, width, height),
+        mipmapLevel: 0,
+        withBytes: &bgraBytes,
+        bytesPerRow: rowBytes
+    )
+    cmdBuf.commit()
+    cmdBuf.waitUntilCompleted()
+    
+    return newTex
+}
+
+// MARK: - (Optional) extension CVPixelBuffer
 
 extension CVPixelBuffer {
-    /// Converts from YUV (kCVPixelFormatType_420YpCbCr8BiPlanarFullRange) to BGRA.
-    /// If already BGRA, returns self.
     public func toBGRA() throws -> CVPixelBuffer? {
         let pixFormat = CVPixelBufferGetPixelFormatType(self)
-        // If it's already BGRA, skip conversion
         guard pixFormat == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange else {
             return self
         }
         
         let yPlane = self.with { VImage(pixelBuffer: $0, plane: 0) }
         let cbcrPlane = self.with { VImage(pixelBuffer: $0, plane: 1) }
-        guard let yImg = yPlane, let cbcrImg = cbcrPlane else {
-            return nil
-        }
+        guard let yImg = yPlane, let cbcrImg = cbcrPlane else { return nil }
         
         guard let outPB = CVPixelBuffer.make(width: yImg.width, height: yImg.height, format: kCVPixelFormatType_32BGRA) else {
             return nil
@@ -258,14 +470,10 @@ extension CVPixelBuffer {
         
         var argbImage = outPB.with { VImage(pixelBuffer: $0) }!
         try argbImage.draw(yBuffer: yImg.buffer, cbcrBuffer: cbcrImg.buffer)
-        
-        // ARGB -> BGRA
-        argbImage.permute(channelMap: [3, 2, 1, 0])
-        
+        argbImage.permute(channelMap: [3, 2, 1, 0]) // ARGB -> BGRA
         return outPB
     }
     
-    /// Lock/unlock base address for a closure call
     func with<T>(_ closure: (CVPixelBuffer) -> T) -> T {
         CVPixelBufferLockBaseAddress(self, .readOnly)
         let result = closure(self)
@@ -273,7 +481,6 @@ extension CVPixelBuffer {
         return result
     }
     
-    /// Creates a pixel buffer with iOSurface usage
     static func make(width: Int, height: Int, format: OSType) -> CVPixelBuffer? {
         var pb: CVPixelBuffer?
         let attrs: [String: Any] = [
@@ -337,7 +544,6 @@ struct VImage {
             CbCrMin: 0
         )
         
-        // Use ITU_R_709_2 for color conversion
         vImageConvert_YpCbCrToARGB_GenerateConversion(
             kvImage_YpCbCrToARGBMatrix_ITU_R_709_2,
             &pixelRange,
@@ -357,7 +563,6 @@ struct VImage {
     }
     
     mutating func permute(channelMap: [UInt8]) {
-        // Reorder ARGB to BGRA
         vImagePermuteChannels_ARGB8888(&self.buffer, &self.buffer, channelMap, 0)
     }
 }
