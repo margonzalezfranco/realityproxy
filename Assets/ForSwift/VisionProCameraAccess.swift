@@ -84,10 +84,10 @@ public func startCapture() {
             currentIntrinsics = parameters.intrinsics
             currentExtrinsics = parameters.extrinsics
             
-            // Send to server
+            // (A) Send to server at half resolution
             sendFrameToServer(pixelBuffer: pixelBuffer)
             
-            // Convert & create MTLTexture (with optional mask overlay)
+            // (B) Convert & create MTLTexture (full resolution for Unity)
             createTexture(from: pixelBuffer)
         }
         
@@ -158,7 +158,6 @@ func connectToPythonServer(host: String, port: Int) {
 }
 
 func startReadingFromServer() {
-    // We'll do a "two-step" read: 4 bytes length, then length bytes mask data
     tcpConnection?.receive(minimumIncompleteLength: 4, maximumLength: 4) { data, _, isComplete, error in
         if let e = error {
             print("Receive length error: \(e)")
@@ -193,8 +192,8 @@ func startReadingFromServer() {
 }
 
 func sendFrameToServer(pixelBuffer: CVPixelBuffer) {
-    // encode to JPEG
-    guard let jpegData = encodePixelBufferToJPEG(pixelBuffer: pixelBuffer, quality: 0.5) else {
+    // encode to JPEG at half resolution
+    guard let jpegData = encodePixelBufferToHalfResJPEG(pixelBuffer: pixelBuffer, quality: 0.5) else {
         return
     }
     let length = Int32(jpegData.count).littleEndian
@@ -203,19 +202,37 @@ func sendFrameToServer(pixelBuffer: CVPixelBuffer) {
     
     tcpConnection?.send(content: lengthData, completion: .contentProcessed({ error in
         if let e = error {
-            print("Send error: \(e)")
+            print("Send error:", e)
         }
     }))
 }
 
-func encodePixelBufferToJPEG(pixelBuffer: CVPixelBuffer, quality: CGFloat) -> Data? {
+// MARK: - half resolution method
+func encodePixelBufferToHalfResJPEG(pixelBuffer: CVPixelBuffer, quality: CGFloat) -> Data? {
+    // 1) Convert pixelBuffer -> CGImage
     guard let cgImage = pixelBufferToCGImage(pixelBuffer) else { return nil }
+    // 2) Make UIImage
     let uiImage = UIImage(cgImage: cgImage)
-    return uiImage.jpegData(compressionQuality: quality)
+    // 3) Scale to half
+    let halfUIImage = scaleImage(uiImage, scale: 0.5)
+    // 4) JPEG encode
+    return halfUIImage.jpegData(compressionQuality: quality)
+}
+
+func scaleImage(_ image: UIImage, scale: CGFloat) -> UIImage {
+    let newWidth = image.size.width * scale
+    let newHeight = image.size.height * scale
+    let newSize = CGSize(width: newWidth, height: newHeight)
+
+    UIGraphicsBeginImageContextWithOptions(newSize, false, 1.0)
+    image.draw(in: CGRect(origin: .zero, size: newSize))
+    let scaled = UIGraphicsGetImageFromCurrentImageContext()
+    UIGraphicsEndImageContext()
+
+    return scaled ?? image
 }
 
 func pixelBufferToCGImage(_ pixelBuffer: CVPixelBuffer) -> CGImage? {
-    // Simple approach: use CIImage + CIContext
     let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
     let context = CIContext(options: nil)
     return context.createCGImage(ciImage, from: ciImage.extent)
@@ -260,7 +277,7 @@ func createTexture(from pixelBuffer: CVPixelBuffer) {
         return
     }
     
-    // If we have a mask from server, let's do a minimal CPU overlay
+    // If we have a mask from server, do minimal overlay
     if let maskData = maskDataQueue.sync(execute: { latestMaskData }) {
         // decode mask as PNG
         if let maskCG = decodePNGToCGImage(maskData) {
@@ -342,17 +359,10 @@ func overlayMaskCPU(bgTexture: MTLTexture, maskCG: CGImage) -> CGImage? {
     // draw original
     context.draw(bgCG, in: CGRect(x: 0, y: 0, width: width, height: height))
     
-    // Simple approach: interpret maskCG's white area as region to color
-    // If your mask is single channel, you might do more advanced logic
-    // We'll just scale mask to fit if sizes differ
-    let maskRect = CGRect(x: 0, y: 0, width: maskCG.width, height: maskCG.height)
+    // We'll scale mask to fit if needed
     let destRect = CGRect(x: 0, y: 0, width: width, height: height)
-    
-    // We can do a blend mode
     context.saveGState()
-    // Example: draw mask as half-transparent green
     context.setFillColor(UIColor(red: 0, green: 1, blue: 0, alpha: 0.4).cgColor)
-    // draw maskCG as alpha channel
     context.clip(to: destRect, mask: maskCG)
     context.fill(destRect)
     context.restoreGState()
@@ -369,15 +379,13 @@ func textureToCGImage(_ texture: MTLTexture) -> CGImage? {
     var bgraBytes = [UInt8](repeating: 0, count: rowBytes * height)
     
     let region = MTLRegionMake2D(0, 0, width, height)
-    // 修正此处: 用 mipmapLevel 参数
     texture.getBytes(
         &bgraBytes,
         bytesPerRow: rowBytes,
         from: region,
-        mipmapLevel: 0 // 不再写 mipLevel: 0
+        mipmapLevel: 0
     )
     
-    // 改用 CGImageAlphaInfo + CGBitmapInfo 组合
     let alphaInfo = CGImageAlphaInfo.premultipliedFirst
     let alphaBitmapInfo = CGBitmapInfo(rawValue: alphaInfo.rawValue)
     let finalBitmapInfo = alphaBitmapInfo.union(.byteOrder32Little)
@@ -451,7 +459,8 @@ func cgImageToMTLTexture(_ cgImage: CGImage) -> MTLTexture? {
     return newTex
 }
 
-// MARK: - (Optional) extension CVPixelBuffer
+
+// MARK: - extension CVPixelBuffer
 
 extension CVPixelBuffer {
     public func toBGRA() throws -> CVPixelBuffer? {
