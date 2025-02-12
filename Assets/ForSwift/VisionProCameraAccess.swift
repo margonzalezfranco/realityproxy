@@ -5,9 +5,9 @@ import Accelerate
 import Foundation
 import Network
 import CoreGraphics
-import UIKit // For UIImage, cgImage, etc.
+import UIKit
 
-// MARK: - Global Variables
+// MARK: - Global Vars
 
 var arKitSession = ARKitSession()
 var isRunning = false
@@ -16,8 +16,14 @@ let mtlDevice: MTLDevice = MTLCreateSystemDefaultDevice()!
 var commandQueue: MTLCommandQueue!
 var textureCache: CVMetalTextureCache!
 
+// The main camera feed texture
 var currentTexture: MTLTexture? = nil
-var pointer: UnsafeMutableRawPointer? = nil
+// The mask texture (object=255, background=0) from the child server
+var maskTexture: MTLTexture? = nil
+
+// Pointers for Unity
+var pointerCam: UnsafeMutableRawPointer? = nil
+var pointerMask: UnsafeMutableRawPointer? = nil
 
 var chosenCameraWidth: Int32 = 1920
 var chosenCameraHeight: Int32 = 1080
@@ -25,32 +31,27 @@ var chosenCameraHeight: Int32 = 1080
 var currentIntrinsics: simd_float3x3 = .init()
 var currentExtrinsics: simd_float4x4 = .init()
 
-// NEW: TCP Connection
+// TCP
 var tcpConnection: NWConnection?
 var latestMaskData: Data? = nil
 let maskDataQueue = DispatchQueue(label: "maskData.queue")
 
-// MARK: - C-Style Exported Functions
+// MARK: - C Fns
 
 @_cdecl("startCapture")
 public func startCapture() {
     print("startCapture() called.")
     isRunning = true
     
-    connectToPythonServer(host: "192.168.1.84", port: 12345)  // Example IP/port
+    connectToPythonServer(host: "192.168.1.84", port: 12345)  // change IP/port as needed
     
     Task {
         let formats = CameraVideoFormat.supportedVideoFormats(for: .main, cameraPositions: [.left])
-        formats.forEach { fmt in
-            let size = fmt.frameSize
-            print("Supported format: \(size.width)x\(size.height)")
-        }
         guard !formats.isEmpty else {
             print("No camera formats found for main left camera.")
             return
         }
-        
-        // pick the highest
+        // pick highest
         let firstFormat = formats.max { $0.frameSize.height < $1.frameSize.height }!
         
         chosenCameraWidth = Int32(firstFormat.frameSize.width)
@@ -68,8 +69,8 @@ public func startCapture() {
             return
         }
         
-        print("ARKit session running. Beginning camera capture loop...")
-        
+        print("ARKit session running. Starting capture loop...")
+
         guard let updates = cameraProvider.cameraFrameUpdates(for: firstFormat) else {
             print("No cameraFrameUpdates available.")
             return
@@ -77,20 +78,22 @@ public func startCapture() {
         
         for await frame in updates {
             if !isRunning { break }
-            
+
             let pixelBuffer = frame.primarySample.pixelBuffer
             let parameters = frame.primarySample.parameters
             
             currentIntrinsics = parameters.intrinsics
             currentExtrinsics = parameters.extrinsics
             
-            // (A) Send to server at half resolution
+            // Send half-res to python
             sendFrameToServer(pixelBuffer: pixelBuffer)
             
-            // (B) Convert & create MTLTexture (full resolution for Unity)
-            createTexture(from: pixelBuffer)
+            // Create camera texture for Unity
+            createCameraTexture(from: pixelBuffer)
+            
+            // Also decode the latest mask data into maskTexture
+            updateMaskTextureIfNeeded()
         }
-        
         print("Camera capture loop finished.")
     }
 }
@@ -101,15 +104,18 @@ public func stopCapture() {
     isRunning = false
     arKitSession.stop()
     print("ARKit session stopped.")
-    
-    // close TCP
     tcpConnection?.cancel()
     tcpConnection = nil
 }
 
 @_cdecl("getTexturePointer")
 public func getTexturePointer() -> UnsafeMutableRawPointer? {
-    return pointer
+    return pointerCam  // the color camera
+}
+
+@_cdecl("getMaskTexturePointer")
+public func getMaskTexturePointer() -> UnsafeMutableRawPointer? {
+    return pointerMask // the separate mask
 }
 
 @_cdecl("getCameraChosenWidth")
@@ -135,17 +141,14 @@ public func getExtrinsicsMatrix() -> simd_float4x4 {
 // MARK: - Networking
 
 func connectToPythonServer(host: String, port: Int) {
-    guard let nwPort = NWEndpoint.Port(rawValue: UInt16(port)) else {
-        print("Invalid port number.")
-        return
-    }
+    guard let nwPort = NWEndpoint.Port(rawValue: UInt16(port)) else { return }
     let tcpParams = NWParameters.tcp
     tcpConnection = NWConnection(host: NWEndpoint.Host(host), port: nwPort, using: tcpParams)
     
     tcpConnection?.stateUpdateHandler = { state in
         switch state {
         case .ready:
-            print("TCP connected to server.")
+            print("[Swift] TCP connected to server.")
             startReadingFromServer()
         case .failed(let err):
             print("TCP connect failed: \(err)")
@@ -153,14 +156,14 @@ func connectToPythonServer(host: String, port: Int) {
             break
         }
     }
-    
     tcpConnection?.start(queue: .global(qos: .background))
 }
 
 func startReadingFromServer() {
-    tcpConnection?.receive(minimumIncompleteLength: 4, maximumLength: 4) { data, _, isComplete, error in
+    // read length
+    tcpConnection?.receive(minimumIncompleteLength: 4, maximumLength: 4) { data, _, _, error in
         if let e = error {
-            print("Receive length error: \(e)")
+            print("Receive length error:", e)
             return
         }
         guard let lengthData = data, lengthData.count == 4 else {
@@ -169,37 +172,33 @@ func startReadingFromServer() {
         }
         let length = lengthData.withUnsafeBytes { $0.load(as: Int32.self).littleEndian }
         if length <= 0 {
-            print("Invalid length \(length).")
+            print("Invalid length:", length)
             return
         }
-        
-        tcpConnection?.receive(minimumIncompleteLength: Int(length), maximumLength: Int(length)) { content, _, isComplete2, err2 in
+        tcpConnection?.receive(minimumIncompleteLength: Int(length), maximumLength: Int(length)) { content, _, _, err2 in
             if let e2 = err2 {
-                print("Receive content error: \(e2)")
+                print("Receive content error:", e2)
                 return
             }
             guard let maskBytes = content, maskBytes.count == Int(length) else {
-                print("Mask data size mismatch.")
+                print("Mask data mismatch.")
                 return
             }
             maskDataQueue.async {
                 latestMaskData = maskBytes
             }
-            // continue reading next
+            // read next
             startReadingFromServer()
         }
     }
 }
 
 func sendFrameToServer(pixelBuffer: CVPixelBuffer) {
-    // encode to JPEG at half resolution
-    guard let jpegData = encodePixelBufferToHalfResJPEG(pixelBuffer: pixelBuffer, quality: 0.5) else {
-        return
-    }
+    // half-res JPEG
+    guard let jpegData = encodePixelBufferToHalfResJPEG(pixelBuffer: pixelBuffer, quality: 0.5) else { return }
     let length = Int32(jpegData.count).littleEndian
     var lengthData = withUnsafeBytes(of: length) { Data($0) }
     lengthData.append(jpegData)
-    
     tcpConnection?.send(content: lengthData, completion: .contentProcessed({ error in
         if let e = error {
             print("Send error:", e)
@@ -207,15 +206,11 @@ func sendFrameToServer(pixelBuffer: CVPixelBuffer) {
     }))
 }
 
-// MARK: - half resolution method
+// half res
 func encodePixelBufferToHalfResJPEG(pixelBuffer: CVPixelBuffer, quality: CGFloat) -> Data? {
-    // 1) Convert pixelBuffer -> CGImage
     guard let cgImage = pixelBufferToCGImage(pixelBuffer) else { return nil }
-    // 2) Make UIImage
     let uiImage = UIImage(cgImage: cgImage)
-    // 3) Scale to half
-    let halfUIImage = scaleImage(uiImage, scale: 0.5)
-    // 4) JPEG encode
+    let halfUIImage = scaleImage(uiImage, scale: 0.25)
     return halfUIImage.jpegData(compressionQuality: quality)
 }
 
@@ -238,10 +233,9 @@ func pixelBufferToCGImage(_ pixelBuffer: CVPixelBuffer) -> CGImage? {
     return context.createCGImage(ciImage, from: ciImage.extent)
 }
 
-// MARK: - Creating/Overriding the MTLTexture
+// MARK: - Create main camera texture
 
-func createTexture(from pixelBuffer: CVPixelBuffer) {
-    // 1) Attempt YUV->BGRA if extension is available
+func createCameraTexture(from pixelBuffer: CVPixelBuffer) {
     guard let bgraBuffer = try? pixelBuffer.toBGRA() else {
         return
     }
@@ -257,7 +251,7 @@ func createTexture(from pixelBuffer: CVPixelBuffer) {
     }
     
     var cvMetalTex: CVMetalTexture?
-    let creationResult = CVMetalTextureCacheCreateTextureFromImage(
+    let result = CVMetalTextureCacheCreateTextureFromImage(
         kCFAllocatorDefault,
         textureCache,
         bgraBuffer,
@@ -269,32 +263,19 @@ func createTexture(from pixelBuffer: CVPixelBuffer) {
         &cvMetalTex
     )
     guard
-        creationResult == kCVReturnSuccess,
-        let cvMTLTex = cvMetalTex,
-        let sourceTexture = CVMetalTextureGetTexture(cvMTLTex)
+        result == kCVReturnSuccess,
+        let metalTex = cvMetalTex,
+        let sourceTex = CVMetalTextureGetTexture(metalTex)
     else {
-        print("CVMetalTextureCacheCreateTextureFromImage failed.")
+        print("createCameraTexture: failed.")
         return
     }
     
-    // If we have a mask from server, do minimal overlay
-    if let maskData = maskDataQueue.sync(execute: { latestMaskData }) {
-        // decode mask as PNG
-        if let maskCG = decodePNGToCGImage(maskData) {
-            if let finalCG = overlayMaskCPU(bgTexture: sourceTexture, maskCG: maskCG) {
-                if let finalMTL = cgImageToMTLTexture(finalCG) {
-                    finalizeTextureCopy(inTex: finalMTL)
-                    return
-                }
-            }
-        }
-    }
-
-    // fallback: no mask or fail -> just copy
-    finalizeTextureCopy(inTex: sourceTexture)
+    // Copy to currentTexture
+    finalizeCameraCopy(inTex: sourceTex)
 }
 
-func finalizeTextureCopy(inTex: MTLTexture) {
+func finalizeCameraCopy(inTex: MTLTexture) {
     if currentTexture == nil {
         let desc = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: inTex.pixelFormat,
@@ -305,13 +286,10 @@ func finalizeTextureCopy(inTex: MTLTexture) {
         desc.usage = [.shaderRead]
         currentTexture = mtlDevice.makeTexture(descriptor: desc)
     }
-    
     guard let finalTex = currentTexture,
           let cmdBuf = commandQueue?.makeCommandBuffer(),
           let blitEnc = cmdBuf.makeBlitCommandEncoder()
-    else {
-        return
-    }
+    else { return }
     
     let region = MTLRegionMake2D(0, 0, inTex.width, inTex.height)
     blitEnc.copy(from: inTex,
@@ -327,140 +305,101 @@ func finalizeTextureCopy(inTex: MTLTexture) {
     cmdBuf.commit()
     cmdBuf.waitUntilCompleted()
     
-    if pointer == nil {
-        pointer = Unmanaged.passUnretained(finalTex).toOpaque()
+    // store pointer
+    if pointerCam == nil {
+        pointerCam = Unmanaged.passUnretained(finalTex).toOpaque()
     }
 }
 
-// decode PNG -> CGImage
-func decodePNGToCGImage(_ pngData: Data) -> CGImage? {
-    guard let uiImg = UIImage(data: pngData) else { return nil }
-    return uiImg.cgImage
-}
+// MARK: - Create mask texture separately
 
-// CPU overlay
-func overlayMaskCPU(bgTexture: MTLTexture, maskCG: CGImage) -> CGImage? {
-    guard let bgCG = textureToCGImage(bgTexture) else { return nil }
-    
-    let width = bgCG.width
-    let height = bgCG.height
-    
-    guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
-    guard let context = CGContext(
-        data: nil,
-        width: width,
-        height: height,
-        bitsPerComponent: 8,
-        bytesPerRow: width * 4,
-        space: colorSpace,
-        bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue
-    ) else { return nil }
-    
-    // draw original
-    context.draw(bgCG, in: CGRect(x: 0, y: 0, width: width, height: height))
-    
-    // We'll scale mask to fit if needed
-    let destRect = CGRect(x: 0, y: 0, width: width, height: height)
-    context.saveGState()
-    context.setFillColor(UIColor(red: 0, green: 1, blue: 0, alpha: 0.4).cgColor)
-    context.clip(to: destRect, mask: maskCG)
-    context.fill(destRect)
-    context.restoreGState()
-    
-    return context.makeImage()
-}
-
-// Convert MTLTexture -> CGImage
-func textureToCGImage(_ texture: MTLTexture) -> CGImage? {
-    let width = texture.width
-    let height = texture.height
-    let rowBytes = width * 4
-    
-    var bgraBytes = [UInt8](repeating: 0, count: rowBytes * height)
-    
-    let region = MTLRegionMake2D(0, 0, width, height)
-    texture.getBytes(
-        &bgraBytes,
-        bytesPerRow: rowBytes,
-        from: region,
-        mipmapLevel: 0
-    )
-    
-    let alphaInfo = CGImageAlphaInfo.premultipliedFirst
-    let alphaBitmapInfo = CGBitmapInfo(rawValue: alphaInfo.rawValue)
-    let finalBitmapInfo = alphaBitmapInfo.union(.byteOrder32Little)
-    
-    guard let provider = CGDataProvider(data: NSData(bytes: &bgraBytes, length: bgraBytes.count)) else {
-        return nil
+func updateMaskTextureIfNeeded() {
+    // check if there's new mask data
+    var newMaskData: Data? = nil
+    maskDataQueue.sync {
+        if let m = latestMaskData {
+            newMaskData = m
+            // We might clear latestMaskData to ensure we only decode once:
+            // latestMaskData = nil
+        }
     }
-    
-    guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else {
-        return nil
+    guard let maskBytes = newMaskData else { return }
+    // decode -> CGImage
+    guard let cg = decodePNGToCGImage(maskBytes) else {
+        print("Mask decode failed.")
+        return
     }
-
-    return CGImage(
-        width: width,
-        height: height,
-        bitsPerComponent: 8,
-        bitsPerPixel: 32,
-        bytesPerRow: rowBytes,
-        space: colorSpace,
-        bitmapInfo: finalBitmapInfo,
-        provider: provider,
-        decode: nil,
-        shouldInterpolate: false,
-        intent: .defaultIntent
-    )
+    // create mask texture
+    createMaskTexture(from: cg)
 }
 
+func createMaskTexture(from cg: CGImage) {
+    let width = cg.width
+    let height = cg.height
 
-// Convert CGImage -> MTLTexture
-func cgImageToMTLTexture(_ cgImage: CGImage) -> MTLTexture? {
-    let width = cgImage.width
-    let height = cgImage.height
-    
-    guard let cmdQueue = commandQueue else { return nil }
-    guard let cmdBuf = cmdQueue.makeCommandBuffer() else { return nil }
+    // We want a BGRA8 texture holding grayscale
+    if maskTexture == nil || maskTexture?.width != width || maskTexture?.height != height {
+        let desc = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .bgra8Unorm_srgb,
+            width: width,
+            height: height,
+            mipmapped: false
+        )
+        desc.usage = [.shaderRead]
+        maskTexture = mtlDevice.makeTexture(descriptor: desc)
+    }
+    guard let finalMaskTex = maskTexture else { return }
 
-    let desc = MTLTextureDescriptor.texture2DDescriptor(
-        pixelFormat: .bgra8Unorm_srgb,
-        width: width,
-        height: height,
-        mipmapped: false
-    )
-    desc.usage = [.shaderRead, .renderTarget]
-    
-    guard let newTex = mtlDevice.makeTexture(descriptor: desc) else { return nil }
+    // We'll copy the CGImage's grayscale into BGRA. 
+    // For a minimal approach, we do: if pixel=255 => store BGRA=(255,255,255,255)
     
     let rowBytes = width * 4
     var bgraBytes = [UInt8](repeating: 0, count: rowBytes * height)
     
+    // draw cg -> context
     let colorSpace = CGColorSpaceCreateDeviceRGB()
-    let context = CGContext(
+    guard let context = CGContext(
         data: &bgraBytes,
         width: width,
         height: height,
         bitsPerComponent: 8,
         bytesPerRow: rowBytes,
         space: colorSpace,
-        bitmapInfo: CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.premultipliedFirst.rawValue
-    )
-    context?.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
-    
-    newTex.replace(
+        bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+    ) else {
+        print("createMaskTexture: CG failed.")
+        return
+    }
+    context.draw(cg, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+    // Now we have a BGRA8 image with R=G=B= your grayscale + alpha=255
+    // Let's copy it to maskTexture
+    guard let cmdBuf = commandQueue?.makeCommandBuffer(),
+          let blitEnc = cmdBuf.makeBlitCommandEncoder() else {
+        return
+    }
+
+    finalMaskTex.replace(
         region: MTLRegionMake2D(0, 0, width, height),
         mipmapLevel: 0,
         withBytes: &bgraBytes,
         bytesPerRow: rowBytes
     )
+    blitEnc.endEncoding()
     cmdBuf.commit()
     cmdBuf.waitUntilCompleted()
-    
-    return newTex
+
+    if pointerMask == nil {
+        pointerMask = Unmanaged.passUnretained(finalMaskTex).toOpaque()
+    }
 }
 
+func decodePNGToCGImage(_ data: Data) -> CGImage? {
+    guard let uiImg = UIImage(data: data) else { return nil }
+    return uiImg.cgImage
+}
 
-// MARK: - extension CVPixelBuffer
+// same CVPixelBuffer extension
 
 extension CVPixelBuffer {
     public func toBGRA() throws -> CVPixelBuffer? {

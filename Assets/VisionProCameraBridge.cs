@@ -14,7 +14,10 @@ public class VisionProCameraBridge : MonoBehaviour
     [DllImport("__Internal")]
     private static extern IntPtr getTexturePointer();
 
-    // Retrieve actual chosen resolution from Swift
+    // --- NEW: mask pointer from Swift
+    [DllImport("__Internal")]
+    private static extern IntPtr getMaskTexturePointer();
+
 #if UNITY_VISIONOS && !UNITY_EDITOR
     [DllImport("__Internal")]
     private static extern int getCameraChosenWidth();
@@ -23,9 +26,15 @@ public class VisionProCameraBridge : MonoBehaviour
     private static extern int getCameraChosenHeight();
 #endif
 
+    // Color feed
     private bool hasAcquiredTexture = false;
     private Texture2D nativeTexture;
     private IntPtr nativeTexPtr = IntPtr.Zero;
+
+    // Mask feed (NEW)
+    private bool hasAcquiredMask = false;
+    private Texture2D nativeMaskTexture;
+    private IntPtr nativeMaskPtr = IntPtr.Zero;
 
     // ---------- Webcam fallback (for Editor) ----------
     [Header("Webcam (Editor Fallback)")]
@@ -36,9 +45,14 @@ public class VisionProCameraBridge : MonoBehaviour
 
     // ---------- Shared RenderTexture + Materials ----------
     [Header("Shared Rendering")]
-    [SerializeField] private RenderTexture renderTex;
-    [SerializeField] private Material planeMaterial;   // material used by a plane in the scene
-    [SerializeField] private Material blitMaterial;    // optional: flipping or other effect
+    [SerializeField] private RenderTexture renderTex;       // color feed
+    [SerializeField] private Material planeMaterial;         // shows color feed
+    [SerializeField] private Material blitMaterial;          // optional for flipping color feed
+
+    // ---------- NEW for Mask -----------
+    [Header("Mask Rendering")]
+    [SerializeField] private RenderTexture maskRenderTex;   // optional RT for the mask
+    [SerializeField] private Material maskPlaneMaterial;     // material used by a plane or sphere for the mask
 
     [Header("Camera / Texture Dimensions")]
     [SerializeField] private int textureWidth = 1920;
@@ -47,38 +61,43 @@ public class VisionProCameraBridge : MonoBehaviour
     private void Start()
     {
 #if UNITY_EDITOR || !UNITY_VISIONOS
-        // -----------------------------------------
         // Editor or Non-visionOS: Start Webcam fallback
-        // -----------------------------------------
-        // Keep default 1920x1080 or whatever is in the inspector
 #else
-        // -----------------------------------------
-        // visionOS device: dynamically get actual camera size from Swift
-        // -----------------------------------------
+        // On Vision Pro, dynamically get actual camera size from Swift
         textureWidth = getCameraChosenWidth();
         textureHeight = getCameraChosenHeight();
-        Debug.Log($"[VisionProCameraBridge] Dynamically chosen resolution: {textureWidth}x{textureHeight}");
+        Debug.Log($"[VisionProCameraBridge] Dynamic resolution: {textureWidth}x{textureHeight}");
 #endif
 
-        // Create a RenderTexture if none is assigned
+        // Create RenderTexture for color feed if none is assigned
         if (renderTex == null)
         {
             renderTex = new RenderTexture(textureWidth, textureHeight, 0, RenderTextureFormat.ARGB32);
             renderTex.Create();
         }
-
-        // Assign the RenderTexture to our plane material (so it can be seen in the scene)
+        // assign color feed RT to plane material
         if (planeMaterial != null)
         {
             planeMaterial.mainTexture = renderTex;
         }
 
-#if UNITY_EDITOR || !UNITY_VISIONOS
-        // Editor or Non-visionOS: Start Webcam fallback
-        InitWebCam(webCamDeviceName);
+        // (Optional) create maskRenderTex if not assigned
+        if (maskRenderTex == null)
+        {
+            maskRenderTex = new RenderTexture(textureWidth, textureHeight, 0, RenderTextureFormat.ARGB32);
+            maskRenderTex.Create();
+        }
+        if (maskPlaneMaterial != null)
+        {
+            // you can assign the mask RT to this material
+            maskPlaneMaterial.mainTexture = maskRenderTex;
+        }
 
+#if UNITY_EDITOR || !UNITY_VISIONOS
+        // Editor fallback
+        InitWebCam(webCamDeviceName);
 #else
-        // visionOS: Start the native camera
+        // visionOS device: start camera
         startCapture();
 #endif
     }
@@ -86,17 +105,24 @@ public class VisionProCameraBridge : MonoBehaviour
     private void Update()
     {
 #if UNITY_EDITOR || !UNITY_VISIONOS
-        // Update: read from the webcam and blit to renderTex
+        // Editor or Non-visionOS: read from webcam
         UpdateWebCamRender();
 #else
-        // Update: read from native camera texture pointer
+        // Try to get native color feed
         if (!hasAcquiredTexture)
         {
             TryAcquireNativeTexture();
         }
         else
         {
-            UpdateRenderTexture();
+            UpdateRenderTexture();   // color
+        }
+
+        // Also acquire the mask
+        TryAcquireMaskTexture();
+        if (hasAcquiredMask)
+        {
+            UpdateMaskRenderTexture();
         }
 #endif
     }
@@ -104,14 +130,12 @@ public class VisionProCameraBridge : MonoBehaviour
     private void OnDestroy()
     {
 #if UNITY_EDITOR || !UNITY_VISIONOS
-        // Stop the webcam if we have one
         if (webCam != null)
         {
             webCam.Stop();
             webCam = null;
         }
 #else
-        // Stop the Vision Pro capture
         stopCapture();
 #endif
     }
@@ -133,7 +157,6 @@ public class VisionProCameraBridge : MonoBehaviour
         }
         webCam.Play();
 
-        // Optionally create a temporary texture to store each frame
         if (webcamFrameTex == null)
         {
             webcamFrameTex = new Texture2D(textureWidth, textureHeight, TextureFormat.RGBA32, false);
@@ -143,37 +166,35 @@ public class VisionProCameraBridge : MonoBehaviour
     private void UpdateWebCamRender()
     {
         if (webCam == null) return;
-        if (webCam.width < 16 || webCam.height < 16) return; // webcam not ready
+        if (webCam.width < 16 || webCam.height < 16) return; // not ready
 
-        // Ensure webcamFrameTex matches webcam dimensions
         if (webcamFrameTex == null || webcamFrameTex.width != webCam.width || webcamFrameTex.height != webCam.height)
         {
             if (webcamFrameTex != null) Destroy(webcamFrameTex);
             webcamFrameTex = new Texture2D(webCam.width, webCam.height, TextureFormat.RGBA32, false);
         }
 
-        // Copy pixels from WebCamTexture to a CPU Texture2D
         webcamFrameTex.SetPixels(webCam.GetPixels());
         webcamFrameTex.Apply();
 
         Graphics.Blit(webcamFrameTex, renderTex);
+
+        // For the mask in Editor, you could do a separate approach if you want
+        // But not included in this example
     }
 #endif
 
     // =============================================================================
-    // SECTION B: Vision Pro native camera approach
+    // SECTION B: Vision Pro camera approach
     // =============================================================================
 
 #if UNITY_VISIONOS && !UNITY_EDITOR
-
     private void TryAcquireNativeTexture()
     {
         IntPtr ptr = getTexturePointer();
-        if (ptr == IntPtr.Zero) return; // Not ready yet
+        if (ptr == IntPtr.Zero) return;
 
         nativeTexPtr = ptr;
-
-        // Create an ExternalTexture referencing the MTLTexture
         nativeTexture = Texture2D.CreateExternalTexture(
             textureWidth,
             textureHeight,
@@ -182,7 +203,6 @@ public class VisionProCameraBridge : MonoBehaviour
             false,
             nativeTexPtr
         );
-
         nativeTexture.UpdateExternalTexture(nativeTexPtr);
         hasAcquiredTexture = true;
     }
@@ -191,7 +211,6 @@ public class VisionProCameraBridge : MonoBehaviour
     {
         if (nativeTexture == null) return;
 
-        // Blit to the shared RenderTexture
         if (blitMaterial == null)
         {
             Graphics.Blit(nativeTexture, renderTex);
@@ -200,10 +219,45 @@ public class VisionProCameraBridge : MonoBehaviour
         {
             Graphics.Blit(nativeTexture, renderTex, blitMaterial);
         }
-
-        // For PolySpatial, you might need MarkDirty for updates
         Unity.PolySpatial.PolySpatialObjectUtils.MarkDirty(renderTex);
     }
 
+    // --- NEW: mask side
+    private void TryAcquireMaskTexture()
+    {
+        IntPtr ptr = getMaskTexturePointer();
+        if (ptr == IntPtr.Zero) return; // no mask yet
+
+        if (nativeMaskPtr != ptr)
+        {
+            nativeMaskPtr = ptr;
+            if (nativeMaskTexture == null)
+            {
+                // Might assume same dimension as camera or something else
+                nativeMaskTexture = Texture2D.CreateExternalTexture(
+                    textureWidth,
+                    textureHeight,
+                    TextureFormat.BGRA32,
+                    false,
+                    false,
+                    nativeMaskPtr
+                );
+            }
+            nativeMaskTexture.UpdateExternalTexture(nativeMaskPtr);
+            hasAcquiredMask = true;
+        }
+    }
+
+    private void UpdateMaskRenderTexture()
+    {
+        if (nativeMaskTexture == null) return;
+        if (maskRenderTex == null) return;
+
+        Graphics.Blit(nativeMaskTexture, maskRenderTex);
+        // if you want to do something custom, place code here
+        // e.g. maskPlaneMaterial.mainTexture = maskRenderTex;
+
+        Unity.PolySpatial.PolySpatialObjectUtils.MarkDirty(maskRenderTex);
+    }
 #endif
 }
