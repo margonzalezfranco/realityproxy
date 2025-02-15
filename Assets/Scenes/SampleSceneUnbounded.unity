@@ -7337,7 +7337,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   geminiModelName: gemini-2.0-flash-exp
-  geminiApiKey: AIzaSyAmRPcrP0JjOgeam_UqTugBAsQ21cnrenA
+  geminiApiKey: AIzaSyAoYU7ZM-AImpfA0faIBBz8ovLb_7n0QF4
   cameraRenderTex: {fileID: 8400000, guid: 78e2b50f1cd8640efa61e2994d5eaec2, type: 2}
   overlayCanvas: {fileID: 349830609}
   boundingBoxPrefab: {fileID: 4748099091582676251, guid: 8f190f4c2167b4f82b2e0e8bca5f1d2d, type: 3}
@@ -7403,7 +7403,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   geminiModelName: gemini-2.0-flash-exp
-  geminiApiKey: AIzaSyAmRPcrP0JjOgeam_UqTugBAsQ21cnrenA
+  geminiApiKey: AIzaSyAoYU7ZM-AImpfA0faIBBz8ovLb_7n0QF4
   cameraRenderTex: {fileID: 8400000, guid: 78e2b50f1cd8640efa61e2994d5eaec2, type: 2}
   answerText: {fileID: 634796336}
   onAnswerReceived:

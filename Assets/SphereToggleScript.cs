@@ -31,7 +31,7 @@ public class SphereToggleScript : MonoBehaviour
     public string modelName = "gemini-2.0-flash-exp";
 
     [Tooltip("Your API key")]
-    public string geminiApiKey = "AIzaSyAmRPcrP0JjOgeam_UqTugBAsQ21cnrenA";
+    public string geminiApiKey = "AIzaSyAoYU7ZM-AImpfA0faIBBz8ovLb_7n0QF4";
     [Tooltip("A reference to your Gemini API client script. Make sure it's initialized.")]
     public GeminiAPI geminiClient;
 
