@@ -296,11 +296,12 @@ public class SphereToggleScript : MonoBehaviour
             yield break;
         }
 
-        // 6) Show lines from this anchor to each related anchor
-        var myAnchor = sceneObjManager.GetAnchorByLabel(inHandLabel);
+        // 6) Show lines from this specific sphere to each related anchor
+        // Instead of using GetAnchorByLabel, we'll find the anchor that matches our specific GameObject
+        var myAnchor = sceneObjManager.GetAnchorByGameObject(this.gameObject);
         if (myAnchor == null)
         {
-            Debug.LogWarning($"No anchor found for label '{inHandLabel}'?!");
+            Debug.LogWarning($"No anchor found for this sphere GameObject!");
             yield break;
         }
         relationLineManager.ShowRelationships(myAnchor, relationshipsDict, anchors);

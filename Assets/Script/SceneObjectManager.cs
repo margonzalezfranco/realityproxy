@@ -219,4 +219,9 @@ public class SceneObjectManager : MonoBehaviour
 
         return sphereObj;
     }
+
+    public SceneObjectAnchor GetAnchorByGameObject(GameObject obj)
+    {
+        return anchors.Find(a => a.sphereObj == obj);
+    }
 }
