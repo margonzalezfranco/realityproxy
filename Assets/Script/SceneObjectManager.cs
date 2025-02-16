@@ -12,7 +12,7 @@ public class SceneObjectManager : MonoBehaviour
 
     [Header("Matching Threshold")]
     [Tooltip("Distance threshold (in meters) to treat a new detection as the 'same' object.")]
-    public float matchingRadius = 0.3f;
+    public float matchingRadius = 0.05f;
 
     [Header("Prefabs and Materials")]
     public GameObject spherePrefab;
