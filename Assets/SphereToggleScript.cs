@@ -241,14 +241,23 @@ public class SphereToggleScript : MonoBehaviour
 
         // 2) Build the prompt
         string prompt = $@"
-        Given the user is currently holding: {inHandLabel}.
-        Other objects in the scene: {string.Join(", ", itemLabels)}.
+        Given that the user is holding the {inHandLabel},
 
-        Please return a JSON object where each key is one of the above items 
-        and each value is a short relationship to '{inHandLabel}' (max 5 words).
-        For example:
-        {{ ""milk"": ""added to coffee mug"" }}
-        Return an empty object if nothing is relevant.
+        Find objects that are most related to this {inHandLabel} in the current scene, considering:
+        1. The overall scene context and task
+        2. Spatial relationships
+        3. Functional relationships in the context of the task
+        4. Common usage patterns
+
+        Choose only from these detected items: {string.Join(", ", itemLabels)}.
+
+        Output a JSON object where each key is a related object and its value is a brief relationship description (max 5 words).
+        Example format:
+        {{
+          ""object1"": ""used together for cooking"",
+          ""object2"": ""located next to item"",
+          ""object3"": ""complements main task""
+        }}
         ";
 
         // 3) Call Gemini (not using an image here, but you could if relevant)
