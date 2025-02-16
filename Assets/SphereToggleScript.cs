@@ -7,7 +7,10 @@ using System.Collections;
 using System.Collections.Generic;
 using Newtonsoft.Json;
 
-// this is the script that will be attached to each sphere button raycasted to the scene
+/// <summary>
+/// Script attached to each sphere toggled in the scene. 
+/// It calls Gemini to (A) generate questions about the object, and (B) show relationships with other items.
+/// </summary>
 public class SphereToggleScript : MonoBehaviour
 {
     [Header("References")]
@@ -32,6 +35,7 @@ public class SphereToggleScript : MonoBehaviour
 
     [Tooltip("Your API key")]
     public string geminiApiKey = "AIzaSyAoYU7ZM-AImpfA0faIBBz8ovLb_7n0QF4";
+
     [Tooltip("A reference to your Gemini API client script. Make sure it's initialized.")]
     public GeminiAPI geminiClient;
 
@@ -51,9 +55,22 @@ public class SphereToggleScript : MonoBehaviour
 
     public GameObject answerPanel;
 
+    [Header("Level 2 Relationship")]
+    [Tooltip("Manager that draws lines between related items.")]
+    public RelationshipLineManager relationLineManager;
+
+    [Tooltip("Manager that tracks all recognized objects in the scene.")]
+    public SceneObjectManager sceneObjManager;
+
+    private bool isOn = false;
+
     private void Start()
     {
-        geminiClient = new GeminiAPI(modelName, geminiApiKey);
+        if (geminiClient == null)
+        {
+            geminiClient = new GeminiAPI(modelName, geminiApiKey);
+        }
+
         // Subscribe to the toggle's onValueChanged event
         if (spatialUIToggle != null)
         {
@@ -61,8 +78,10 @@ public class SphereToggleScript : MonoBehaviour
         }
     }
 
-    private void OnSphereToggled(bool isOn)
+    private void OnSphereToggled(bool toggledOn)
     {
+        isOn = toggledOn;
+
         if (isOn)
         {
             InfoPanel.SetActive(true);
@@ -73,22 +92,30 @@ public class SphereToggleScript : MonoBehaviour
                 string labelContent = labelUnderSphere.text;
                 menuScript.SetMenuTitle(labelContent);
 
-                // ------------------------------------------------------------
-                // 1) Call Gemini here with the label text + camera frame
-                // ------------------------------------------------------------
+                // 1) Generate possible user questions for this object (Granularity Lv1-style)
                 StartCoroutine(GenerateQuestionsRoutine(labelContent));
+
+                // 2) Also generate relationships with other items (Granularity Lv2)
+                StartCoroutine(GenerateRelationshipsRoutine(labelContent));
             }
         }
         else
         {
+            // Turn OFF
             InfoPanel.SetActive(false);
             answerPanel.SetActive(false);
+
+            // Clear any existing relationship lines
+            if (relationLineManager != null)
+            {
+                relationLineManager.ClearAllLines();
+            }
         }
     }
 
     /// <summary>
-    /// Coroutine that captures the current camera frame, sends it to Gemini,
-    /// parses the returned JSON for "questions", and instantiates new text lines.
+    /// (Granularity Lv1) Coroutine that captures the camera frame, sends it to Gemini,
+    /// parses a JSON array of user questions, and spawns UI lines for each question.
     /// </summary>
     private IEnumerator GenerateQuestionsRoutine(string labelContent)
     {
@@ -98,12 +125,12 @@ public class SphereToggleScript : MonoBehaviour
         Destroy(frameTex);  // free the temporary texture
 
         // 2) Build a simple prompt that references the label Content
-        // Adjust as needed; this is just a minimal example.
+        //    "Ask up to 5 questions about this item"
         string prompt = $@"
             You are provided an image (inline data) plus the label: '{labelContent}'.
             Please return a JSON list of possible user questions about this product/item.
-            Return only the most possible questions, up to 5 maximum.
-            In the format: 
+            Return only the most likely questions, up to 5 maximum.
+            In the format:
             json
             [
             ""Question 1"",
@@ -112,30 +139,22 @@ public class SphereToggleScript : MonoBehaviour
             ]
             ";
 
-        // 3) Call Gemini (assuming geminiClient has been set in the Inspector)
+        // 3) Call Gemini
         var requestTask = geminiClient.GenerateContent(prompt, base64Image);
 
-        // Wait for the async Task to complete
-        while (!requestTask.IsCompleted) 
+        while (!requestTask.IsCompleted)
             yield return null;
 
         string geminiResponse = requestTask.Result;
-        Debug.Log("Gemini Re-Call Response:\n" + geminiResponse);
+        Debug.Log("Gemini Questions Response:\n" + geminiResponse);
 
-        // 4) Parse the JSON from the first candidate. 
-        //    For brevity, let's assume your API returns something 
-        //    akin to:
-        //    {
-        //      "candidates": [
-        //         { "content": { "parts": [{ "text": "...the json..." }] } }
-        //      ]
-        //    }
-        // Use whichever JSON approach you prefer:
+        // 4) Extract JSON
         string extractedJson = TryExtractJson(geminiResponse);
+        Debug.Log("Gemini Questions Response - Extracted JSON:\n" + extractedJson);
 
         if (string.IsNullOrEmpty(extractedJson))
         {
-            Debug.LogWarning("Could not find valid JSON block in Gemini response.");
+            Debug.LogWarning("Could not find valid JSON block in Gemini question response.");
             yield break;
         }
 
@@ -158,7 +177,7 @@ public class SphereToggleScript : MonoBehaviour
         {
             float currentY = -60f;  // Start at the top
             float questionHeight = 60f;  // Height of each question block, adjust as needed
-            float spacing = 5f;  // Space between questions, adjust as needed
+            float spacing = 5f;  // Space between questions
 
             foreach (var q in questionsList)
             {
@@ -166,26 +185,23 @@ public class SphereToggleScript : MonoBehaviour
                 var go = Instantiate(questionPrefab, questionsParent);
                 go.name = "GeminiQuestion";
 
-                // Position using regular Transform
-                Transform transform = go.transform;
-                if (transform != null)
+                // Position 
+                Transform t = go.transform;
+                if (t != null)
                 {
-                    transform.localPosition = new Vector3(0f, -currentY, 0f);
+                    t.localPosition = new Vector3(0f, -currentY, 0f);
                     currentY += questionHeight + spacing;
                 }
 
                 // Set the text inside
                 TextMeshPro txt = go.GetComponentInChildren<TextMeshPro>();
-                if (txt != null)
-                {
-                    txt.text = q;
-                }
+                if (txt != null) txt.text = q;
 
                 // Add button press handling
                 var button = go.GetComponent<SpatialUIButton>();
                 if (button != null)
                 {
-                    string questionText = q; // Capture the current question in closure
+                    string questionText = q; // closure
                     button.WasPressed += (buttonText, renderer, index) =>
                     {
                         if (questionAnswerer != null)
@@ -195,31 +211,101 @@ public class SphereToggleScript : MonoBehaviour
                         }
                         else
                         {
-                            Debug.LogWarning("QuestionAnswerer reference not set in SphereToggleScript");
+                            Debug.LogWarning("No QuestionAnswerer reference set.");
                         }
                     };
                 }
                 else
                 {
-                    Debug.LogWarning("Question prefab is missing SpatialUIButton component");
+                    Debug.LogWarning("Question prefab is missing SpatialUIButton component.");
                 }
             }
         }
     }
 
     /// <summary>
-    /// Example helper to extract the JSON portion from the Gemini response
+    /// (Granularity Lv2) Coroutine that calls Gemini to find relationships among scene items,
+    /// draws lines from the toggled object to each related item.
+    /// </summary>
+    private IEnumerator GenerateRelationshipsRoutine(string inHandLabel)
+    {
+        // 1) Gather all recognized anchors from sceneObjManager
+        var anchors = sceneObjManager.GetAllAnchors();
+        List<string> itemLabels = new List<string>();
+        foreach (var a in anchors)
+        {
+            itemLabels.Add(a.label);
+        }
+        // remove the "in-hand" label so it doesn't appear in the "others"
+        itemLabels.Remove(inHandLabel);
+
+        // 2) Build the prompt
+        string prompt = $@"
+        Given the user is currently holding: {inHandLabel}.
+        Other objects in the scene: {string.Join(", ", itemLabels)}.
+
+        Please return a JSON object where each key is one of the above items 
+        and each value is a short relationship to '{inHandLabel}' (max 5 words).
+        For example:
+        {{ ""milk"": ""added to coffee mug"" }}
+        Return an empty object if nothing is relevant.
+        ";
+
+        // 3) Call Gemini (not using an image here, but you could if relevant)
+        var requestTask = geminiClient.GenerateContent(prompt, null);
+        
+        while (!requestTask.IsCompleted)
+            yield return null;
+
+        string rawResponse = requestTask.Result;
+        Debug.Log($"Relationships raw response:\n{rawResponse}");
+
+        // 4) Extract JSON portion
+        string extractedJson = TryExtractJson(rawResponse);
+        Debug.Log("Relationships - Extracted JSON:\n" + extractedJson);
+
+        if (string.IsNullOrEmpty(extractedJson))
+        {
+            Debug.LogWarning("No valid JSON found in relationships response.");
+            yield break;
+        }
+
+        // 5) Parse to dictionary
+        Dictionary<string, string> relationshipsDict = null;
+        try
+        {
+            relationshipsDict = JsonConvert.DeserializeObject<Dictionary<string, string>>(extractedJson);
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning("Failed to parse relationships JSON: " + e);
+        }
+
+        if (relationshipsDict == null || relationshipsDict.Count == 0)
+        {
+            Debug.Log($"No relationships found for '{inHandLabel}'. Possibly no relevant items.");
+            yield break;
+        }
+
+        // 6) Show lines from this anchor to each related anchor
+        var myAnchor = sceneObjManager.GetAnchorByLabel(inHandLabel);
+        if (myAnchor == null)
+        {
+            Debug.LogWarning($"No anchor found for label '{inHandLabel}'?!");
+            yield break;
+        }
+        relationLineManager.ShowRelationships(myAnchor, relationshipsDict, anchors);
+    }
+
+    /// <summary>
+    /// Example helper to extract the JSON portion from the Gemini response 
     /// which might contain ```json ...```.
-    /// If your response structure is different, adjust accordingly.
+    /// Adjust to match your actual response format.
     /// </summary>
     private string TryExtractJson(string fullResponse)
     {
-        // 1) Suppose we parse the top-level to see the first candidate text
-        //    (Mirroring the approach in Gemini2DBoundingBoxDetector).
-        // You could do something more robust here:
         try
         {
-            // We'll do a quick partial extraction
             var root = JsonConvert.DeserializeObject<GeminiRoot>(fullResponse);
             if (root?.candidates == null || root.candidates.Count == 0)
                 return null;
@@ -228,7 +314,6 @@ public class SphereToggleScript : MonoBehaviour
             if (string.IsNullOrEmpty(rawText)) 
                 return null;
 
-            // 2) If rawText includes "```json", let's attempt to split
             if (rawText.Contains("```json"))
             {
                 var splitted = rawText.Split(new[] { "```json" }, StringSplitOptions.None);
@@ -238,18 +323,15 @@ public class SphereToggleScript : MonoBehaviour
                     rawText = splitted2[0].Trim();
                 }
             }
-
             return rawText;
         }
         catch
         {
-            return null;
+            // fallback: raw entire text as-is
+            return fullResponse;
         }
     }
 
-    /// <summary>
-    /// A minimal version of the same root/candidate structure found in your code.
-    /// </summary>
     [Serializable]
     public class GeminiRoot
     {
@@ -274,10 +356,6 @@ public class SphereToggleScript : MonoBehaviour
         public string text;
     }
 
-    /// <summary>
-    /// Clears previously spawned question lines under questionsParent.
-    /// You can refine this to only remove objects with a certain name, etc.
-    /// </summary>
     private void ClearPreviousQuestions()
     {
         if (questionsParent == null) return;

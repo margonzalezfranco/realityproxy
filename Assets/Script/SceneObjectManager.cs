@@ -20,6 +20,8 @@ public class SceneObjectManager : MonoBehaviour
     public GameObject labelPrefab;
     public float sphereSize = 0.025f;
     public float labelOffset = 1.2f;
+    [Tooltip("Scale multiplier for the label prefab")]
+    public float labelScale = 0.1f;
 
     public Camera xrCamera; // Used to set the LookAtCamera for labels
 
@@ -32,11 +34,28 @@ public class SceneObjectManager : MonoBehaviour
     private List<SceneObjectAnchor> anchors = new List<SceneObjectAnchor>();
     public GeminiRaycast geminiRaycast;
 
+    [Header("Level 2 Relationship")]
+    [Tooltip("Manager that draws lines between related items.")]
+    public RelationshipLineManager relationLineManager;
+
+    [Tooltip("Manager that tracks all recognized objects in the scene.")]
+    public SceneObjectManager sceneObjManager;
+
     private void Awake()
     {
         // Basic singleton pattern
         if (Instance == null) Instance = this;
         else Destroy(gameObject);
+    }
+
+    public List<SceneObjectAnchor> GetAllAnchors()
+    {
+        return anchors;
+    }
+
+    public SceneObjectAnchor GetAnchorByLabel(string label)
+    {
+        return anchors.Find(a => a.label == label);
     }
 
     /// <summary>
@@ -160,6 +179,8 @@ public class SceneObjectManager : MonoBehaviour
             {
                 sphereToggleScript.InfoPanel = InfoPanel;
                 sphereToggleScript.questionsParent = InfoPanel.transform;
+                sphereToggleScript.relationLineManager = relationLineManager;
+                sphereToggleScript.sceneObjManager = sceneObjManager;
             }
 
             var menuScript = InfoPanel.GetComponentInChildren<MenuScript>();
@@ -171,6 +192,7 @@ public class SceneObjectManager : MonoBehaviour
             var lblObj = Instantiate(labelPrefab, sphereObj.transform);
             lblObj.name = $"Label_{label}";
             lblObj.transform.localPosition = new Vector3(0f, labelOffset, 0f);
+            lblObj.transform.localScale = Vector3.one * labelScale;
             
             // Add a LookAt component to make the label face the camera
             var lookAt = lblObj.AddComponent<LookAtCamera>();
