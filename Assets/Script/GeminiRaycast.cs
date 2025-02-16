@@ -3,6 +3,10 @@ using UnityEngine;
 using TMPro;
 using Unity.Mathematics; // for float3x3, float4x4
 
+/// <summary>
+/// Casts rays from bounding box centers and calls SceneObjectManager to register/update anchors,
+/// rather than spawning spheres/labels directly here.
+/// </summary>
 public class GeminiRaycast : MonoBehaviour
 {
     [Header("Camera for Raycasting (Left Eye)")]
@@ -10,18 +14,12 @@ public class GeminiRaycast : MonoBehaviour
              "We'll use its position as the base, but final offset is from offsetNode.")]
     public Camera xrCamera;
 
+    [Header("SceneObjectManager")]
+    public SceneObjectManager sceneObjectManager;
+
     [Header("Manual Offset Node")]
     [Tooltip("An empty child object under XR Camera for final offset/rotation.")]
     public Transform offsetNode;
-
-    [Header("Sphere Settings")]
-    public GameObject spherePrefab;
-    public Material sphereMaterial;
-    public float sphereSize = 0.05f;
-
-    [Header("Label Settings")]
-    public GameObject labelPrefab;
-    public float labelOffset = 1.2f;
 
     [Header("Raycast Settings")]
     public float maxRayDistance = 100f;
@@ -44,17 +42,20 @@ public class GeminiRaycast : MonoBehaviour
     [Tooltip("Far plane for offsetNode camera visualization.")]
     public float offsetNodeFar = 0.4f;
 
-    // Store spawned spheres/lines/labels to clear
-    private List<GameObject> spawnedObjects = new List<GameObject>();
-
-    // Hard-coded camera resolution
+    // Add a new list specifically for debug visualization objects
+    private List<GameObject> debugVisualizationObjects = new List<GameObject>();
+    
+    public List<GameObject> spawnedObjects = new List<GameObject>();
+    
+    // Hard-coded camera resolution in your pipeline
     private int imageWidth = 1920;
     private int imageHeight = 1080;
 
+    // Example intrinsics and extrinsics
     private float3x3 intrinsicsMatrix = new float3x3(
-        736.6339f,  0.0f,    960.0f,
-        0.0f,       736.6339f, 540.0f,
-        0.0f,       0.0f,    1.0f
+        736.6339f,  0.0f,        960.0f,
+        0.0f,       736.6339f,   540.0f,
+        0.0f,       0.0f,        1.0f
     );
 
     private float4x4 extrinsicsMatrix = new float4x4(
@@ -64,13 +65,15 @@ public class GeminiRaycast : MonoBehaviour
         0.0f,          0.0f,           0.0f,         1.0f
     );
 
-    public GameObject InfoPanel;
-    public GameObject answerPanel;
-    public GeminiQuestionAnswerer questionAnswerer;
-
+    /// <summary>
+    /// Called by Gemini2DBoundingBoxDetector (or similar) whenever new bounding boxes are detected.
+    /// We then unproject each box center -> 3D ray -> Physics.Raycast,
+    /// and pass the result to SceneObjectManager to anchor or update that object.
+    /// </summary>
     public void OnBoxesUpdated(List<Box2DResult> boxes)
     {
-        ClearSpawnedObjects();
+        // Clear only debug visualization objects, not the persistent spheres
+        ClearDebugObjects();
 
         if (boxes == null || boxes.Count == 0)
         {
@@ -78,12 +81,13 @@ public class GeminiRaycast : MonoBehaviour
             return;
         }
 
-        // 1) If offsetNode is missing, fallback to camera
+        // If offsetNode is missing, fallback to xrCamera
         if (!offsetNode)
         {
             Debug.LogWarning("No offsetNode assigned, using xrCamera transform directly.");
         }
 
+        // Iterate over each bounding box
         foreach (var box in boxes)
         {
             // box_2d = [ymin, xmin, ymax, xmax]
@@ -92,54 +96,49 @@ public class GeminiRaycast : MonoBehaviour
             float ymax = box.box_2d[2];
             float xmax = box.box_2d[3];
 
-            // 2) Convert [0..1000] -> pixel coords
+            // 1) Convert [0..1000]-based coords -> pixel coords
             float centerX = (xmin + xmax) * 0.5f * (imageWidth / 1000f);
             float centerY = (ymin + ymax) * 0.5f * (imageHeight / 1000f);
 
-            // 3) unproject in camera local space (no extrinsics or partial)
-            //    if you want extrinsics rotation, set useExtrinsics = true
+            // 2) Unproject to camera local space
             Vector3 directionLocal = UnprojectPixel(
                 centerX, centerY,
                 imageWidth, imageHeight,
                 flipX: false,
-                flipY: true,  // top-left -> bottom-left
-                useExtrinsics: false,
+                flipY: true,   // Because top-left might map differently in your pipeline
+                useExtrinsics: false, 
                 intrinsicsMatrix,
                 extrinsicsMatrix
-            );
+            ).normalized; // normalize it
 
-            // (Optional) Flip Z if Apple device anchor's z is reversed
-            // directionLocal = -directionLocal;
-
-            // 4) Now find final ray origin & direction from offsetNode
-            // if offsetNode is null, fallback to xrCamera
+            // 3) Build a ray from offsetNode or camera
             Transform finalNode = offsetNode ? offsetNode : xrCamera.transform;
-
-            // directionLocal is still "camera local", plus or minus extrinsics rotation if you want
-            // Next, we rotate it by the finalNode's world rotation
             Quaternion finalWorldRot = finalNode.rotation;
-            Vector3 directionWS = finalWorldRot * directionLocal.normalized;
-
+            Vector3 directionWS = finalWorldRot * directionLocal;
             Vector3 finalOrigin = finalNode.position;
 
-            // 5) build the final Ray
             Ray finalRay = new Ray(finalOrigin, directionWS);
 
+            // Optionally visualize the entire ray
             if (visualizeRays)
             {
                 Vector3 endPos = finalRay.origin + finalRay.direction * maxRayDistance;
                 VisualizeRaySegment(finalRay.origin, endPos, Color.cyan);
             }
 
-            // 6) Raycast
+            // 4) Do a Physics.Raycast
             if (Physics.Raycast(finalRay, out RaycastHit hit, maxRayDistance))
             {
+                // Visualize the "hit" portion in green
                 if (visualizeRays && showHitSegment)
                 {
                     VisualizeRaySegment(finalRay.origin, hit.point, Color.green);
                 }
-                // spawn sphere
-                SpawnSphereWithLabel(hit.point, box.label);
+
+                // *** Here is where we register or update the anchor, 
+                // rather than spawning a new sphere each time. ***
+                string detectedLabel = box.label;
+                sceneObjectManager.RegisterOrUpdateAnchor(detectedLabel, hit.point);
             }
             else
             {
@@ -147,12 +146,17 @@ public class GeminiRaycast : MonoBehaviour
             }
         }
 
+        // Optionally visualize offsetNode camera frustum
         if (visualizeOffsetNodeCamera && offsetNode)
         {
             VisualizeOffsetNodeCamera(offsetNode, offsetNodeFOV, offsetNodeAspect, offsetNodeNear, offsetNodeFar);
         }
     }
 
+    /// <summary>
+    /// Unprojects a 2D pixel (px, py) into a 3D direction based on the given intrinsics & extrinsics.
+    /// You can optionally flip X/Y or apply extrinsics transforms if needed.
+    /// </summary>
     public static Vector3 UnprojectPixel(
         float px,
         float py,
@@ -185,7 +189,7 @@ public class GeminiRaycast : MonoBehaviour
     }
 
     /// <summary>
-    /// Visualize the view cone of the "camera" offsetNode to easily see its position and direction in the world.
+    /// Visualizes the offsetNode's frustum as magenta lines, plus a red line for forward direction.
     /// </summary>
     private void VisualizeOffsetNodeCamera(
         Transform node, float fovY, float aspect, float near, float far
@@ -232,16 +236,21 @@ public class GeminiRaycast : MonoBehaviour
         DrawLine(nearTL, farTL, Color.magenta);
         DrawLine(nearTR, farTR, Color.magenta);
 
-        // Add direction ray visualization
+        // Red line for forward direction
         Vector3 nodePosition = node.position;
-        Vector3 directionEnd = nodePosition + node.forward * far * 4f; // Extend past far plane
+        Vector3 directionEnd = nodePosition + node.forward * far * 4f; 
         DrawLine(nodePosition, directionEnd, Color.red);
     }
 
+    /// <summary>
+    /// Draws a single line (start->end) with a LineRenderer for debugging.
+    /// We'll store it in 'spawnedObjects' so we can clear them next time.
+    /// </summary>
     private void DrawLine(Vector3 start, Vector3 end, Color color)
     {
         GameObject lineObj = new GameObject("Line_OffsetCamVis");
-        spawnedObjects.Add(lineObj);
+        // Add to debug objects instead of spawnedObjects
+        debugVisualizationObjects.Add(lineObj);
 
         var lr = lineObj.AddComponent<LineRenderer>();
         lr.positionCount = 2;
@@ -251,7 +260,7 @@ public class GeminiRaycast : MonoBehaviour
         lr.startWidth = rayWidth;
         lr.endWidth = rayWidth;
 
-        if (lineMaterial)
+        if (lineMaterial != null)
             lr.material = lineMaterial;
         else
             lr.material = new Material(Shader.Find("Sprites/Default"));
@@ -259,72 +268,14 @@ public class GeminiRaycast : MonoBehaviour
         lr.material.color = color;
     }
 
-    private void SpawnSphereWithLabel(Vector3 position, string label)
-    {
-        GameObject sphereObj = (spherePrefab != null)
-            ? Instantiate(spherePrefab, position, Quaternion.identity)
-            : GameObject.CreatePrimitive(PrimitiveType.Sphere);
-
-        sphereObj.transform.position = position;
-        sphereObj.name = $"GeminiHit_{label}";
-        spawnedObjects.Add(sphereObj);
-
-        sphereObj.transform.localScale = Vector3.one * sphereSize;
-
-        if (sphereMaterial != null)
-        {
-            var rend = sphereObj.GetComponentInChildren<Renderer>();
-            if (rend != null) rend.material = sphereMaterial;
-        }
-
-        SphereToggleScript sphereToggleScript = null;
-        if (InfoPanel != null)
-        {
-            sphereToggleScript = sphereObj.GetComponentInChildren<SphereToggleScript>();
-            if (sphereToggleScript != null) 
-            {
-                sphereToggleScript.InfoPanel = InfoPanel;
-                sphereToggleScript.questionsParent = InfoPanel.transform;
-            }
-
-            var menuScript = InfoPanel.GetComponentInChildren<MenuScript>();
-            if (menuScript != null) sphereToggleScript.menuScript = menuScript;
-        }
-
-        if (labelPrefab != null)
-        {
-            var lblObj = Instantiate(labelPrefab, sphereObj.transform);
-            lblObj.name = $"Label_{label}";
-            lblObj.transform.localPosition = new Vector3(0f, labelOffset, 0f);
-            
-            // Add a LookAt component to make the label face the camera
-            var lookAt = lblObj.AddComponent<LookAtCamera>();
-            lookAt.targetCamera = xrCamera;
-            
-            spawnedObjects.Add(lblObj);
-
-            var tmp = lblObj.GetComponentInChildren<TextMeshPro>();
-            if (tmp) tmp.text = label;
-
-            // give tmp to sphereToggleScript
-            if (sphereToggleScript != null) sphereToggleScript.labelUnderSphere = tmp;
-        }
-
-        if (questionAnswerer != null)
-        {
-            // pass the questionAnswerer to the sphereToggleScript
-            if (sphereToggleScript != null)
-            {
-                sphereToggleScript.questionAnswerer = questionAnswerer;
-                sphereToggleScript.answerPanel = answerPanel;
-            }
-        }
-    }
-
+    /// <summary>
+    /// Visualizes a ray segment from start to end (for the ray's path).
+    /// </summary>
     private void VisualizeRaySegment(Vector3 start, Vector3 end, Color color)
     {
         var lineObj = new GameObject("RayVisualizer");
-        spawnedObjects.Add(lineObj);
+        // Add to debug objects instead of spawnedObjects
+        debugVisualizationObjects.Add(lineObj);
 
         var lr = lineObj.AddComponent<LineRenderer>();
         lr.positionCount = 2;
@@ -340,12 +291,15 @@ public class GeminiRaycast : MonoBehaviour
         lr.material.color = color;
     }
 
-    private void ClearSpawnedObjects()
+    /// <summary>
+    /// Clears only the debug visualization objects (lines) from the previous frame
+    /// </summary>
+    private void ClearDebugObjects()
     {
-        foreach (var obj in spawnedObjects)
+        foreach (var obj in debugVisualizationObjects)
         {
             if (obj) Destroy(obj);
         }
-        spawnedObjects.Clear();
+        debugVisualizationObjects.Clear();
     }
 }

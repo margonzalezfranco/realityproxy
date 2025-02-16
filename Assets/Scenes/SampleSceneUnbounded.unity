@@ -7371,12 +7371,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   xrCamera: {fileID: 5030769454512039463}
+  sceneObjectManager: {fileID: 1653693109}
   offsetNode: {fileID: 1875304742}
-  spherePrefab: {fileID: 331860115575953182, guid: 652d8b363c26044ad94d60358fe88244, type: 3}
-  sphereMaterial: {fileID: -876546973899608171, guid: 0927d29e476ce5843b1f7d2a96943c51, type: 3}
-  sphereSize: 0.025
-  labelPrefab: {fileID: 6763369549751811372, guid: 087648f9929d146718b933af6db0728f, type: 3}
-  labelOffset: 1.2
   maxRayDistance: 100
   visualizeRays: 0
   lineMaterial: {fileID: 0}
@@ -7387,9 +7383,7 @@ MonoBehaviour:
   offsetNodeAspect: 1.7777778
   offsetNodeNear: 0.1
   offsetNodeFar: 0.4
-  InfoPanel: {fileID: 90799424}
-  answerPanel: {fileID: 1093593259}
-  questionAnswerer: {fileID: 1557741984}
+  spawnedObjects: []
 --- !u!114 &1557741984
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -7674,6 +7668,61 @@ MeshRenderer:
   m_SortingLayer: 0
   m_SortingOrder: 0
   m_AdditionalVertexStreams: {fileID: 0}
+--- !u!1 &1653693108
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1653693110}
+  - component: {fileID: 1653693109}
+  m_Layer: 0
+  m_Name: SceneObjectManager
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1653693109
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1653693108}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 68c0b77190e3b40e48a0f40c93d5722f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  matchingRadius: 0.3
+  spherePrefab: {fileID: 331860115575953182, guid: 652d8b363c26044ad94d60358fe88244, type: 3}
+  sphereMaterial: {fileID: 0}
+  labelPrefab: {fileID: 6763369549751811372, guid: 087648f9929d146718b933af6db0728f, type: 3}
+  sphereSize: 0.025
+  labelOffset: 1.2
+  xrCamera: {fileID: 5030769454512039463}
+  InfoPanel: {fileID: 90799424}
+  answerPanel: {fileID: 1093593259}
+  questionAnswerer: {fileID: 1557741984}
+  geminiRaycast: {fileID: 1557741983}
+--- !u!4 &1653693110
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1653693108}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -0.25085646, y: -0.2510212, z: 0.4413188}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1703431589
 GameObject:
   m_ObjectHideFlags: 0
@@ -10178,3 +10227,4 @@ SceneRoots:
   - {fileID: 1861026697}
   - {fileID: 1557741982}
   - {fileID: 1538632899}
+  - {fileID: 1653693110}

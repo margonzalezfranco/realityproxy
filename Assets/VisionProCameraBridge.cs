@@ -23,7 +23,9 @@ public class VisionProCameraBridge : MonoBehaviour
     private static extern int getCameraChosenHeight();
 #endif
 
+    #pragma warning disable 0414
     private bool hasAcquiredTexture = false;
+    #pragma warning restore 0414
     private Texture2D nativeTexture;
     private IntPtr nativeTexPtr = IntPtr.Zero;
 
