@@ -67,3 +67,5 @@ Thumbs.db
 *.backup
 Assets/UniversalRenderPipelineGlobalSettings.asset
 ProjectSettings/ProjectSettings.asset
+Assets/UniversalRenderPipelineGlobalSettings.asset
+ProjectSettings/ProjectSettings.asset
