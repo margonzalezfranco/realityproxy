@@ -7745,13 +7745,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 68c0b77190e3b40e48a0f40c93d5722f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  matchingRadius: 0.05
+  matchingRadius: 0.06
   spherePrefab: {fileID: 331860115575953182, guid: 652d8b363c26044ad94d60358fe88244, type: 3}
   sphereMaterial: {fileID: 0}
   labelPrefab: {fileID: 6763369549751811372, guid: 087648f9929d146718b933af6db0728f, type: 3}
-  sphereSize: 0.025
+  sphereSize: 0.04
   labelOffset: 1.2
-  labelScale: 0.1
+  labelScale: 0.05
   xrCamera: {fileID: 5030769454512039463}
   InfoPanel: {fileID: 90799424}
   answerPanel: {fileID: 1093593259}
