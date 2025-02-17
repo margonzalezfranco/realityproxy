@@ -18,7 +18,7 @@ public class SceneObjectManager : MonoBehaviour
     public GameObject spherePrefab;
     public Material sphereMaterial;
     public GameObject labelPrefab;
-    public float sphereSize = 0.025f;
+    public float sphereSize = 0.04f;
     public float labelOffset = 1.2f;
     [Tooltip("Scale multiplier for the label prefab")]
     public float labelScale = 0.1f;
