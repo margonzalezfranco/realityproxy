@@ -62,7 +62,14 @@ public class SphereToggleScript : MonoBehaviour
     [Tooltip("Manager that tracks all recognized objects in the scene.")]
     public SceneObjectManager sceneObjManager;
 
+    [Header("Scene Analysis")]
+    public SceneContextManager sceneContextManager;
+    private SceneContext currentSceneAnalysis;
+
     private bool isOn = false;
+
+    private string currentSceneContext = "unknown environment";
+    private string currentTaskContext = "no specific task";
 
     private void Start()
     {
@@ -76,6 +83,44 @@ public class SphereToggleScript : MonoBehaviour
         {
             spatialUIToggle.m_ToggleChanged.AddListener(OnSphereToggled);
         }
+
+        if (sceneContextManager != null)
+        {
+            sceneContextManager.OnSceneContextComplete += HandleSceneAnalysis;
+        }
+    }
+
+    private void OnDestroy()
+    {
+        if (sceneContextManager != null)
+        {
+            sceneContextManager.OnSceneContextComplete -= HandleSceneAnalysis;
+        }
+    }
+
+    private void HandleSceneAnalysis(SceneContext analysis)
+    {
+        currentSceneAnalysis = analysis;
+    }
+
+    private void UpdateSceneContext()
+    {
+        currentSceneContext = "unknown environment";
+        currentTaskContext = "no specific task";
+        
+        // Get current analysis from sceneContextManager
+        if (sceneContextManager != null && sceneContextManager.GetCurrentAnalysis() != null)
+        {
+            var analysis = sceneContextManager.GetCurrentAnalysis();
+            currentSceneContext = analysis.sceneType ?? "unknown environment";
+            if (analysis.possibleTasks != null && analysis.possibleTasks.Count > 0)
+            {
+                currentTaskContext = string.Join(", ", analysis.possibleTasks);
+            }
+        }
+
+        Debug.Log($"Using scene context: {currentSceneContext}");
+        Debug.Log($"Using task context: {currentTaskContext}");
     }
 
     private void OnSphereToggled(bool toggledOn)
@@ -85,6 +130,9 @@ public class SphereToggleScript : MonoBehaviour
         if (isOn)
         {
             InfoPanel.SetActive(true);
+
+            // Update context before generating questions and relationships
+            UpdateSceneContext();
 
             // We just toggled ON this sphere: tell the menu to update the title
             if (labelUnderSphere != null)
@@ -126,9 +174,30 @@ public class SphereToggleScript : MonoBehaviour
 
         // 2) Build a simple prompt that references the label Content
         //    "Ask up to 5 questions about this item"
+
+        // original prompt without context:
+        // string prompt = $@"
+        //     You are provided an image (inline data) plus the label: '{labelContent}'.
+        //     Please return a JSON list of possible user questions about this product/item.
+        //     Focus on questions that are relevant to the current scene context and tasks.
+        //     Return only the most likely questions, up to 5 maximum.
+        //     In the format:
+        //     json
+        //     [
+        //     ""Question 1"",
+        //     ""Question 2"",
+        //     ...
+        //     ]
+        //     ";
+
+        // based on the current scene context and task context:
         string prompt = $@"
-            You are provided an image (inline data) plus the label: '{labelContent}'.
+            Given the current scene context: {currentSceneContext},
+            and the potential tasks: {currentTaskContext},
+            and that the user is holding / selecting this item: {labelContent},
+
             Please return a JSON list of possible user questions about this product/item.
+            Focus on questions that are relevant to the current scene context and tasks.
             Return only the most likely questions, up to 5 maximum.
             In the format:
             json
@@ -146,7 +215,7 @@ public class SphereToggleScript : MonoBehaviour
             yield return null;
 
         string geminiResponse = requestTask.Result;
-        Debug.Log("Gemini Questions Response:\n" + geminiResponse);
+        // Debug.Log("Gemini Questions Response:\n" + geminiResponse);
 
         // 4) Extract JSON
         string extractedJson = TryExtractJson(geminiResponse);
@@ -239,15 +308,21 @@ public class SphereToggleScript : MonoBehaviour
         // remove the "in-hand" label so it doesn't appear in the "others"
         itemLabels.Remove(inHandLabel);
 
-        // 2) Build the prompt
+        // future possible feature:
+        // categorize the current user intent based on the scene context and task context -> "Compare", "Find similar", "Find task-related objects", etc. then use it as a part of the context to guide the relationship generation.
+        
         string prompt = $@"
-        Given that the user is holding the {inHandLabel},
+        Given this scene context: {currentSceneContext},
+        the potential tasks: {currentTaskContext},
+        and that the user is holding / selecting this item: {inHandLabel},
 
         Find objects that are most related to this {inHandLabel} in the current scene, considering:
         1. The overall scene context and task
         2. Spatial relationships
         3. Functional relationships in the context of the task
         4. Common usage patterns
+
+        Reminder: Don't include unrelated items in the output which are not related to the current task. It should be functionally related to the {inHandLabel}.
 
         Choose only from these detected items: {string.Join(", ", itemLabels)}.
 
@@ -258,7 +333,12 @@ public class SphereToggleScript : MonoBehaviour
           ""object2"": ""located next to item"",
           ""object3"": ""complements main task""
         }}
+
+        if you don't find any meaningful relationships between the {inHandLabel} and other items in the current scene, return an empty JSON object:
+        {{}}
         ";
+
+        Debug.Log("Relationships prompt:\n" + prompt);
 
         // 3) Call Gemini (not using an image here, but you could if relevant)
         var requestTask = geminiClient.GenerateContent(prompt, null);
@@ -267,7 +347,7 @@ public class SphereToggleScript : MonoBehaviour
             yield return null;
 
         string rawResponse = requestTask.Result;
-        Debug.Log($"Relationships raw response:\n{rawResponse}");
+        // Debug.Log($"Relationships raw response:\n{rawResponse}");
 
         // 4) Extract JSON portion
         string extractedJson = TryExtractJson(rawResponse);
@@ -290,9 +370,17 @@ public class SphereToggleScript : MonoBehaviour
             Debug.LogWarning("Failed to parse relationships JSON: " + e);
         }
 
+        // Handle empty or null relationships
         if (relationshipsDict == null || relationshipsDict.Count == 0)
         {
-            Debug.Log($"No relationships found for '{inHandLabel}'. Possibly no relevant items.");
+            Debug.Log($"No meaningful relationships found for '{inHandLabel}' in the current context.");
+            
+            // Clear any existing relationship lines since there are no relationships
+            if (relationLineManager != null)
+            {
+                relationLineManager.ClearAllLines();
+            }
+
             yield break;
         }
 

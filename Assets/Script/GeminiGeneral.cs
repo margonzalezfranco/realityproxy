@@ -115,7 +115,7 @@ public class GeminiGeneral : MonoBehaviour
             }
             
             string textWithBackticks = root.candidates[0].content.parts[0].text ?? "";
-            Debug.Log("Gemini response text:\n" + textWithBackticks);
+            // Debug.Log("Gemini response text:\n" + textWithBackticks);
 
             if (textWithBackticks.Contains("```json"))
             {

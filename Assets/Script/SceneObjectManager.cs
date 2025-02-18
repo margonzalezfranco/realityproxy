@@ -41,6 +41,9 @@ public class SceneObjectManager : MonoBehaviour
     [Tooltip("Manager that tracks all recognized objects in the scene.")]
     public SceneObjectManager sceneObjManager;
 
+    [Tooltip("Scene analyzer to provide context for relationships.")]
+    public SceneContextManager sceneContextManager;
+
     private void Awake()
     {
         // Basic singleton pattern
@@ -144,7 +147,7 @@ public class SceneObjectManager : MonoBehaviour
         GameObject sphereObj = SpawnSphereWithLabel(position, label);
         newAnchor.sphereObj = sphereObj;
 
-        Debug.Log($"Created new anchor with label={label} at pos={position}");
+        // Debug.Log($"Created new anchor with label={label} at pos={position}");
         return newAnchor;
     }
 
@@ -181,6 +184,7 @@ public class SceneObjectManager : MonoBehaviour
                 sphereToggleScript.questionsParent = InfoPanel.transform;
                 sphereToggleScript.relationLineManager = relationLineManager;
                 sphereToggleScript.sceneObjManager = sceneObjManager;
+                sphereToggleScript.sceneContextManager = sceneContextManager;
             }
 
             var menuScript = InfoPanel.GetComponentInChildren<MenuScript>();

@@ -52,7 +52,7 @@ public class Gemini2DBoundingBoxDetector : GeminiGeneral
         }
         string response = request.Result;
 
-        Debug.Log(response);
+        // Debug.Log(response);
 
         // 5) Parse JSON
         List<Box2DResult> boxResults = ParseBoundingBoxResponse(response);
