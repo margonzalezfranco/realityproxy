@@ -9,7 +9,6 @@ public class MyHandTracking : MonoBehaviour
     private XRHandSubsystem handSubsystem;
 
     [Header("Debug Visualization")]
-    public bool showDebugInfo = true;
     public bool visualizeJoints = true;
     private GameObject[] leftHandVisualizers;
     private GameObject[] rightHandVisualizers;
@@ -62,10 +61,8 @@ public class MyHandTracking : MonoBehaviour
         if (hand.GetJoint(XRHandJointID.Wrist).TryGetPose(out Pose wristPose))
         {
             string handName = isLeft ? "Left" : "Right";
-            if (showDebugInfo)
-            {
-                // Debug.Log($"{handName} hand position: {wristPose.position}");
-            }
+
+            // Debug.Log($"{handName} hand position: {wristPose.position}");
 
             // Update joint visualizers if enabled
             if (visualizeJoints)
