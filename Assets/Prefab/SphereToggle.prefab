@@ -289,3 +289,5 @@ MonoBehaviour:
   answerPanel: {fileID: 0}
   relationLineManager: {fileID: 0}
   sceneObjManager: {fileID: 0}
+  sceneContextManager: {fileID: 0}
+  menuOffset: {x: -6, y: 0, z: 0.25}

@@ -114,13 +114,13 @@ public class MyHandTracking : MonoBehaviour
             var leftVisualizer = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             leftVisualizer.transform.localScale = Vector3.one * 0.01f; // 1cm spheres
             leftVisualizer.SetActive(false);
-            leftVisualizer.layer = LayerMask.NameToLayer("Ignore Raycast");
+            leftVisualizer.layer = LayerMask.NameToLayer("PolySpatial");
             leftHandVisualizers[i] = leftVisualizer;
 
             var rightVisualizer = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             rightVisualizer.transform.localScale = Vector3.one * 0.01f; // 1cm spheres
             rightVisualizer.SetActive(false);
-            rightVisualizer.layer = LayerMask.NameToLayer("Ignore Raycast");
+            rightVisualizer.layer = LayerMask.NameToLayer("PolySpatial");
             rightHandVisualizers[i] = rightVisualizer;
 
             // Debug log to confirm initialization

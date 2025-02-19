@@ -16,6 +16,10 @@ public class HandGrabTrigger : MonoBehaviour
     [Tooltip("How close to the plane the anchor must be to count as 'on-plane'.")]
     public float planeDistanceThreshold = 0.1f;
 
+    [Header("Grab Settings")]
+    [Tooltip("Offset from hand center where the anchor should be positioned")]
+    public Vector3 grabOffset = Vector3.zero;
+
     // The anchor currently grabbed (if any)
     private SceneObjectAnchor _grabbedAnchor = null;
 
@@ -33,6 +37,10 @@ public class HandGrabTrigger : MonoBehaviour
     private SceneObjectAnchor _lastReleasedAnchor = null;
     private bool _justReleased = false;
 
+    // Add these event declarations at the top of the class
+    public delegate void AnchorGrabEventHandler(SceneObjectAnchor anchor);
+    public static event AnchorGrabEventHandler OnAnchorGrabbed;
+    public static event AnchorGrabEventHandler OnAnchorReleased;
 
     /// <summary>
     /// Called when the hand's trigger collider intersects another collider.
@@ -50,7 +58,7 @@ public class HandGrabTrigger : MonoBehaviour
             return;
         }
 
-        // If we just released an anchor and haven't fully exited that anchor’s collider,
+        // If we just released an anchor and haven't fully exited that anchor's collider,
         // we skip re-grabbing the same anchor
         if (_justReleased)
         {
@@ -76,7 +84,15 @@ public class HandGrabTrigger : MonoBehaviour
             Debug.Log($"OnTriggerEnter - Found valid anchor on plane. Distance: {dist}");
             // Grab this anchor
             _grabbedAnchor = anchor;
-            _grabbedAnchor.sphereObj.transform.SetParent(transform);
+            
+            // Instead of setting parent, make it a sibling
+            _grabbedAnchor.sphereObj.transform.SetParent(transform.parent);
+            
+            // Position the anchor at the hand's center
+            UpdateAnchorPosition();
+
+            // Invoke the grab event
+            OnAnchorGrabbed?.Invoke(_grabbedAnchor);
 
             Debug.Log($"HandGrabTrigger: Grabbed anchor '{anchor.label}'");
         }
@@ -92,9 +108,11 @@ public class HandGrabTrigger : MonoBehaviour
     /// </summary>
     private void Update()
     {
-        // If we're currently holding an anchor, check plane distance
+        // If we're currently holding an anchor, update its position
         if (_grabbedAnchor != null)
         {
+            UpdateAnchorPosition();
+
             bool onPlane = IsOnPlane(_grabbedAnchor, out float dist);
 
             // If we haven't lifted it off-plane yet...
@@ -119,6 +137,30 @@ public class HandGrabTrigger : MonoBehaviour
         }
     }
 
+    // New method to handle anchor position updates
+    private void UpdateAnchorPosition()
+    {
+        if (_grabbedAnchor != null && _grabbedAnchor.sphereObj != null)
+        {
+            // Update position to match hand position plus offset
+            _grabbedAnchor.sphereObj.transform.position = transform.position + transform.TransformDirection(grabOffset);
+            
+            // Reset the label's rotation (find the child named "Label_*")
+            Transform labelTransform = _grabbedAnchor.sphereObj.transform.GetComponentInChildren<LookAtCamera>()?.transform;
+            if (labelTransform != null && labelTransform.localRotation != Quaternion.identity)
+            {
+                labelTransform.localRotation = Quaternion.identity;
+            }
+
+            // Make the grabbed anchor look at the main camera
+            if (Camera.main != null)
+            {
+                Vector3 directionToCamera = Camera.main.transform.position - _grabbedAnchor.sphereObj.transform.position;
+                _grabbedAnchor.sphereObj.transform.rotation = Quaternion.LookRotation(-directionToCamera);
+            }
+        }
+    }
+
     /// <summary>
     /// Releases the currently held anchor, stopping it from following the hand.
     /// </summary>
@@ -129,12 +171,12 @@ public class HandGrabTrigger : MonoBehaviour
 
         Debug.Log($"HandGrabTrigger: Released anchor '{_grabbedAnchor.label}'");
 
+        // Invoke the release event before changing references
+        OnAnchorReleased?.Invoke(_grabbedAnchor);
+
         // Mark this anchor as "just released" to avoid immediate re-pickup
         _lastReleasedAnchor = _grabbedAnchor;
         _justReleased = true;
-
-        // Stop following the hand
-        _grabbedAnchor.sphereObj.transform.SetParent(null);
 
         // Final position update
         _grabbedAnchor.position = _grabbedAnchor.sphereObj.transform.position;

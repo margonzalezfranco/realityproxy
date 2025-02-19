@@ -6,6 +6,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using Newtonsoft.Json;
+using UnityEngine.XR.Interaction.Toolkit.UI;
 
 /// <summary>
 /// Script attached to each sphere toggled in the scene. 
@@ -66,6 +67,10 @@ public class SphereToggleScript : MonoBehaviour
     public SceneContextManager sceneContextManager;
     private SceneContext currentSceneAnalysis;
 
+    [Header("Menu Positioning")]
+    [Tooltip("Offset position of the menu canvas relative to the anchor when grabbed")]
+    public Vector3 menuOffset = new Vector3(-6f, 0f, 0.25f); // Default slightly above the anchor
+
     private bool isOn = false;
 
     private string currentSceneContext = "unknown environment";
@@ -88,6 +93,10 @@ public class SphereToggleScript : MonoBehaviour
         {
             sceneContextManager.OnSceneContextComplete += HandleSceneAnalysis;
         }
+
+        // Subscribe to anchor grab/release events
+        HandGrabTrigger.OnAnchorGrabbed += HandleAnchorGrabbed;
+        HandGrabTrigger.OnAnchorReleased += HandleAnchorReleased;
     }
 
     private void OnDestroy()
@@ -96,6 +105,10 @@ public class SphereToggleScript : MonoBehaviour
         {
             sceneContextManager.OnSceneContextComplete -= HandleSceneAnalysis;
         }
+
+        // Unsubscribe from anchor events
+        HandGrabTrigger.OnAnchorGrabbed -= HandleAnchorGrabbed;
+        HandGrabTrigger.OnAnchorReleased -= HandleAnchorReleased;
     }
 
     private void HandleSceneAnalysis(SceneContext analysis)
@@ -491,5 +504,71 @@ public class SphereToggleScript : MonoBehaviour
         if (tex == null) return null;
         var bytes = tex.EncodeToPNG();
         return Convert.ToBase64String(bytes);
+    }
+
+    private void HandleAnchorGrabbed(SceneObjectAnchor anchor)
+    {
+        // Check if this is our anchor
+        if (anchor.sphereObj == this.gameObject)
+        {
+            // Find the Menu canvas parent of InfoPanel
+            Transform menuCanvas = InfoPanel.transform.parent;
+            if (menuCanvas != null && menuCanvas.name == "Menu")
+            {
+                // Disable LazyFollow component if it exists
+                LazyFollow lazyFollow = menuCanvas.GetComponent<LazyFollow>();
+                if (lazyFollow != null)
+                {
+                    lazyFollow.enabled = false;
+                }
+
+                // Deactivate first two children
+                if (menuCanvas.childCount >= 2)
+                {
+                    menuCanvas.GetChild(0).gameObject.SetActive(false);
+                    menuCanvas.GetChild(1).gameObject.SetActive(false);
+                }
+
+                // Set the Menu canvas as a child of our sphere
+                menuCanvas.SetParent(transform);
+                menuCanvas.localPosition = menuOffset;
+                menuCanvas.localRotation = Quaternion.identity;
+
+                // Trigger the toggle ON functionality
+                OnSphereToggled(true);
+            }
+        }
+    }
+
+    private void HandleAnchorReleased(SceneObjectAnchor anchor)
+    {
+        // Check if this is our anchor
+        if (anchor.sphereObj == this.gameObject)
+        {
+            // Find the Menu canvas parent of InfoPanel
+            Transform menuCanvas = InfoPanel.transform.parent;
+            if (menuCanvas != null && menuCanvas.name == "Menu")
+            {
+                // Reset the Menu canvas parent to its original parent (likely the scene root or XR rig)
+                menuCanvas.SetParent(null);
+
+                // Re-enable LazyFollow component if it exists
+                LazyFollow lazyFollow = menuCanvas.GetComponent<LazyFollow>();
+                if (lazyFollow != null)
+                {
+                    lazyFollow.enabled = true;
+                }
+
+                // Reactivate first two children
+                if (menuCanvas.childCount >= 2)
+                {
+                    menuCanvas.GetChild(0).gameObject.SetActive(true);
+                    menuCanvas.GetChild(1).gameObject.SetActive(true);
+                }
+
+                // Trigger the toggle OFF functionality
+                OnSphereToggled(false);
+            }
+        }
     }
 }
