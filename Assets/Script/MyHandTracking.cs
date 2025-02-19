@@ -8,6 +8,13 @@ public class MyHandTracking : MonoBehaviour
     public XROrigin xrOrigin;
     private XRHandSubsystem handSubsystem;
 
+    [Header("Hand Prefabs")]
+    [SerializeField] GameObject m_LeftHandPrefab;
+    [SerializeField] GameObject m_RightHandPrefab;
+
+    private GameObject m_SpawnedLeftHand;
+    private GameObject m_SpawnedRightHand;
+
     [Header("Debug Visualization")]
     public bool visualizeJoints = true;
     private GameObject[] leftHandVisualizers;
@@ -17,12 +24,25 @@ public class MyHandTracking : MonoBehaviour
     {
         // Get the hand subsystem
         var handSubsystems = new List<XRHandSubsystem>();
+
+        if (m_LeftHandPrefab)
+            m_SpawnedLeftHand = Instantiate(m_LeftHandPrefab, new Vector3(0, 1, 0), Quaternion.identity, xrOrigin.transform);
+
+        if (m_RightHandPrefab)
+            m_SpawnedRightHand = Instantiate(m_RightHandPrefab, new Vector3(0, 1, 0), Quaternion.identity, xrOrigin.transform);
+
+        if (m_SpawnedLeftHand)
+            m_SpawnedLeftHand.AddComponent<HandGrabTrigger>();
+
+        if (m_SpawnedRightHand)
+            m_SpawnedRightHand.AddComponent<HandGrabTrigger>();
+
         SubsystemManager.GetSubsystems(handSubsystems);
         
         if (handSubsystems.Count > 0)
         {
             handSubsystem = handSubsystems[0];
-            // Debug.Log("Hand tracking subsystem found!");
+            Debug.Log("Hand tracking subsystem found!");
 
             if (visualizeJoints)
             {
@@ -31,7 +51,7 @@ public class MyHandTracking : MonoBehaviour
         }
         else
         {
-            // Debug.LogWarning("No hand tracking subsystem found!");
+            Debug.LogWarning("No hand tracking subsystem found!");
         }
     }
 
@@ -58,11 +78,22 @@ public class MyHandTracking : MonoBehaviour
     private void ProcessHand(XRHand hand, bool isLeft)
     {
         // Get root pose
-        if (hand.GetJoint(XRHandJointID.Wrist).TryGetPose(out Pose wristPose))
+        if (hand.GetJoint(XRHandJointID.MiddleDistal).TryGetPose(out Pose middleDistalPose))
         {
             string handName = isLeft ? "Left" : "Right";
 
-            // Debug.Log($"{handName} hand position: {wristPose.position}");
+            // Debug.Log($"{handName} hand position: {middleDistalPose.position}");
+
+            if (isLeft && m_SpawnedLeftHand)
+            {
+                m_SpawnedLeftHand.transform.position = middleDistalPose.position;
+                m_SpawnedLeftHand.transform.rotation = middleDistalPose.rotation;
+            }
+            else if (!isLeft && m_SpawnedRightHand)
+            {
+                m_SpawnedRightHand.transform.position = middleDistalPose.position;
+                m_SpawnedRightHand.transform.rotation = middleDistalPose.rotation;
+            }
 
             // Update joint visualizers if enabled
             if (visualizeJoints)
