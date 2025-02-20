@@ -84,10 +84,7 @@ public class SphereToggleScript : MonoBehaviour
         }
 
         // Subscribe to the toggle's onValueChanged event
-        if (spatialUIToggle != null)
-        {
-            spatialUIToggle.m_ToggleChanged.AddListener(OnSphereToggled);
-        }
+        SubscribeToToggleEvents();
 
         if (sceneContextManager != null)
         {
@@ -106,9 +103,10 @@ public class SphereToggleScript : MonoBehaviour
             sceneContextManager.OnSceneContextComplete -= HandleSceneAnalysis;
         }
 
-        // Unsubscribe from anchor events
+        // Unsubscribe from anchor events and toggle events
         HandGrabTrigger.OnAnchorGrabbed -= HandleAnchorGrabbed;
         HandGrabTrigger.OnAnchorReleased -= HandleAnchorReleased;
+        UnsubscribeFromToggleEvents();
     }
 
     private void HandleSceneAnalysis(SceneContext analysis)
@@ -506,6 +504,23 @@ public class SphereToggleScript : MonoBehaviour
         return Convert.ToBase64String(bytes);
     }
 
+    // Add new methods to handle toggle event subscription
+    private void SubscribeToToggleEvents()
+    {
+        if (spatialUIToggle != null)
+        {
+            spatialUIToggle.m_ToggleChanged.AddListener(OnSphereToggled);
+        }
+    }
+
+    private void UnsubscribeFromToggleEvents()
+    {
+        if (spatialUIToggle != null)
+        {
+            spatialUIToggle.m_ToggleChanged.RemoveListener(OnSphereToggled);
+        }
+    }
+
     private void HandleAnchorGrabbed(SceneObjectAnchor anchor)
     {
         // Check if this is our anchor
@@ -521,6 +536,10 @@ public class SphereToggleScript : MonoBehaviour
                 {
                     lazyFollow.enabled = false;
                 }
+
+                // Unsubscribe from toggle events instead of disabling the component
+                UnsubscribeFromToggleEvents();
+                spatialUIToggle.enableInteraction = false;
 
                 // Deactivate first two children
                 if (menuCanvas.childCount >= 2)
@@ -549,7 +568,7 @@ public class SphereToggleScript : MonoBehaviour
             Transform menuCanvas = InfoPanel.transform.parent;
             if (menuCanvas != null && menuCanvas.name == "Menu")
             {
-                // Reset the Menu canvas parent to its original parent (likely the scene root or XR rig)
+                // Reset the Menu canvas parent to its original parent
                 menuCanvas.SetParent(null);
 
                 // Re-enable LazyFollow component if it exists
@@ -558,6 +577,10 @@ public class SphereToggleScript : MonoBehaviour
                 {
                     lazyFollow.enabled = true;
                 }
+
+                // Resubscribe to toggle events
+                SubscribeToToggleEvents();
+                spatialUIToggle.enableInteraction = true;
 
                 // Reactivate first two children
                 if (menuCanvas.childCount >= 2)

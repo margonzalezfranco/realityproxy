@@ -13,14 +13,18 @@ namespace PolySpatial.Template
 
         bool m_Active;
 
+        public bool enableInteraction = true;
+
         public override void PressStart()
         {
+            if (!enableInteraction) return;
             base.PressStart();
             m_PressStart.Invoke();
         }
 
         public override void PressEnd()
         {
+            if (!enableInteraction) return;
             m_PressEnd.Invoke();
             base.PressEnd();
             m_Active = !m_Active;
