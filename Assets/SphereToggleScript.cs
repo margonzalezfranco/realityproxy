@@ -31,8 +31,8 @@ public class SphereToggleScript : MonoBehaviour
     // New Fields for Gemini Re-Call
     // -----------------------------
     [Header("Gemini Re-Call Settings")]
-    [Tooltip("Your Gemini model name, e.g. 'gemini-2.0-flash-exp'")]
-    public string modelName = "gemini-2.0-flash-exp";
+    [Tooltip("Your Gemini model name, e.g. 'gemini-2.0-flash'")]
+    public string modelName = "gemini-2.0-flash";
 
     [Tooltip("Your API key")]
     public string geminiApiKey = "AIzaSyAoYU7ZM-AImpfA0faIBBz8ovLb_7n0QF4";

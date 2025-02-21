@@ -13,7 +13,7 @@ public class GeminiAPI
     private readonly string _baseEndpoint;
 
     // Provide your own model name and key here
-    // e.g., "gemini-2.0-flash-exp"
+    // e.g., "gemini-2.0-flash"
     // https://generativelanguage.googleapis.com/v1beta/models/YOUR_MODEL:generateContent?key=YOUR_KEY
     public GeminiAPI(string modelName, string apiKey)
     {

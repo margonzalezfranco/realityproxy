@@ -5563,7 +5563,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ad11e5c1a025d4ed2968da655e00bdc2, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  geminiModelName: gemini-2.0-flash-exp
+  geminiModelName: gemini-2.0-flash
   geminiApiKey: AIzaSyAoYU7ZM-AImpfA0faIBBz8ovLb_7n0QF4
   cameraRenderTex: {fileID: 8400000, guid: 78e2b50f1cd8640efa61e2994d5eaec2, type: 2}
   analysisPeriod: 20
@@ -7482,7 +7482,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3797b5796c72340d6894a560077271bf, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  geminiModelName: gemini-2.0-flash-exp
+  geminiModelName: gemini-2.0-flash
   geminiApiKey: AIzaSyAoYU7ZM-AImpfA0faIBBz8ovLb_7n0QF4
   cameraRenderTex: {fileID: 8400000, guid: 78e2b50f1cd8640efa61e2994d5eaec2, type: 2}
   overlayCanvas: {fileID: 349830609}
@@ -7542,7 +7542,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e222769426a7e4279a26ce4848987749, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  geminiModelName: gemini-2.0-flash-exp
+  geminiModelName: gemini-2.0-flash
   geminiApiKey: AIzaSyAoYU7ZM-AImpfA0faIBBz8ovLb_7n0QF4
   cameraRenderTex: {fileID: 8400000, guid: 78e2b50f1cd8640efa61e2994d5eaec2, type: 2}
   answerText: {fileID: 634796336}

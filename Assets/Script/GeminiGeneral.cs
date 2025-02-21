@@ -10,8 +10,8 @@ using Newtonsoft.Json;
 public class GeminiGeneral : MonoBehaviour
 {
     [Header("Gemini Settings")]
-    [Tooltip("Your model name, e.g. 'gemini-2.0-flash-exp'")]
-    public string geminiModelName = "gemini-2.0-flash-exp";
+    [Tooltip("Your model name, e.g. 'gemini-2.0-flash'")]
+    public string geminiModelName = "gemini-2.0-flash";
 
     [Tooltip("Your API key")]
     public string geminiApiKey = "AIzaSyAoYU7ZM-AImpfA0faIBBz8ovLb_7n0QF4";
