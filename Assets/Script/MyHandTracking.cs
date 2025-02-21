@@ -51,7 +51,9 @@ public class MyHandTracking : MonoBehaviour
         }
         else
         {
+            #if !UNITY_EDITOR
             Debug.LogWarning("No hand tracking subsystem found!");
+            #endif
         }
     }
 

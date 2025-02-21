@@ -49,56 +49,41 @@ public class RelationshipLineManager : MonoBehaviour
 
             var lr = lineObj.AddComponent<LineRenderer>();
             lr.positionCount = 2;
-            lr.SetPosition(0, sourceAnchor.position);
-            lr.SetPosition(1, targetAnchor.position);
+            lr.SetPosition(0, sourceAnchor.sphereObj.transform.position);
+            lr.SetPosition(1, targetAnchor.sphereObj.transform.position);
             lr.startWidth = lineWidth;
             lr.endWidth = lineWidth;
             lr.material = lineMaterial;
             lr.useWorldSpace = true;
             lr.material.color = Color.cyan;
 
-            // Optionally, create a label in the midpoint
+            GameObject labelObj = null;
             if (labelPrefab != null && !string.IsNullOrEmpty(relationText))
             {
-                // Calculate direction and offset the midpoint slightly upward
-                Vector3 direction = (targetAnchor.position - sourceAnchor.position).normalized;
-                var midpoint = (sourceAnchor.position + targetAnchor.position) * 0.5f + Vector3.up * 0.025f;
+                Vector3 direction = (targetAnchor.sphereObj.transform.position - 
+                                   sourceAnchor.sphereObj.transform.position).normalized;
+                var midpoint = (sourceAnchor.sphereObj.transform.position + 
+                               targetAnchor.sphereObj.transform.position) * 0.5f + 
+                               Vector3.up * 0.025f;
                 
-                // Calculate rotation to align with the line direction
                 Quaternion rotation = Quaternion.LookRotation(direction);
-                // Rotate 90 degrees around the right vector to make it face up
                 rotation *= Quaternion.Euler(0, -90f, 0f);
 
-                // Check if the label is facing away from the camera
-                Vector3 cameraForward = Camera.main.transform.forward;
-                Vector3 labelForward = rotation * Vector3.forward;
-                float dotProduct = Vector3.Dot(cameraForward, labelForward);
-                
-                // If the label is facing the same direction as the camera (dot product > 0),
-                // rotate it 180 degrees so it faces the camera
-                if (dotProduct < 0)
-                {
-                    rotation *= Quaternion.Euler(0, 180f, 0);
-                }
-                
-                var labelObj = Instantiate(labelPrefab, midpoint, rotation, lineObj.transform);
+                labelObj = Instantiate(labelPrefab, midpoint, rotation, lineObj.transform);
                 labelObj.name = $"RelLabel_{sourceAnchor.label}_to_{relatedItemLabel}";
                 labelObj.transform.localScale = Vector3.one * labelScale;
 
-                // If it's a 3D text or a small canvas with TextMeshPro
                 var tmp = labelObj.GetComponentInChildren<TextMeshPro>();
-                if (tmp != null)
-                {
-                    tmp.text = relationText;
-                }
+                if (tmp) tmp.text = relationText;
             }
 
-            // Store in active list for easy clearing
+            // Store the connection info
             activeLines.Add(new LineConnection
             {
                 lineRenderer = lr,
                 source = sourceAnchor,
-                target = targetAnchor
+                target = targetAnchor,
+                labelObject = labelObj
             });
         }
     }
@@ -123,5 +108,52 @@ public class RelationshipLineManager : MonoBehaviour
         public LineRenderer lineRenderer;
         public SceneObjectAnchor source;
         public SceneObjectAnchor target;
+        public GameObject labelObject;  // Add this to track the label
+    }
+
+    // Add Update method to continuously update line positions
+    private void Update()
+    {
+        foreach (var connection in activeLines)
+        {
+            if (connection.source != null && connection.target != null)
+            {
+                // Update line positions
+                connection.lineRenderer.SetPosition(0, connection.source.sphereObj.transform.position);
+                connection.lineRenderer.SetPosition(1, connection.target.sphereObj.transform.position);
+
+                // Update label position
+                if (connection.labelObject != null)
+                {
+                    // Calculate new midpoint with upward offset
+                    Vector3 midpoint = (connection.source.sphereObj.transform.position + 
+                                      connection.target.sphereObj.transform.position) * 0.5f + 
+                                      Vector3.up * 0.025f;
+                    
+                    connection.labelObject.transform.position = midpoint;
+
+                    // Update label rotation to face camera
+                    if (Camera.main != null)
+                    {
+                        Vector3 direction = (connection.target.sphereObj.transform.position - 
+                                           connection.source.sphereObj.transform.position).normalized;
+                        
+                        // Calculate rotation to align with line direction
+                        Quaternion rotation = Quaternion.LookRotation(direction);
+                        rotation *= Quaternion.Euler(0, -90f, 0f);
+
+                        // Check if label faces away from camera
+                        Vector3 cameraForward = Camera.main.transform.forward;
+                        Vector3 labelForward = rotation * Vector3.forward;
+                        if (Vector3.Dot(cameraForward, labelForward) < 0)
+                        {
+                            rotation *= Quaternion.Euler(0, 180f, 0);
+                        }
+
+                        connection.labelObject.transform.rotation = rotation;
+                    }
+                }
+            }
+        }
     }
 }
