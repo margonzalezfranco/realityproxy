@@ -44,6 +44,10 @@ public class SceneObjectManager : MonoBehaviour
     [Tooltip("Scene analyzer to provide context for relationships.")]
     public SceneContextManager sceneContextManager;
 
+    [Header("Level 3 Object Inspection")]
+    public GameObject descriptionPanel;
+    public TextMeshPro descriptionText;
+
     private void Awake()
     {
         // Basic singleton pattern
@@ -219,6 +223,12 @@ public class SceneObjectManager : MonoBehaviour
                 sphereToggleScript.questionAnswerer = questionAnswerer;
                 sphereToggleScript.answerPanel = answerPanel;
             }
+        }
+
+        if (descriptionText != null)
+        {
+            sphereToggleScript.descriptionText = descriptionText;
+            sphereToggleScript.descriptionPanel = descriptionPanel;
         }
 
         return sphereObj;

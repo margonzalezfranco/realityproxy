@@ -76,6 +76,17 @@ public class SphereToggleScript : MonoBehaviour
     private string currentSceneContext = "unknown environment";
     private string currentTaskContext = "no specific task";
 
+    [Header("Object Inspection")]
+    [Tooltip("Panel that shows the object description during inspection")]
+    public GameObject descriptionPanel;
+    [Tooltip("TextMeshProUGUI component that displays the object description")]
+    public TextMeshPro descriptionText;
+    [Tooltip("How often to update the description (in seconds)")]
+    public float inspectionUpdateInterval = 5f;
+    private string currentDescription = "";
+    private List<string> descriptionHistory = new List<string>();
+    private Coroutine inspectionRoutine;
+
     private void Start()
     {
         if (geminiClient == null)
@@ -169,6 +180,162 @@ public class SphereToggleScript : MonoBehaviour
             {
                 relationLineManager.ClearAllLines();
             }
+        }
+    }
+
+    private void OnObjectInspected(bool inspected)
+    {
+        if (inspected)
+        {
+            descriptionPanel.SetActive(true);
+            string labelContent = labelUnderSphere ? labelUnderSphere.text : "unknown object";
+            
+            // Start continuous inspection updates
+            if (inspectionRoutine != null)
+            {
+                StopCoroutine(inspectionRoutine);
+            }
+            inspectionRoutine = StartCoroutine(UpdateObjectDescriptionRoutine(labelContent));
+        }
+        else
+        {
+            descriptionPanel.SetActive(false);
+            // Stop the continuous updates
+            if (inspectionRoutine != null)
+            {
+                StopCoroutine(inspectionRoutine);
+                inspectionRoutine = null;
+            }
+        }
+    }
+
+    private IEnumerator UpdateObjectDescriptionRoutine(string labelContent)
+    {
+        while (true)  // Will run until inspection is turned off
+        {
+            // 1) Capture the current frame
+            Texture2D frameTex = CaptureFrame(cameraRenderTex);
+            string base64Image = ConvertTextureToBase64(frameTex);
+            Destroy(frameTex);
+
+            // 2) Build the prompt with history context
+            string historyContext = descriptionHistory.Count > 0 
+                ? "Previously observed information:\n" + string.Join("\n", descriptionHistory)
+                : "No previous observations.";
+
+            // without history, finger pointing at the object
+            string prompt = $@"
+                You are analyzing a {labelContent} in real-time.
+                Scene context: {currentSceneContext}
+                Task context: {currentTaskContext}
+
+                Based on the current image and considering the previous observations:
+                1. Describe any NEW details or changes you notice about the object
+                2. Focus on aspects not mentioned before
+                3. Only describe the part where the user is currently pointing at. Don't describe other parts.
+                4. Consider the object's current state, position, and interaction with the environment
+                5. If you don't see any new information, respond with 'No new observations.'
+                6. If the user is not pointing at the object, respond with 'Not being pointed at.'
+                7. The user pointing at the object is because they don't fully understand this part. So you should explain it in a way that is easy and straightforward to understand. Try to be helpful.
+
+                Format your response as follows:
+                <the part that the user is pointing at>
+                <description of the part that you think would be helpful for the user to understand in one sentence>
+
+                Keep the response concise and focused on new information only.
+                ";
+
+            // original prompt with history:
+            // string prompt = $@"
+            //     You are analyzing a {labelContent} in real-time.
+            //     Scene context: {currentSceneContext}
+            //     Task context: {currentTaskContext}
+
+            //     {historyContext}
+
+            //     Based on the current image and considering the previous observations:
+            //     1. Describe any NEW details or changes you notice about the object
+            //     2. Focus on aspects not mentioned before
+            //     3. Consider the object's current state, position, and interaction with the environment
+            //     4. If you don't see any new information, respond with 'No new observations.'
+
+            //     Keep the response concise and focused on new information only.
+            //     ";
+
+            // 3) Call Gemini
+            var requestTask = geminiClient.GenerateContent(prompt, base64Image);
+            
+            while (!requestTask.IsCompleted)
+                yield return null;
+
+            string rawResponse = requestTask.Result;
+            
+            // Parse the response using GeminiGeneral's parser
+            string newObservation = ParseGeminiRawResponse(rawResponse);
+
+            // 4) Update the description if we have new information
+            if (!string.IsNullOrEmpty(newObservation))
+            {
+                if (newObservation.Contains("Not being pointed at")) newObservation = "";
+                
+                descriptionHistory.Add(newObservation);
+
+                currentDescription = newObservation;
+
+                // Update the UI
+                if (descriptionText != null)
+                {
+                    descriptionText.text = currentDescription;
+                }
+            }
+
+            // // 4) Update the description if we have new information, additionally add to history
+            // if (!string.IsNullOrEmpty(newObservation) && !newObservation.Contains("No new observations"))
+            // {
+            //     // Add to history
+            //     descriptionHistory.Add(newObservation);
+
+            //     // Update the full description
+            //     if (string.IsNullOrEmpty(currentDescription))
+            //     {
+            //         currentDescription = newObservation;
+            //     }
+            //     else
+            //     {
+            //         currentDescription += "\n\n" + newObservation;
+            //     }
+
+            //     // Update the UI
+            //     if (descriptionText != null)
+            //     {
+            //         descriptionText.text = currentDescription;
+            //     }
+            // }
+
+            // Wait for the specified interval before next update
+            yield return new WaitForSeconds(inspectionUpdateInterval);
+        }
+    }
+
+    private string ParseGeminiRawResponse(string response)
+    {
+        try
+        {
+            var root = JsonConvert.DeserializeObject<GeminiRoot>(response);
+
+            if (root?.candidates == null || root.candidates.Count == 0 
+                || root.candidates[0].content?.parts == null || root.candidates[0].content.parts.Count == 0)
+            {
+                Debug.LogError("Gemini root structure incomplete, no candidates or content/parts found.");
+                return null;
+            }
+            
+            return root.candidates[0].content.parts[0].text?.Trim() ?? "";
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"Error parsing Gemini response: {ex}");
+            return null;
         }
     }
 
@@ -555,6 +722,9 @@ public class SphereToggleScript : MonoBehaviour
 
                 // Trigger the toggle ON functionality
                 OnSphereToggled(true);
+
+                // Start object inspection
+                OnObjectInspected(true);
             }
         }
     }
@@ -591,6 +761,9 @@ public class SphereToggleScript : MonoBehaviour
 
                 // Trigger the toggle OFF functionality
                 OnSphereToggled(false);
+
+                // Stop object inspection
+                OnObjectInspected(false);
             }
         }
     }
