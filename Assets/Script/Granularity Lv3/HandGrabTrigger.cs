@@ -1,4 +1,5 @@
 using UnityEngine;
+using System.Collections;
 
 /// <summary>
 /// Put this script on each spawned hand (Left/Right).
@@ -42,6 +43,27 @@ public class HandGrabTrigger : MonoBehaviour
     public static event AnchorGrabEventHandler OnAnchorGrabbed;
     public static event AnchorGrabEventHandler OnAnchorReleased;
 
+    [Header("Twin Object Settings")]
+    [Tooltip("Offset position of the twin object relative to the anchor")]
+    public Vector3 twinOffset = new Vector3(0.03f, -0.05f, 0f); // Default: 3cm right, 5cm down
+
+    private GameObject _twinObject = null;
+    private ObjectMeshGenerator objectMeshGenerator;
+
+    [Header("Layer Settings")]
+    [Tooltip("Which layer the anchor objects should be on (default: layer 9)")]
+    public LayerMask anchorLayer = 1 << 9;  // Layer 9
+
+    private void Start()
+    {
+        // Get reference to ObjectMeshGenerator
+        objectMeshGenerator = FindAnyObjectByType<ObjectMeshGenerator>();
+        if (objectMeshGenerator == null)
+        {
+            Debug.LogWarning("No ObjectMeshGenerator found in scene!");
+        }
+    }
+
     /// <summary>
     /// Called when the hand's trigger collider intersects another collider.
     /// We check if it's an anchor's sphere, and if so, attempt to grab it
@@ -49,6 +71,12 @@ public class HandGrabTrigger : MonoBehaviour
     /// </summary>
     private void OnTriggerEnter(Collider other)
     {
+        // First check if the collider is on the correct layer
+        if ((anchorLayer.value & (1 << other.gameObject.layer)) == 0)
+        {
+            return;  // Not on the anchor layer, ignore
+        }
+
         Debug.Log("OnTriggerEnter - Start");
 
         // If we already grabbed something, ignore
@@ -91,6 +119,16 @@ public class HandGrabTrigger : MonoBehaviour
             // Position the anchor at the hand's center
             UpdateAnchorPosition();
 
+            // Generate twin object
+            if (objectMeshGenerator != null)
+            {
+                StartCoroutine(objectMeshGenerator.EstimateAndGenerateObject(null, (generatedObj) => {
+                    _twinObject = generatedObj;
+                    _twinObject.transform.SetParent(transform.parent);
+                    UpdateTwinPosition();
+                }));
+            }
+
             // Invoke the grab event
             OnAnchorGrabbed?.Invoke(_grabbedAnchor);
 
@@ -112,6 +150,11 @@ public class HandGrabTrigger : MonoBehaviour
         if (_grabbedAnchor != null)
         {
             UpdateAnchorPosition();
+            
+            if (_twinObject != null)
+            {
+                UpdateTwinPosition();
+            }
 
             bool onPlane = IsOnPlane(_grabbedAnchor, out float dist);
 
@@ -161,6 +204,23 @@ public class HandGrabTrigger : MonoBehaviour
         }
     }
 
+    private void UpdateTwinPosition()
+    {
+        if (_twinObject != null && _grabbedAnchor != null && _grabbedAnchor.sphereObj != null)
+        {
+            // Get the anchor's position and rotation
+            Vector3 anchorPos = _grabbedAnchor.sphereObj.transform.position;
+            Quaternion anchorRot = _grabbedAnchor.sphereObj.transform.rotation;
+
+            // Apply the offset in the anchor's local space
+            Vector3 offsetPosition = anchorPos + anchorRot * twinOffset;
+
+            // Update twin's transform
+            _twinObject.transform.position = offsetPosition;
+            _twinObject.transform.rotation = anchorRot;
+        }
+    }
+
     /// <summary>
     /// Releases the currently held anchor, stopping it from following the hand.
     /// </summary>
@@ -181,6 +241,13 @@ public class HandGrabTrigger : MonoBehaviour
         // Final position update
         _grabbedAnchor.position = _grabbedAnchor.sphereObj.transform.position;
 
+        // Clean up twin object
+        if (_twinObject != null)
+        {
+            Destroy(_twinObject);
+            _twinObject = null;
+        }
+
         // Reset state
         _grabbedAnchor = null;
         _isOutOfPlane = false;
@@ -195,13 +262,36 @@ public class HandGrabTrigger : MonoBehaviour
         distanceToPlane = float.PositiveInfinity;
         var anchorPos = anchor.sphereObj.transform.position;
 
-        if (Physics.Raycast(anchorPos, Vector3.down, out RaycastHit hit, checkRayLength, planeLayer))
+        // Check both up and down directions
+        RaycastHit hitDown, hitUp;
+        bool hitDownPlane = Physics.Raycast(anchorPos, Vector3.down, out hitDown, checkRayLength, planeLayer);
+        bool hitUpPlane = Physics.Raycast(anchorPos, Vector3.up, out hitUp, checkRayLength, planeLayer);
+
+        // Use SphereCast instead of CheckSphere to get distance information
+        if (Physics.SphereCast(anchorPos, 0.05f, Vector3.down, out RaycastHit sphereHit, 0.1f, planeLayer) ||
+            Physics.SphereCast(anchorPos, 0.05f, Vector3.up, out sphereHit, 0.1f, planeLayer))
         {
-            distanceToPlane = hit.distance;
-            Debug.Log("IsOnPlane: true, distanceToPlane: " + distanceToPlane);
+            distanceToPlane = sphereHit.distance;
             return true;
         }
-        Debug.Log("IsOnPlane: false");
+        // If we hit a plane in either direction, use the closest one
+        else if (hitDownPlane && hitUpPlane)
+        {
+            distanceToPlane = Mathf.Min(hitDown.distance, hitUp.distance);
+            return true;
+        }
+        else if (hitDownPlane)
+        {
+            distanceToPlane = hitDown.distance;
+            return true;
+        }
+        else if (hitUpPlane)
+        {
+            distanceToPlane = hitUp.distance;
+            return true;
+        }
+
+        Debug.Log($"IsOnPlane: No plane found in any check. Anchor position: {anchorPos}");
         return false;
     }
 

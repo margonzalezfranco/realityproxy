@@ -16,7 +16,7 @@ GameObject:
   - component: {fileID: 5702397958615809862}
   - component: {fileID: 3910136234158516406}
   - component: {fileID: 6723153283777977592}
-  m_Layer: 0
+  m_Layer: 9
   m_Name: SphereToggle
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -264,6 +264,7 @@ MonoBehaviour:
           m_BoolArgument: 0
         m_CallState: 2
   m_ToggleBackground: {fileID: 180490182277451625}
+  enableInteraction: 1
 --- !u!114 &6723153283777977592
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -291,3 +292,6 @@ MonoBehaviour:
   sceneObjManager: {fileID: 0}
   sceneContextManager: {fileID: 0}
   menuOffset: {x: -6, y: 0, z: 0.25}
+  descriptionPanel: {fileID: 0}
+  descriptionText: {fileID: 0}
+  inspectionUpdateInterval: 5

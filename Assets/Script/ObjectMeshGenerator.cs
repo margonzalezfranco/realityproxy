@@ -18,9 +18,6 @@ public class ObjectMeshGenerator : GeminiGeneral
     [Tooltip("Number of segments around the cylinder (more = smoother)")]
     public int cylinderSegments = 24;
 
-    [Header("Debug Settings")]
-    [SerializeField] private bool showDebugLogs = true;
-
     [System.Serializable]
     public class ObjectDimensions
     {
@@ -127,7 +124,7 @@ public class ObjectMeshGenerator : GeminiGeneral
     /// <summary>
     /// Convenience method to estimate and generate the object in one call
     /// </summary>
-    public IEnumerator EstimateAndGenerateObject(Material material = null)
+    public IEnumerator EstimateAndGenerateObject(Material material = null, System.Action<GameObject> onComplete = null)
     {
         yield return EstimateObjectDimensions((dimensions) =>
         {
@@ -151,6 +148,9 @@ public class ObjectMeshGenerator : GeminiGeneral
                     // Position the object in front of the camera
                     generatedObj.transform.position = Camera.main.transform.position + 
                                                     Camera.main.transform.forward * 0.3f;
+                    
+                    // Call the completion callback with the generated object
+                    onComplete?.Invoke(generatedObj);
                 }
             }
         });
