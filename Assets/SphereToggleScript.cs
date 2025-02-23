@@ -7,6 +7,8 @@ using System.Collections;
 using System.Collections.Generic;
 using Newtonsoft.Json;
 using UnityEngine.XR.Interaction.Toolkit.UI;
+using UnityEngine.XR.Hands;
+using Unity.XR.CoreUtils;
 
 /// <summary>
 /// Script attached to each sphere toggled in the scene. 
@@ -87,6 +89,23 @@ public class SphereToggleScript : MonoBehaviour
     private List<string> descriptionHistory = new List<string>();
     private Coroutine inspectionRoutine;
 
+    // Add at the top of the class with other event declarations
+    public delegate void PointingStateChangedHandler(bool isPointing);
+    public static event PointingStateChangedHandler OnPointingStateChanged;
+
+    private bool currentlyPointing = false;
+
+    [Header("Hand Tracking")]
+    [Tooltip("Reference to the MyHandTracking script")]
+    public MyHandTracking handTracking;
+
+    private GameObject pointingSphere;
+    private Vector3 relativePosition; // Store relative position to holding hand
+
+    [Header("Pointing Visualization")]
+    [Tooltip("Material to apply to the pointing sphere")]
+    public Material pointingSphereMaterial;
+
     private void Start()
     {
         if (geminiClient == null)
@@ -105,6 +124,9 @@ public class SphereToggleScript : MonoBehaviour
         // Subscribe to anchor grab/release events
         HandGrabTrigger.OnAnchorGrabbed += HandleAnchorGrabbed;
         HandGrabTrigger.OnAnchorReleased += HandleAnchorReleased;
+
+        // Subscribe to our own pointing state event
+        OnPointingStateChanged += HandlePointingStateChanged;
     }
 
     private void OnDestroy()
@@ -114,10 +136,24 @@ public class SphereToggleScript : MonoBehaviour
             sceneContextManager.OnSceneContextComplete -= HandleSceneAnalysis;
         }
 
-        // Unsubscribe from anchor events and toggle events
+        // Unsubscribe from all events
         HandGrabTrigger.OnAnchorGrabbed -= HandleAnchorGrabbed;
         HandGrabTrigger.OnAnchorReleased -= HandleAnchorReleased;
         UnsubscribeFromToggleEvents();
+        OnPointingStateChanged -= HandlePointingStateChanged;
+
+        // Make sure to set pointing state to false when destroyed
+        if (currentlyPointing)
+        {
+            currentlyPointing = false;
+            OnPointingStateChanged?.Invoke(false);
+        }
+
+        if (pointingSphere != null)
+        {
+            Destroy(pointingSphere);
+            pointingSphere = null;
+        }
     }
 
     private void HandleSceneAnalysis(SceneContext analysis)
@@ -206,6 +242,13 @@ public class SphereToggleScript : MonoBehaviour
                 StopCoroutine(inspectionRoutine);
                 inspectionRoutine = null;
             }
+            
+            // Make sure to set pointing state to false when inspection stops
+            if (currentlyPointing)
+            {
+                currentlyPointing = false;
+                OnPointingStateChanged?.Invoke(false);
+            }
         }
     }
 
@@ -276,10 +319,19 @@ public class SphereToggleScript : MonoBehaviour
             // 4) Update the description if we have new information
             if (!string.IsNullOrEmpty(newObservation))
             {
-                if (newObservation.Contains("Not being pointed at")) newObservation = "";
+                bool isPointingNow = !newObservation.Contains("Not being pointed at");
+                
+                // Check if pointing state changed
+                if (isPointingNow != currentlyPointing)
+                {
+                    currentlyPointing = isPointingNow;
+                    // Invoke the event
+                    OnPointingStateChanged?.Invoke(currentlyPointing);
+                }
+
+                if (!isPointingNow) newObservation = "";
                 
                 descriptionHistory.Add(newObservation);
-
                 currentDescription = newObservation;
 
                 // Update the UI
@@ -764,6 +816,70 @@ public class SphereToggleScript : MonoBehaviour
 
                 // Stop object inspection
                 OnObjectInspected(false);
+            }
+        }
+    }
+
+    private void HandlePointingStateChanged(bool isPointing)
+    {
+        // Clean up existing sphere if it exists
+        if (pointingSphere != null)
+        {
+            Destroy(pointingSphere);
+            pointingSphere = null;
+        }
+
+        if (isPointing && handTracking != null)
+        {
+            var handSubsystems = new List<XRHandSubsystem>();
+            SubsystemManager.GetSubsystems(handSubsystems);
+            
+            if (handSubsystems.Count > 0)
+            {
+                var handSubsystem = handSubsystems[0];
+                
+                // Get the holding hand
+                GameObject holdingHand = transform.parent == handTracking.m_SpawnedLeftHand.transform ? 
+                    handTracking.m_SpawnedLeftHand : 
+                    handTracking.m_SpawnedRightHand;
+                
+                // Get the non-holding hand
+                XRHand pointingHand = (holdingHand == handTracking.m_SpawnedLeftHand) ? 
+                    handSubsystem.rightHand : 
+                    handSubsystem.leftHand;
+                
+                // Try to get the index fingertip position
+                if (pointingHand.isTracked && pointingHand.GetJoint(XRHandJointID.IndexTip).TryGetPose(out Pose fingerTipPose))
+                {
+                    Debug.Log($"Pointing fingertip position: {fingerTipPose.position}");
+                    
+                    // Create sphere at fingertip position
+                    pointingSphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                    pointingSphere.transform.position = fingerTipPose.position;
+                    pointingSphere.transform.localScale = Vector3.one * 0.01f; // Made bigger for visibility
+                    
+                    // Calculate and store the relative position from holding hand
+                    relativePosition = holdingHand.transform.InverseTransformPoint(fingerTipPose.position);
+                    
+                    // Apply the material if assigned
+                    if (pointingSphereMaterial != null)
+                    {
+                        var renderer = pointingSphere.GetComponent<Renderer>();
+                        if (renderer != null)
+                        {
+                            renderer.material = pointingSphereMaterial;
+                        }
+                    }
+                    
+                    pointingSphere.layer = 0; // Default layer for now
+                    
+                    // Remove the collider
+                    Destroy(pointingSphere.GetComponent<Collider>());
+
+                    // Make sphere a child of the holding hand
+                    pointingSphere.transform.SetParent(holdingHand.transform);
+                    pointingSphere.transform.localPosition = relativePosition;
+                }
             }
         }
     }

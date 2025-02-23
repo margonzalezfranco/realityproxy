@@ -47,6 +47,8 @@ public class SceneObjectManager : MonoBehaviour
     [Header("Level 3 Object Inspection")]
     public GameObject descriptionPanel;
     public TextMeshPro descriptionText;
+    public MyHandTracking handTracking;
+    public Material pointingSphereMaterial;
 
     private void Awake()
     {
@@ -229,6 +231,12 @@ public class SceneObjectManager : MonoBehaviour
         {
             sphereToggleScript.descriptionText = descriptionText;
             sphereToggleScript.descriptionPanel = descriptionPanel;
+        }
+
+        if (handTracking != null)
+        {
+            sphereToggleScript.handTracking = handTracking;
+            sphereToggleScript.pointingSphereMaterial = pointingSphereMaterial;
         }
 
         return sphereObj;

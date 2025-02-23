@@ -5732,7 +5732,7 @@ MonoBehaviour:
   cameraRenderTex: {fileID: 8400000, guid: 78e2b50f1cd8640efa61e2994d5eaec2, type: 2}
   defaultMaterial: {fileID: 2100000, guid: 2ce25bbe4864f4f5ab457e08addf1a1c, type: 2}
   cylinderSegments: 24
-  showDebugLogs: 1
+  enableGeneration: 0
 --- !u!1001 &1274422331
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -7131,6 +7131,8 @@ MonoBehaviour:
   xrOrigin: {fileID: 6164032327786921724}
   m_LeftHandPrefab: {fileID: 2367959041761150376, guid: 272dab6c66be8448da11d4d4356a18a7, type: 3}
   m_RightHandPrefab: {fileID: 2367959041761150376, guid: 35c1d8053047c4b6ab2445f83284d2f7, type: 3}
+  m_SpawnedLeftHand: {fileID: 0}
+  m_SpawnedRightHand: {fileID: 0}
   visualizeJoints: 0
 --- !u!1 &1490084817
 GameObject:
@@ -8006,6 +8008,8 @@ MonoBehaviour:
   sceneContextManager: {fileID: 1242229078}
   descriptionPanel: {fileID: 1149775337}
   descriptionText: {fileID: 1728849136}
+  handTracking: {fileID: 1483904742}
+  pointingSphereMaterial: {fileID: 2100000, guid: 2ce25bbe4864f4f5ab457e08addf1a1c, type: 2}
 --- !u!4 &1653693110
 Transform:
   m_ObjectHideFlags: 0

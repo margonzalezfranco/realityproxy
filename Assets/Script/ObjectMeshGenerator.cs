@@ -18,6 +18,13 @@ public class ObjectMeshGenerator : GeminiGeneral
     [Tooltip("Number of segments around the cylinder (more = smoother)")]
     public int cylinderSegments = 24;
 
+    [Header("Generation Settings")]
+    [Tooltip("Set to false to temporarily disable mesh generation")]
+    public bool enableGeneration = true;
+
+    [Header("Runtime References")]
+    private GameObject lastGeneratedObject;
+
     [System.Serializable]
     public class ObjectDimensions
     {
@@ -126,6 +133,20 @@ public class ObjectMeshGenerator : GeminiGeneral
     /// </summary>
     public IEnumerator EstimateAndGenerateObject(Material material = null, System.Action<GameObject> onComplete = null)
     {
+        // Check if generation is enabled
+        if (!enableGeneration)
+        {
+            // Mesh generation is currently disabled
+            yield break;
+        }
+
+        // Destroy the previous object if it exists
+        if (lastGeneratedObject != null)
+        {
+            Destroy(lastGeneratedObject);
+            lastGeneratedObject = null;
+        }
+
         yield return EstimateObjectDimensions((dimensions) =>
         {
             if (dimensions != null)
@@ -145,6 +166,9 @@ public class ObjectMeshGenerator : GeminiGeneral
 
                 if (generatedObj != null)
                 {
+                    // Store reference to the new object
+                    lastGeneratedObject = generatedObj;
+
                     // Position the object in front of the camera
                     generatedObj.transform.position = Camera.main.transform.position + 
                                                     Camera.main.transform.forward * 0.3f;

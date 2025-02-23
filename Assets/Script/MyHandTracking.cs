@@ -12,8 +12,8 @@ public class MyHandTracking : MonoBehaviour
     [SerializeField] GameObject m_LeftHandPrefab;
     [SerializeField] GameObject m_RightHandPrefab;
 
-    private GameObject m_SpawnedLeftHand;
-    private GameObject m_SpawnedRightHand;
+    public GameObject m_SpawnedLeftHand;
+    public GameObject m_SpawnedRightHand;
 
     [Header("Debug Visualization")]
     public bool visualizeJoints = true;
@@ -79,22 +79,29 @@ public class MyHandTracking : MonoBehaviour
 
     private void ProcessHand(XRHand hand, bool isLeft)
     {
-        // Get root pose
-        if (hand.GetJoint(XRHandJointID.MiddleDistal).TryGetPose(out Pose middleDistalPose))
+        // Get both MiddleDistal and Wrist poses
+        if (hand.GetJoint(XRHandJointID.MiddleDistal).TryGetPose(out Pose middleDistalPose) &&
+            hand.GetJoint(XRHandJointID.Wrist).TryGetPose(out Pose wristPose))
         {
             string handName = isLeft ? "Left" : "Right";
 
-            // Debug.Log($"{handName} hand position: {middleDistalPose.position}");
+            // Calculate the midpoint between MiddleDistal and Wrist
+            Vector3 midPoint = Vector3.Lerp(middleDistalPose.position, wristPose.position, 0.5f);
+            
+            // Use wrist rotation as the base rotation
+            Quaternion handRotation = wristPose.rotation;
+
+            // Debug.Log($"{handName} hand position: {midPoint}");
 
             if (isLeft && m_SpawnedLeftHand)
             {
-                m_SpawnedLeftHand.transform.position = middleDistalPose.position;
-                m_SpawnedLeftHand.transform.rotation = middleDistalPose.rotation;
+                m_SpawnedLeftHand.transform.position = midPoint;
+                m_SpawnedLeftHand.transform.rotation = handRotation;
             }
             else if (!isLeft && m_SpawnedRightHand)
             {
-                m_SpawnedRightHand.transform.position = middleDistalPose.position;
-                m_SpawnedRightHand.transform.rotation = middleDistalPose.rotation;
+                m_SpawnedRightHand.transform.position = midPoint;
+                m_SpawnedRightHand.transform.rotation = handRotation;
             }
 
             // Update joint visualizers if enabled

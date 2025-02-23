@@ -1,5 +1,7 @@
 using UnityEngine;
 using System.Collections;
+using UnityEngine.XR.Hands;  // Add this for XRHand
+using Unity.XR.CoreUtils;    // Add this if needed for other XR utilities
 
 /// <summary>
 /// Put this script on each spawned hand (Left/Right).
@@ -53,6 +55,8 @@ public class HandGrabTrigger : MonoBehaviour
     [Header("Layer Settings")]
     [Tooltip("Which layer the anchor objects should be on (default: layer 9)")]
     public LayerMask anchorLayer = 1 << 9;  // Layer 9
+
+    private XRHand currentHandPose;
 
     private void Start()
     {
@@ -310,5 +314,15 @@ public class HandGrabTrigger : MonoBehaviour
             _lastReleasedAnchor = null;
             _justReleased = false;
         }
+    }
+
+    public void UpdateHandPose(XRHand hand)
+    {
+        currentHandPose = hand;
+    }
+
+    public XRHand GetCurrentHandPose()
+    {
+        return currentHandPose;
     }
 }
