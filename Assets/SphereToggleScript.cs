@@ -386,7 +386,7 @@ public class SphereToggleScript : MonoBehaviour
                 
                 if (pointingHand.isTracked && pointingHand.GetJoint(XRHandJointID.IndexTip).TryGetPose(out Pose fingerTipPose))
                 {
-                    // Update or create pointing sphere
+                    // Create pointing sphere if it doesn't exist
                     if (pointingSphere == null)
                     {
                         pointingSphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
@@ -399,13 +399,36 @@ public class SphereToggleScript : MonoBehaviour
                         }
                         
                         Destroy(pointingSphere.GetComponent<Collider>());
-                    }
 
-                    // Update positions
-                    pointingSphere.transform.position = fingerTipPose.position;
-                    relativePosition = holdingHand.transform.InverseTransformPoint(fingerTipPose.position);
-                    pointingSphere.transform.SetParent(holdingHand.transform);
-                    pointingSphere.transform.localPosition = relativePosition;
+                        // Calculate initial relative position
+                        relativePosition = holdingHand.transform.InverseTransformPoint(fingerTipPose.position);
+
+                        // Add DualTargetLazyFollow component
+                        var lazyFollow = pointingSphere.AddComponent<DualTargetLazyFollow>();
+                        
+                        // Configure following parameters - adjust these values as needed
+                        lazyFollow.movementSpeed = 20f; // Faster than anchor following
+                        lazyFollow.movementSpeedVariancePercentage = 0.25f;
+                        lazyFollow.minDistanceAllowed = 0.02f; // Smaller threshold for finger tracking
+                        lazyFollow.maxDistanceAllowed = 0.05f;
+                        lazyFollow.timeUntilThresholdReachesMaxDistance = 0.3f; // Faster threshold increase
+                        
+                        // Configure rotation parameters
+                        lazyFollow.minAngleAllowed = 3f;
+                        lazyFollow.maxAngleAllowed = 15f;
+                        lazyFollow.timeUntilThresholdReachesMaxAngle = 0.3f;
+                        
+                        // Set both position and rotation to follow the hand
+                        lazyFollow.positionFollowMode = LazyFollow.PositionFollowMode.Follow;
+                        lazyFollow.rotationFollowMode = LazyFollow.RotationFollowMode.LookAt;
+                        
+                        // Set the hand as both position and rotation target
+                        lazyFollow.positionTarget = holdingHand.transform;
+                        lazyFollow.rotationTarget = Camera.main.transform;
+                        
+                        // Set the offset based on the initial relative position
+                        lazyFollow.targetOffset = relativePosition;
+                    }
 
                     // Update pointing plane
                     if (pointingPlane != null)
@@ -414,10 +437,26 @@ public class SphereToggleScript : MonoBehaviour
                         Vector3 planePosition = pointingSphere.transform.position + (objectUpDirection * planeUpOffset);
                         pointingPlane.transform.position = planePosition;
                         pointingPlane.transform.rotation = pointingSphere.transform.rotation;
-                        pointingPlane.transform.SetParent(holdingHand.transform);
+                        pointingPlane.transform.SetParent(pointingSphere.transform);
                     }
                 }
             }
+        }
+    }
+
+    // Add this method to clean up when pointing stops
+    private void StopPointingVisualization()
+    {
+        if (pointingSphere != null)
+        {
+            // Clean up the DualTargetLazyFollow component
+            var lazyFollow = pointingSphere.GetComponent<DualTargetLazyFollow>();
+            if (lazyFollow != null)
+            {
+                Destroy(lazyFollow);
+            }
+            Destroy(pointingSphere);
+            pointingSphere = null;
         }
     }
 

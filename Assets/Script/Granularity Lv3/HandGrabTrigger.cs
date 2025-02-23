@@ -2,6 +2,7 @@ using UnityEngine;
 using System.Collections;
 using UnityEngine.XR.Hands;  // Add this for XRHand
 using Unity.XR.CoreUtils;    // Add this if needed for other XR utilities
+using UnityEngine.XR.Interaction.Toolkit.UI;
 
 /// <summary>
 /// Put this script on each spawned hand (Left/Right).
@@ -117,11 +118,45 @@ public class HandGrabTrigger : MonoBehaviour
             // Grab this anchor
             _grabbedAnchor = anchor;
             
-            // Instead of setting parent, make it a sibling
+            // Make the anchor a sibling of the hand instead of a child
             _grabbedAnchor.sphereObj.transform.SetParent(transform.parent);
+
+            // // Position the anchor at the hand's center
+            // UpdateAnchorPosition();
             
-            // Position the anchor at the hand's center
-            UpdateAnchorPosition();
+            // Add and configure the DualTargetLazyFollow
+            var lazyFollow = _grabbedAnchor.sphereObj.AddComponent<DualTargetLazyFollow>();
+            
+            // Configure following parameters
+            lazyFollow.movementSpeed = 12f; // Adjust this value as needed
+            lazyFollow.movementSpeedVariancePercentage = 0.25f;
+            lazyFollow.minDistanceAllowed = 0.02f;
+            lazyFollow.maxDistanceAllowed = 0.1f;
+            lazyFollow.timeUntilThresholdReachesMaxDistance = 0.5f;
+            
+            // Configure rotation parameters
+            lazyFollow.minAngleAllowed = 2f;
+            lazyFollow.maxAngleAllowed = 10f;
+            lazyFollow.timeUntilThresholdReachesMaxAngle = 0.5f;
+            
+            // Set the follow modes
+            lazyFollow.positionFollowMode = LazyFollow.PositionFollowMode.Follow;
+            lazyFollow.rotationFollowMode = LazyFollow.RotationFollowMode.LookAt;
+            
+            // Set the targets separately
+            lazyFollow.positionTarget = transform; // Hand is the position target
+            lazyFollow.rotationTarget = Camera.main.transform; // Main camera is the rotation target
+            
+            // Set the offset
+            lazyFollow.targetOffset = grabOffset;
+
+            // Reset the label's rotation (find the child named "Label_*")
+            Transform labelTransform = _grabbedAnchor.sphereObj.transform.GetComponentInChildren<LookAtCamera>()?.transform;
+            if (labelTransform != null && labelTransform.localRotation != Quaternion.identity)
+            {
+                labelTransform.localRotation = Quaternion.identity;
+            }
+
 
             // Generate twin object
             if (objectMeshGenerator != null)
@@ -153,7 +188,7 @@ public class HandGrabTrigger : MonoBehaviour
         // If we're currently holding an anchor, update its position
         if (_grabbedAnchor != null)
         {
-            UpdateAnchorPosition();
+            // UpdateAnchorPosition();
             
             if (_twinObject != null)
             {
@@ -234,6 +269,13 @@ public class HandGrabTrigger : MonoBehaviour
             return;
 
         Debug.Log($"HandGrabTrigger: Released anchor '{_grabbedAnchor.label}'");
+
+        // Remove the lazy follow component
+        var lazyFollow = _grabbedAnchor.sphereObj.GetComponent<DualTargetLazyFollow>();
+        if (lazyFollow != null)
+        {
+            Destroy(lazyFollow);
+        }
 
         // Invoke the release event before changing references
         OnAnchorReleased?.Invoke(_grabbedAnchor);
