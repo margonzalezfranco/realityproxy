@@ -85,7 +85,7 @@ public class SphereToggleScript : MonoBehaviour
     public TextMeshPro descriptionText;
     [Tooltip("How often to update the description (in seconds)")]
     public float inspectionUpdateInterval = 5f;
-    private string currentDescription = "";
+    // private string currentDescription = "";
     private List<string> descriptionHistory = new List<string>();
     private Coroutine inspectionRoutine;
 
@@ -105,6 +105,15 @@ public class SphereToggleScript : MonoBehaviour
     [Header("Pointing Visualization")]
     [Tooltip("Material to apply to the pointing sphere")]
     public Material pointingSphereMaterial;
+
+    [Tooltip("Plane to show which part is being pointed at")]
+    public GameObject pointingPlane;
+
+    [Tooltip("TextMeshPro component on the pointing plane")]
+    public TextMeshPro pointingPlaneText;
+
+    [Tooltip("Offset distance above the finger point")]
+    public float planeUpOffset = 0.02f;
 
     private void Start()
     {
@@ -153,6 +162,12 @@ public class SphereToggleScript : MonoBehaviour
         {
             Destroy(pointingSphere);
             pointingSphere = null;
+        }
+
+        // Also ensure pointing plane is cleaned up
+        if (pointingPlane != null)
+        {
+            pointingPlane.SetActive(false);
         }
     }
 
@@ -254,7 +269,7 @@ public class SphereToggleScript : MonoBehaviour
 
     private IEnumerator UpdateObjectDescriptionRoutine(string labelContent)
     {
-        while (true)  // Will run until inspection is turned off
+        while (true)
         {
             // 1) Capture the current frame
             Texture2D frameTex = CaptureFrame(cameraRenderTex);
@@ -266,7 +281,7 @@ public class SphereToggleScript : MonoBehaviour
                 ? "Previously observed information:\n" + string.Join("\n", descriptionHistory)
                 : "No previous observations.";
 
-            // without history, finger pointing at the object
+            // Modify the prompt to request JSON format
             string prompt = $@"
                 You are analyzing a {labelContent} in real-time.
                 Scene context: {currentSceneContext}
@@ -275,35 +290,18 @@ public class SphereToggleScript : MonoBehaviour
                 Based on the current image and considering the previous observations:
                 1. Describe any NEW details or changes you notice about the object
                 2. Focus on aspects not mentioned before
-                3. Only describe the part where the user is currently pointing at. Don't describe other parts.
+                3. Only describe the part where the user is currently pointing at
                 4. Consider the object's current state, position, and interaction with the environment
-                5. If you don't see any new information, respond with 'No new observations.'
-                6. If the user is not pointing at the object, respond with 'Not being pointed at.'
-                7. The user pointing at the object is because they don't fully understand this part. So you should explain it in a way that is easy and straightforward to understand. Try to be helpful.
+                5. If you don't see any new information, respond with: {{""part"": ""none"", ""description"": ""No new observations.""}}
+                6. If the user is not pointing at the object, respond with: {{""part"": ""none"", ""description"": ""Not being pointed at.""}}
+                7. The user pointing at the object is because they don't fully understand this part. So explain it in a straightforward way.
 
-                Format your response as follows:
-                <the part that the user is pointing at>
-                <description of the part that you think would be helpful for the user to understand in one sentence>
-
-                Keep the response concise and focused on new information only.
-                ";
-
-            // original prompt with history:
-            // string prompt = $@"
-            //     You are analyzing a {labelContent} in real-time.
-            //     Scene context: {currentSceneContext}
-            //     Task context: {currentTaskContext}
-
-            //     {historyContext}
-
-            //     Based on the current image and considering the previous observations:
-            //     1. Describe any NEW details or changes you notice about the object
-            //     2. Focus on aspects not mentioned before
-            //     3. Consider the object's current state, position, and interaction with the environment
-            //     4. If you don't see any new information, respond with 'No new observations.'
-
-            //     Keep the response concise and focused on new information only.
-            //     ";
+                Format your response in JSON:
+                {{
+                    ""part"": ""<name of the specific part being pointed at>"",
+                    ""description"": ""<helpful explanation of that part in one sentence>""
+                }}
+            ";
 
             // 3) Call Gemini
             var requestTask = geminiClient.GenerateContent(prompt, base64Image);
@@ -313,81 +311,113 @@ public class SphereToggleScript : MonoBehaviour
 
             string rawResponse = requestTask.Result;
             
-            // Parse the response using GeminiGeneral's parser
-            string newObservation = ParseGeminiRawResponse(rawResponse);
-
-            // 4) Update the description if we have new information
-            if (!string.IsNullOrEmpty(newObservation))
+            // First extract the JSON from the response
+            string jsonStr = TryExtractJson(rawResponse);
+            
+            if (!string.IsNullOrEmpty(jsonStr))
             {
-                bool isPointingNow = !newObservation.Contains("Not being pointed at");
-                
-                // Check if pointing state changed
-                if (isPointingNow != currentlyPointing)
+                try
                 {
-                    currentlyPointing = isPointingNow;
-                    // Invoke the event
-                    OnPointingStateChanged?.Invoke(currentlyPointing);
+                    var pointingInfo = JsonConvert.DeserializeObject<PointingDescription>(jsonStr);
+                    bool isPointingNow = pointingInfo.part != "none";
+                    
+                    // Update pointing state if changed
+                    if (isPointingNow != currentlyPointing)
+                    {
+                        currentlyPointing = isPointingNow;
+                        OnPointingStateChanged?.Invoke(currentlyPointing);
+                    }
+                    // If we're pointing, update sphere position even if already pointing
+                    else if (isPointingNow)
+                    {
+                        UpdatePointingVisualization();
+                    }
+
+                    // Update UI elements
+                    if (pointingPlaneText != null && isPointingNow)
+                    {
+                        pointingPlaneText.text = pointingInfo.part;
+                    }
+                    
+                    if (descriptionText != null)
+                    {
+                        descriptionText.text = pointingInfo.description;
+                    }
+
+                    if (isPointingNow)
+                    {
+                        descriptionHistory.Add(pointingInfo.description);
+                    }
                 }
-
-                if (!isPointingNow) newObservation = "";
-                
-                descriptionHistory.Add(newObservation);
-                currentDescription = newObservation;
-
-                // Update the UI
-                if (descriptionText != null)
+                catch (Exception ex)
                 {
-                    descriptionText.text = currentDescription;
+                    Debug.LogError($"Failed to parse pointing description JSON: {ex}\nJSON string: {jsonStr}");
                 }
             }
-
-            // // 4) Update the description if we have new information, additionally add to history
-            // if (!string.IsNullOrEmpty(newObservation) && !newObservation.Contains("No new observations"))
-            // {
-            //     // Add to history
-            //     descriptionHistory.Add(newObservation);
-
-            //     // Update the full description
-            //     if (string.IsNullOrEmpty(currentDescription))
-            //     {
-            //         currentDescription = newObservation;
-            //     }
-            //     else
-            //     {
-            //         currentDescription += "\n\n" + newObservation;
-            //     }
-
-            //     // Update the UI
-            //     if (descriptionText != null)
-            //     {
-            //         descriptionText.text = currentDescription;
-            //     }
-            // }
+            else
+            {
+                Debug.LogError("Failed to extract JSON from Gemini response");
+            }
 
             // Wait for the specified interval before next update
             yield return new WaitForSeconds(inspectionUpdateInterval);
         }
     }
 
-    private string ParseGeminiRawResponse(string response)
+    // Extract the visualization logic to a separate method
+    private void UpdatePointingVisualization()
     {
-        try
+        if (handTracking != null)
         {
-            var root = JsonConvert.DeserializeObject<GeminiRoot>(response);
-
-            if (root?.candidates == null || root.candidates.Count == 0 
-                || root.candidates[0].content?.parts == null || root.candidates[0].content.parts.Count == 0)
-            {
-                Debug.LogError("Gemini root structure incomplete, no candidates or content/parts found.");
-                return null;
-            }
+            var handSubsystems = new List<XRHandSubsystem>();
+            SubsystemManager.GetSubsystems(handSubsystems);
             
-            return root.candidates[0].content.parts[0].text?.Trim() ?? "";
-        }
-        catch (Exception ex)
-        {
-            Debug.LogError($"Error parsing Gemini response: {ex}");
-            return null;
+            if (handSubsystems.Count > 0)
+            {
+                var handSubsystem = handSubsystems[0];
+                
+                GameObject holdingHand = transform.parent == handTracking.m_SpawnedLeftHand.transform ? 
+                    handTracking.m_SpawnedLeftHand : 
+                    handTracking.m_SpawnedRightHand;
+                
+                XRHand pointingHand = (holdingHand == handTracking.m_SpawnedLeftHand) ? 
+                    handSubsystem.rightHand : 
+                    handSubsystem.leftHand;
+                
+                if (pointingHand.isTracked && pointingHand.GetJoint(XRHandJointID.IndexTip).TryGetPose(out Pose fingerTipPose))
+                {
+                    // Update or create pointing sphere
+                    if (pointingSphere == null)
+                    {
+                        pointingSphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                        pointingSphere.transform.localScale = Vector3.one * 0.01f;
+                        
+                        if (pointingSphereMaterial != null)
+                        {
+                            var renderer = pointingSphere.GetComponent<Renderer>();
+                            renderer.material = pointingSphereMaterial;
+                        }
+                        
+                        Destroy(pointingSphere.GetComponent<Collider>());
+                    }
+
+                    // Update positions
+                    pointingSphere.transform.position = fingerTipPose.position;
+                    relativePosition = holdingHand.transform.InverseTransformPoint(fingerTipPose.position);
+                    pointingSphere.transform.SetParent(holdingHand.transform);
+                    pointingSphere.transform.localPosition = relativePosition;
+
+                    // Update pointing plane
+                    if (pointingPlane != null)
+                    {
+                        Vector3 objectUpDirection = transform.up;
+                        Vector3 planePosition = pointingSphere.transform.position + (objectUpDirection * planeUpOffset);
+                        pointingPlane.transform.position = planePosition;
+                        pointingPlane.transform.rotation = pointingSphere.transform.rotation;
+                        pointingPlane.transform.SetParent(holdingHand.transform);
+                    }
+                }
+            }
         }
     }
 
@@ -822,65 +852,33 @@ public class SphereToggleScript : MonoBehaviour
 
     private void HandlePointingStateChanged(bool isPointing)
     {
-        // Clean up existing sphere if it exists
-        if (pointingSphere != null)
+        if (!isPointing)
         {
-            Destroy(pointingSphere);
-            pointingSphere = null;
-        }
-
-        if (isPointing && handTracking != null)
-        {
-            var handSubsystems = new List<XRHandSubsystem>();
-            SubsystemManager.GetSubsystems(handSubsystems);
-            
-            if (handSubsystems.Count > 0)
+            if (pointingSphere != null)
             {
-                var handSubsystem = handSubsystems[0];
-                
-                // Get the holding hand
-                GameObject holdingHand = transform.parent == handTracking.m_SpawnedLeftHand.transform ? 
-                    handTracking.m_SpawnedLeftHand : 
-                    handTracking.m_SpawnedRightHand;
-                
-                // Get the non-holding hand
-                XRHand pointingHand = (holdingHand == handTracking.m_SpawnedLeftHand) ? 
-                    handSubsystem.rightHand : 
-                    handSubsystem.leftHand;
-                
-                // Try to get the index fingertip position
-                if (pointingHand.isTracked && pointingHand.GetJoint(XRHandJointID.IndexTip).TryGetPose(out Pose fingerTipPose))
-                {
-                    Debug.Log($"Pointing fingertip position: {fingerTipPose.position}");
-                    
-                    // Create sphere at fingertip position
-                    pointingSphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                    pointingSphere.transform.position = fingerTipPose.position;
-                    pointingSphere.transform.localScale = Vector3.one * 0.01f; // Made bigger for visibility
-                    
-                    // Calculate and store the relative position from holding hand
-                    relativePosition = holdingHand.transform.InverseTransformPoint(fingerTipPose.position);
-                    
-                    // Apply the material if assigned
-                    if (pointingSphereMaterial != null)
-                    {
-                        var renderer = pointingSphere.GetComponent<Renderer>();
-                        if (renderer != null)
-                        {
-                            renderer.material = pointingSphereMaterial;
-                        }
-                    }
-                    
-                    pointingSphere.layer = 0; // Default layer for now
-                    
-                    // Remove the collider
-                    Destroy(pointingSphere.GetComponent<Collider>());
-
-                    // Make sphere a child of the holding hand
-                    pointingSphere.transform.SetParent(holdingHand.transform);
-                    pointingSphere.transform.localPosition = relativePosition;
-                }
+                Destroy(pointingSphere);
+                pointingSphere = null;
+            }
+            if (pointingPlane != null)
+            {
+                pointingPlane.SetActive(false);
             }
         }
+        else
+        {
+            if (pointingPlane != null)
+            {
+                pointingPlane.SetActive(true);
+            }
+            UpdatePointingVisualization();
+        }
+    }
+
+    // Add this class to parse the JSON response
+    [Serializable]
+    private class PointingDescription
+    {
+        public string part;
+        public string description;
     }
 }
