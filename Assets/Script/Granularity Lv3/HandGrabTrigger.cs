@@ -155,7 +155,7 @@ public class HandGrabTrigger : MonoBehaviour
 
             // Reset the label's rotation (find the child named "Label_*")
             Transform labelTransform = _grabbedAnchor.sphereObj.transform.GetComponentInChildren<LookAtCamera>()?.transform;
-            if (labelTransform != null && labelTransform.localRotation != Quaternion.identity)
+            if (labelTransform != null)
             {
                 labelTransform.localRotation = Quaternion.identity;
                 // Disable the mesh renderer
