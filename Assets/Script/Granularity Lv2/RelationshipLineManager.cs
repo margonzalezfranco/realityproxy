@@ -56,6 +56,7 @@ public class RelationshipLineManager : MonoBehaviour
             lr.material = lineMaterial;
             lr.useWorldSpace = true;
             lr.material.color = Color.cyan;
+            lr.material.color = new Color(lr.material.color.r, lr.material.color.g, lr.material.color.b, 0.2f);
 
             GameObject labelObj = null;
             if (labelPrefab != null && !string.IsNullOrEmpty(relationText))

@@ -340,32 +340,38 @@ public class HandGrabTrigger : MonoBehaviour
         distanceToPlane = float.PositiveInfinity;
         var anchorPos = anchor.sphereObj.transform.position;
 
-        // Check both up and down directions
+        // Check both up and down directions with a larger check length to account for table height
         RaycastHit hitDown, hitUp;
         bool hitDownPlane = Physics.Raycast(anchorPos, Vector3.down, out hitDown, checkRayLength, planeLayer);
         bool hitUpPlane = Physics.Raycast(anchorPos, Vector3.up, out hitUp, checkRayLength, planeLayer);
 
-        // Use SphereCast instead of CheckSphere to get distance information
-        if (Physics.SphereCast(anchorPos, 0.05f, Vector3.down, out RaycastHit sphereHit, 0.1f, planeLayer) ||
-            Physics.SphereCast(anchorPos, 0.05f, Vector3.up, out sphereHit, 0.1f, planeLayer))
+        float minDistance = float.PositiveInfinity;
+
+        // Calculate minimum distance from all successful hits
+        if (hitDownPlane)
         {
-            distanceToPlane = sphereHit.distance;
-            return true;
+            minDistance = Mathf.Min(minDistance, hitDown.distance);
         }
-        // If we hit a plane in either direction, use the closest one
-        else if (hitDownPlane && hitUpPlane)
+        if (hitUpPlane)
         {
-            distanceToPlane = Mathf.Min(hitDown.distance, hitUp.distance);
-            return true;
+            minDistance = Mathf.Min(minDistance, hitUp.distance);
         }
-        else if (hitDownPlane)
+
+        // Also check with SphereCast for more forgiving detection
+        if (Physics.SphereCast(anchorPos, 0.05f, Vector3.down, out RaycastHit sphereHitDown, checkRayLength, planeLayer))
         {
-            distanceToPlane = hitDown.distance;
-            return true;
+            minDistance = Mathf.Min(minDistance, sphereHitDown.distance);
         }
-        else if (hitUpPlane)
+        if (Physics.SphereCast(anchorPos, 0.05f, Vector3.up, out RaycastHit sphereHitUp, checkRayLength, planeLayer))
         {
-            distanceToPlane = hitUp.distance;
+            minDistance = Mathf.Min(minDistance, sphereHitUp.distance);
+        }
+
+        // If we found any hit
+        if (minDistance != float.PositiveInfinity)
+        {
+            distanceToPlane = minDistance;
+            Debug.Log($"IsOnPlane: Found plane at distance: {distanceToPlane}");
             return true;
         }
 

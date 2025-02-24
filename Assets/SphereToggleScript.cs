@@ -71,7 +71,7 @@ public class SphereToggleScript : MonoBehaviour
 
     [Header("Menu Positioning")]
     [Tooltip("Offset position of the menu canvas relative to the anchor when grabbed")]
-    public Vector3 menuOffset = new Vector3(-7f, 1.5f, 0.25f); // Default slightly above the anchor
+    public Vector3 menuOffset = new Vector3(-6f, 1.2f, -2.5f); // Default slightly above the anchor
 
     private bool isOn = false;
 
@@ -227,7 +227,7 @@ public class SphereToggleScript : MonoBehaviour
     {
         if (inspected)
         {
-            descriptionPanel.SetActive(true);
+            // descriptionPanel.SetActive(true);
             string labelContent = labelUnderSphere ? labelUnderSphere.text : "unknown object";
             
             // Start continuous inspection updates
@@ -239,7 +239,7 @@ public class SphereToggleScript : MonoBehaviour
         }
         else
         {
-            descriptionPanel.SetActive(false);
+            // descriptionPanel.SetActive(false);
             // Stop the continuous updates
             if (inspectionRoutine != null)
             {
@@ -284,6 +284,7 @@ public class SphereToggleScript : MonoBehaviour
                 5. If you don't see any new information, respond with: {{""part"": ""none"", ""description"": ""No new observations.""}}
                 6. If the user is not pointing at the object, respond with: {{""part"": ""none"", ""description"": ""Not being pointed at.""}}
                 7. The user pointing at the object is because they don't fully understand this part. So explain it in a straightforward way.
+                8. Keep it concise under 25 words.
 
                 Format your response in JSON:
                 {{
@@ -507,8 +508,8 @@ public class SphereToggleScript : MonoBehaviour
         if (questionsList != null && questionsList.Count > 0)
         {
             float currentY = -60f;  // Start at the top
-            float questionHeight = 60f;  // Height of each question block, adjust as needed
-            float spacing = 5f;  // Space between questions
+            float questionHeight = 54f;  // Height of each question block, adjust as needed
+            float spacing = 0f;  // Space between questions (reduced by 0.5x from 5f)
 
             foreach (var q in questionsList)
             {
@@ -803,9 +804,21 @@ public class SphereToggleScript : MonoBehaviour
                 menuCanvas.SetParent(transform);
                 menuCanvas.localPosition = menuOffset;
 
-                // Add and start the offset-aware look-at behavior
-                var lookAtComponent = OffsetLookAtCamera.AttachToTransform(menuCanvas);
-                lookAtComponent.StartLookAt();
+                // Calculate rotation adjustments with dampening
+                float dampeningFactor = 0.3f;
+                float dampeningFactor2 = 0.1f;
+                
+                // First apply yaw (Y-axis rotation)
+                float horizontalAngle = Mathf.Atan2(menuOffset.x, -menuOffset.z) * Mathf.Rad2Deg * dampeningFactor;
+                
+                // Calculate vertical tilt
+                float verticalAngle = -Mathf.Atan2(menuOffset.y, Mathf.Sqrt(menuOffset.x * menuOffset.x + menuOffset.z * menuOffset.z)) * Mathf.Rad2Deg * dampeningFactor;
+
+                // Calculate compensating Z-rotation based on the offset position
+                float zCompensation = -Mathf.Atan2(menuOffset.x, menuOffset.y) * Mathf.Rad2Deg * dampeningFactor2;
+
+                // Apply all rotations with the Z-compensation
+                menuCanvas.localRotation = Quaternion.Euler(verticalAngle, horizontalAngle, zCompensation);
 
                 // Trigger the toggle ON functionality
                 OnSphereToggled(true);
@@ -825,13 +838,6 @@ public class SphereToggleScript : MonoBehaviour
             Transform menuCanvas = InfoPanel.transform.parent;
             if (menuCanvas != null && menuCanvas.name == "Menu")
             {
-                // Stop and remove the offset-aware look-at behavior
-                var lookAtComponent = menuCanvas.GetComponent<OffsetLookAtCamera>();
-                if (lookAtComponent != null)
-                {
-                    Destroy(lookAtComponent);
-                }
-
                 // Reset the Menu canvas parent to its original parent
                 menuCanvas.SetParent(null);
 
