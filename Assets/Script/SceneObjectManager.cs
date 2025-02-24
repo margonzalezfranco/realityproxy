@@ -50,7 +50,6 @@ public class SceneObjectManager : MonoBehaviour
     public GameObject pointingPlane;
     public TextMeshPro pointingPlaneText;
     public MyHandTracking handTracking;
-    public Material pointingSphereMaterial;
 
     private void Awake()
     {
@@ -240,7 +239,6 @@ public class SceneObjectManager : MonoBehaviour
         if (handTracking != null)
         {
             sphereToggleScript.handTracking = handTracking;
-            sphereToggleScript.pointingSphereMaterial = pointingSphereMaterial;
         }
 
         return sphereObj;

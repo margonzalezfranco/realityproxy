@@ -291,7 +291,11 @@ MonoBehaviour:
   relationLineManager: {fileID: 0}
   sceneObjManager: {fileID: 0}
   sceneContextManager: {fileID: 0}
-  menuOffset: {x: -6, y: 0, z: 0.25}
+  menuOffset: {x: -7, y: 1.5, z: 0.25}
   descriptionPanel: {fileID: 0}
   descriptionText: {fileID: 0}
   inspectionUpdateInterval: 5
+  handTracking: {fileID: 0}
+  pointingPlane: {fileID: 0}
+  pointingPlaneText: {fileID: 0}
+  planeUpOffset: 0.02

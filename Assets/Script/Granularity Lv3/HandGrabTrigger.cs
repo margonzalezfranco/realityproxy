@@ -59,6 +59,9 @@ public class HandGrabTrigger : MonoBehaviour
 
     private XRHand currentHandPose;
 
+    private MeshRenderer labelMeshRenderer;
+    private MeshRenderer sphereMeshRenderer;
+
     private void Start()
     {
         // Get reference to ObjectMeshGenerator
@@ -155,6 +158,18 @@ public class HandGrabTrigger : MonoBehaviour
             if (labelTransform != null && labelTransform.localRotation != Quaternion.identity)
             {
                 labelTransform.localRotation = Quaternion.identity;
+                // Disable the mesh renderer
+                labelMeshRenderer = labelTransform.gameObject.GetComponent<MeshRenderer>();
+                if (labelMeshRenderer != null)
+                {
+                    labelMeshRenderer.enabled = false;
+                }
+            }
+
+            sphereMeshRenderer = _grabbedAnchor.sphereObj.GetComponent<MeshRenderer>();
+            if (sphereMeshRenderer != null)
+            {
+                sphereMeshRenderer.enabled = false;
             }
 
 
@@ -279,6 +294,23 @@ public class HandGrabTrigger : MonoBehaviour
 
         // Invoke the release event before changing references
         OnAnchorReleased?.Invoke(_grabbedAnchor);
+
+        // Enable the mesh renderer
+        if (sphereMeshRenderer != null)
+        {
+            sphereMeshRenderer.enabled = true;
+        }
+
+        // also the label
+        Transform labelTransform = _grabbedAnchor.sphereObj.transform.GetComponentInChildren<LookAtCamera>()?.transform;
+        if (labelTransform != null)
+        {
+            labelMeshRenderer = labelTransform.gameObject.GetComponent<MeshRenderer>();
+            if (labelMeshRenderer != null)
+            {
+                labelMeshRenderer.enabled = true;
+            }
+        }
 
         // Mark this anchor as "just released" to avoid immediate re-pickup
         _lastReleasedAnchor = _grabbedAnchor;

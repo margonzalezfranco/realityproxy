@@ -71,7 +71,7 @@ public class SphereToggleScript : MonoBehaviour
 
     [Header("Menu Positioning")]
     [Tooltip("Offset position of the menu canvas relative to the anchor when grabbed")]
-    public Vector3 menuOffset = new Vector3(-6f, 0f, 0.25f); // Default slightly above the anchor
+    public Vector3 menuOffset = new Vector3(-7f, 1.5f, 0.25f); // Default slightly above the anchor
 
     private bool isOn = false;
 
@@ -99,13 +99,7 @@ public class SphereToggleScript : MonoBehaviour
     [Tooltip("Reference to the MyHandTracking script")]
     public MyHandTracking handTracking;
 
-    private GameObject pointingSphere;
-    private Vector3 relativePosition; // Store relative position to holding hand
-
     [Header("Pointing Visualization")]
-    [Tooltip("Material to apply to the pointing sphere")]
-    public Material pointingSphereMaterial;
-
     [Tooltip("Plane to show which part is being pointed at")]
     public GameObject pointingPlane;
 
@@ -114,6 +108,8 @@ public class SphereToggleScript : MonoBehaviour
 
     [Tooltip("Offset distance above the finger point")]
     public float planeUpOffset = 0.02f;
+
+    private Vector3 relativePosition; // Store relative position to holding hand
 
     private void Start()
     {
@@ -158,13 +154,6 @@ public class SphereToggleScript : MonoBehaviour
             OnPointingStateChanged?.Invoke(false);
         }
 
-        if (pointingSphere != null)
-        {
-            Destroy(pointingSphere);
-            pointingSphere = null;
-        }
-
-        // Also ensure pointing plane is cleaned up
         if (pointingPlane != null)
         {
             pointingPlane.SetActive(false);
@@ -327,8 +316,8 @@ public class SphereToggleScript : MonoBehaviour
                         currentlyPointing = isPointingNow;
                         OnPointingStateChanged?.Invoke(currentlyPointing);
                     }
-                    // If we're pointing, update sphere position even if already pointing
-                    else if (isPointingNow)
+                    
+                    if (isPointingNow)
                     {
                         UpdatePointingVisualization();
                     }
@@ -364,7 +353,6 @@ public class SphereToggleScript : MonoBehaviour
         }
     }
 
-    // Extract the visualization logic to a separate method
     private void UpdatePointingVisualization()
     {
         if (handTracking != null)
@@ -386,77 +374,52 @@ public class SphereToggleScript : MonoBehaviour
                 
                 if (pointingHand.isTracked && pointingHand.GetJoint(XRHandJointID.IndexTip).TryGetPose(out Pose fingerTipPose))
                 {
-                    // Create pointing sphere if it doesn't exist
-                    if (pointingSphere == null)
-                    {
-                        pointingSphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                        pointingSphere.transform.localScale = Vector3.one * 0.01f;
-                        
-                        if (pointingSphereMaterial != null)
-                        {
-                            var renderer = pointingSphere.GetComponent<Renderer>();
-                            renderer.material = pointingSphereMaterial;
-                        }
-                        
-                        Destroy(pointingSphere.GetComponent<Collider>());
-
-                        // Calculate initial relative position
-                        relativePosition = holdingHand.transform.InverseTransformPoint(fingerTipPose.position);
-
-                        // Add DualTargetLazyFollow component
-                        var lazyFollow = pointingSphere.AddComponent<DualTargetLazyFollow>();
-                        
-                        // Configure following parameters - adjust these values as needed
-                        lazyFollow.movementSpeed = 20f; // Faster than anchor following
-                        lazyFollow.movementSpeedVariancePercentage = 0.25f;
-                        lazyFollow.minDistanceAllowed = 0.02f; // Smaller threshold for finger tracking
-                        lazyFollow.maxDistanceAllowed = 0.05f;
-                        lazyFollow.timeUntilThresholdReachesMaxDistance = 0.3f; // Faster threshold increase
-                        
-                        // Configure rotation parameters
-                        lazyFollow.minAngleAllowed = 3f;
-                        lazyFollow.maxAngleAllowed = 15f;
-                        lazyFollow.timeUntilThresholdReachesMaxAngle = 0.3f;
-                        
-                        // Set both position and rotation to follow the hand
-                        lazyFollow.positionFollowMode = LazyFollow.PositionFollowMode.Follow;
-                        lazyFollow.rotationFollowMode = LazyFollow.RotationFollowMode.LookAt;
-                        
-                        // Set the hand as both position and rotation target
-                        lazyFollow.positionTarget = holdingHand.transform;
-                        lazyFollow.rotationTarget = Camera.main.transform;
-                        
-                        // Set the offset based on the initial relative position
-                        lazyFollow.targetOffset = relativePosition;
-                    }
-
-                    // Update pointing plane
                     if (pointingPlane != null)
                     {
-                        Vector3 objectUpDirection = transform.up;
-                        Vector3 planePosition = pointingSphere.transform.position + (objectUpDirection * planeUpOffset);
-                        pointingPlane.transform.position = planePosition;
-                        pointingPlane.transform.rotation = pointingSphere.transform.rotation;
-                        pointingPlane.transform.SetParent(pointingSphere.transform);
+                        // Ensure the plane is active
+                        pointingPlane.SetActive(true);
+
+                        // Calculate initial relative position if not set
+                        if (relativePosition == Vector3.zero)
+                        {
+                            relativePosition = holdingHand.transform.InverseTransformPoint(fingerTipPose.position);
+                        }
+
+                        // If LazyFollow doesn't exist, add it
+                        var lazyFollow = pointingPlane.GetComponent<DualTargetLazyFollow>();
+                        if (lazyFollow == null)
+                        {
+                            lazyFollow = pointingPlane.AddComponent<DualTargetLazyFollow>();
+                            
+                            // Configure following parameters
+                            lazyFollow.movementSpeed = 20f;
+                            lazyFollow.movementSpeedVariancePercentage = 0.25f;
+                            lazyFollow.minDistanceAllowed = 0.02f;
+                            lazyFollow.maxDistanceAllowed = 0.05f;
+                            lazyFollow.timeUntilThresholdReachesMaxDistance = 0.3f;
+                            
+                            lazyFollow.minAngleAllowed = 3f;
+                            lazyFollow.maxAngleAllowed = 15f;
+                            lazyFollow.timeUntilThresholdReachesMaxAngle = 0.3f;
+                            
+                            lazyFollow.positionFollowMode = LazyFollow.PositionFollowMode.Follow;
+                            lazyFollow.rotationFollowMode = LazyFollow.RotationFollowMode.LookAt;
+                            
+                            lazyFollow.positionTarget = holdingHand.transform;
+                            lazyFollow.rotationTarget = Camera.main.transform;
+                        }
+
+                        // Update the relative position for continuous tracking
+                        relativePosition = holdingHand.transform.InverseTransformPoint(fingerTipPose.position);
+                        
+                        // Add up offset to the relative position
+                        Vector3 offsetPosition = relativePosition + (Vector3.up * planeUpOffset);
+                        
+                        // Update the LazyFollow target offset
+                        lazyFollow.targetOffset = offsetPosition;
                     }
                 }
             }
-        }
-    }
-
-    // Add this method to clean up when pointing stops
-    private void StopPointingVisualization()
-    {
-        if (pointingSphere != null)
-        {
-            // Clean up the DualTargetLazyFollow component
-            var lazyFollow = pointingSphere.GetComponent<DualTargetLazyFollow>();
-            if (lazyFollow != null)
-            {
-                Destroy(lazyFollow);
-            }
-            Destroy(pointingSphere);
-            pointingSphere = null;
         }
     }
 
@@ -893,13 +856,14 @@ public class SphereToggleScript : MonoBehaviour
     {
         if (!isPointing)
         {
-            if (pointingSphere != null)
-            {
-                Destroy(pointingSphere);
-                pointingSphere = null;
-            }
             if (pointingPlane != null)
             {
+                // Disable the plane and its LazyFollow component
+                var lazyFollow = pointingPlane.GetComponent<DualTargetLazyFollow>();
+                if (lazyFollow != null)
+                {
+                    Destroy(lazyFollow);
+                }
                 pointingPlane.SetActive(false);
             }
         }
@@ -908,8 +872,8 @@ public class SphereToggleScript : MonoBehaviour
             if (pointingPlane != null)
             {
                 pointingPlane.SetActive(true);
+                UpdatePointingVisualization();
             }
-            UpdatePointingVisualization();
         }
     }
 
