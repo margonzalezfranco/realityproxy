@@ -802,7 +802,10 @@ public class SphereToggleScript : MonoBehaviour
                 // Set the Menu canvas as a child of our sphere
                 menuCanvas.SetParent(transform);
                 menuCanvas.localPosition = menuOffset;
-                menuCanvas.localRotation = Quaternion.identity;
+
+                // Add and start the offset-aware look-at behavior
+                var lookAtComponent = OffsetLookAtCamera.AttachToTransform(menuCanvas);
+                lookAtComponent.StartLookAt();
 
                 // Trigger the toggle ON functionality
                 OnSphereToggled(true);
@@ -822,6 +825,13 @@ public class SphereToggleScript : MonoBehaviour
             Transform menuCanvas = InfoPanel.transform.parent;
             if (menuCanvas != null && menuCanvas.name == "Menu")
             {
+                // Stop and remove the offset-aware look-at behavior
+                var lookAtComponent = menuCanvas.GetComponent<OffsetLookAtCamera>();
+                if (lookAtComponent != null)
+                {
+                    Destroy(lookAtComponent);
+                }
+
                 // Reset the Menu canvas parent to its original parent
                 menuCanvas.SetParent(null);
 
