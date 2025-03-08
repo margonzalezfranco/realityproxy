@@ -53,10 +53,6 @@ public class HandGrabTrigger : MonoBehaviour
     private GameObject _twinObject = null;
     private ObjectMeshGenerator objectMeshGenerator;
 
-    [Header("Layer Settings")]
-    [Tooltip("Which layer the anchor objects should be on (default: layer 9)")]
-    public LayerMask anchorLayer = 1 << 9;  // Layer 9
-
     private XRHand currentHandPose;
 
     private MeshRenderer labelMeshRenderer;
@@ -79,10 +75,10 @@ public class HandGrabTrigger : MonoBehaviour
     /// </summary>
     private void OnTriggerEnter(Collider other)
     {
-        // First check if the collider is on the correct layer
-        if ((anchorLayer.value & (1 << other.gameObject.layer)) == 0)
+        // Check if the collider has the SphereToggleScript component
+        if (other.gameObject.GetComponent<SphereToggleScript>() == null)
         {
-            return;  // Not on the anchor layer, ignore
+            return;  // Not a sphere with the required component, ignore
         }
 
         Debug.Log("OnTriggerEnter - Start");
