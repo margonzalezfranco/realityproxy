@@ -32,10 +32,26 @@ public class MyHandTracking : MonoBehaviour
             m_SpawnedRightHand = Instantiate(m_RightHandPrefab, new Vector3(0, 1, 0), Quaternion.identity, xrOrigin.transform);
 
         if (m_SpawnedLeftHand)
-            m_SpawnedLeftHand.AddComponent<HandGrabTrigger>();
+        {
+            // Add HandGrabTrigger and explicitly set it to left hand
+            HandGrabTrigger leftHandGrabber = m_SpawnedLeftHand.AddComponent<HandGrabTrigger>();
+            if (leftHandGrabber != null)
+            {
+                leftHandGrabber.handType = "left";
+                Debug.Log("Added HandGrabTrigger to left hand with handType = left");
+            }
+        }
 
         if (m_SpawnedRightHand)
-            m_SpawnedRightHand.AddComponent<HandGrabTrigger>();
+        {
+            // Add HandGrabTrigger and explicitly set it to right hand
+            HandGrabTrigger rightHandGrabber = m_SpawnedRightHand.AddComponent<HandGrabTrigger>();
+            if (rightHandGrabber != null)
+            {
+                rightHandGrabber.handType = "right";
+                Debug.Log("Added HandGrabTrigger to right hand with handType = right");
+            }
+        }
 
         SubsystemManager.GetSubsystems(handSubsystems);
         
@@ -97,11 +113,25 @@ public class MyHandTracking : MonoBehaviour
             {
                 m_SpawnedLeftHand.transform.position = midPoint;
                 m_SpawnedLeftHand.transform.rotation = handRotation;
+                
+                // Update the hand pose in the HandGrabTrigger
+                HandGrabTrigger grabber = m_SpawnedLeftHand.GetComponent<HandGrabTrigger>();
+                if (grabber != null)
+                {
+                    grabber.UpdateHandPose(hand);
+                }
             }
             else if (!isLeft && m_SpawnedRightHand)
             {
                 m_SpawnedRightHand.transform.position = midPoint;
                 m_SpawnedRightHand.transform.rotation = handRotation;
+                
+                // Update the hand pose in the HandGrabTrigger
+                HandGrabTrigger grabber = m_SpawnedRightHand.GetComponent<HandGrabTrigger>();
+                if (grabber != null)
+                {
+                    grabber.UpdateHandPose(hand);
+                }
             }
 
             // Update joint visualizers if enabled
