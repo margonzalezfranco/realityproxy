@@ -3530,7 +3530,7 @@ RectTransform:
   m_Father: {fileID: 1106035892}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
-  m_AnchorMax: {x: 0, y: 1}
+  m_AnchorMax: {x: 0, y: 0}
   m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 20, y: 0}
   m_Pivot: {x: 0.5, y: 0.5}
@@ -7581,7 +7581,7 @@ RectTransform:
   m_Father: {fileID: 787690056}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
-  m_AnchorMax: {x: 0, y: 1}
+  m_AnchorMax: {x: 0, y: 0}
   m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 10, y: 0}
   m_Pivot: {x: 0.5, y: 0.5}
@@ -7913,6 +7913,7 @@ GameObject:
   - component: {fileID: 1557741981}
   - component: {fileID: 1557741983}
   - component: {fileID: 1557741984}
+  - component: {fileID: 1557741985}
   m_Layer: 0
   m_Name: GEMINI
   m_TagString: Untagged
@@ -7999,6 +8000,21 @@ MonoBehaviour:
   onAnswerReceived:
     m_PersistentCalls:
       m_Calls: []
+--- !u!114 &1557741985
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1557741980}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e65f6dd88749c45a2ac113a185c38d36, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  apiKey: AIzaSyBt5kvN77OvM2edI0TPwVpsfUFQjF2Pq7o
+  sourceRenderTexture: {fileID: 8400000, guid: 78e2b50f1cd8640efa61e2994d5eaec2, type: 2}
+  ocrMode: 0
 --- !u!1 &1579789970
 GameObject:
   m_ObjectHideFlags: 0
@@ -9062,7 +9078,7 @@ RectTransform:
   m_Father: {fileID: 1117816949}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
-  m_AnchorMax: {x: 0, y: 1}
+  m_AnchorMax: {x: 0, y: 0}
   m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 10, y: 0}
   m_Pivot: {x: 0.5, y: 0.5}
@@ -9296,7 +9312,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &1861026697
 Transform:
   m_ObjectHideFlags: 0
@@ -10197,7 +10213,7 @@ RectTransform:
   m_Father: {fileID: 1057839351}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
-  m_AnchorMax: {x: 0, y: 1}
+  m_AnchorMax: {x: 0, y: 0}
   m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 20, y: 0}
   m_Pivot: {x: 0.5, y: 0.5}
