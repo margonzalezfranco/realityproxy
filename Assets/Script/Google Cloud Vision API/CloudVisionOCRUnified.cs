@@ -51,7 +51,7 @@ public class CloudVisionOCRUnified : MonoBehaviour
 
     #region Full Text Response Data Classes (TEXT_DETECTION)
     [Serializable]
-    private class TextAnnotation
+    public class TextAnnotation
     {
         public string description;
     }
@@ -129,6 +129,7 @@ public class CloudVisionOCRUnified : MonoBehaviour
     public class DocumentResponse
     {
         public FullTextAnnotation fullTextAnnotation;
+        public TextAnnotation[] textAnnotations;
     }
 
     [Serializable]
@@ -269,6 +270,13 @@ public class CloudVisionOCRUnified : MonoBehaviour
         VisionResponse responseData = JsonUtility.FromJson<VisionResponse>(jsonResponse);
         if (responseData.responses != null && responseData.responses.Count > 0)
         {
+            // Log the full text from textAnnotations (similar to FullText mode)
+            if (responseData.responses[0].textAnnotations != null && responseData.responses[0].textAnnotations.Length > 0)
+            {
+                string detectedText = responseData.responses[0].textAnnotations[0].description;
+                Debug.Log("OCR Recognized Text: " + detectedText);
+            }
+            
             FullTextAnnotation fullText = responseData.responses[0].fullTextAnnotation;
             if (fullText != null && fullText.pages != null && fullText.pages.Count > 0)
             {

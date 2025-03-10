@@ -8014,7 +8014,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   apiKey: AIzaSyBt5kvN77OvM2edI0TPwVpsfUFQjF2Pq7o
   sourceRenderTexture: {fileID: 8400000, guid: 78e2b50f1cd8640efa61e2994d5eaec2, type: 2}
-  ocrMode: 0
+  ocrMode: 1
 --- !u!1 &1579789970
 GameObject:
   m_ObjectHideFlags: 0
