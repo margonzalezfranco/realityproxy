@@ -10,7 +10,7 @@ public class HandGrabbingDetector : GeminiGeneral
 {
     [Header("Analysis Settings")]
     [Tooltip("Time between hand grabbing detection calls (in seconds)")]
-    public float detectionPeriod = 0.5f;
+    public float detectionPeriod = 1f;
 
     [Tooltip("Whether the detector is currently running")]
     public bool isDetecting = true;
@@ -59,12 +59,17 @@ public class HandGrabbingDetector : GeminiGeneral
     private Dictionary<string, int> detectionCounts = new Dictionary<string, int>();
     private string mostLikelyObject = null;
     
+    // Tracking for grabbing state consistency
+    private int consecutiveGrabbingDetections = 0;
+    private int consecutiveNonGrabbingDetections = 0;
+    private int requiredConsecutiveDetections = 2; // How many consecutive detections needed to change state
+
     // Track which hand is grabbing
     private Dictionary<string, int> handDetectionCounts = new Dictionary<string, int>() {
         { "left", 0 },
         { "right", 0 }
     };
-    private string mostLikelyHand = null;
+    // private string mostLikelyHand = null;
 
     private void Start()
     {
@@ -337,6 +342,41 @@ public class HandGrabbingDetector : GeminiGeneral
             return;
         }
 
+        // Track consecutive detections for grabbing state consistency
+        if (grabbingInfo.isGrabbing)
+        {
+            consecutiveGrabbingDetections++;
+            consecutiveNonGrabbingDetections = 0;
+        }
+        else
+        {
+            consecutiveNonGrabbingDetections++;
+            consecutiveGrabbingDetections = 0;
+        }
+
+        // Apply consistency logic to grabbing state
+        // Only change from grabbing to not grabbing after multiple consecutive non-grabbing detections
+        if (isHandGrabbing && !grabbingInfo.isGrabbing && consecutiveNonGrabbingDetections < requiredConsecutiveDetections)
+        {
+            // Ignore this detection - we need more consecutive non-grabbing detections to confirm
+            if (enableDebugLogging)
+            {
+                Debug.Log($"[HandGrabbingDetector] Ignoring potential false negative (still grabbing). Need {requiredConsecutiveDetections - consecutiveNonGrabbingDetections} more.");
+            }
+            return;
+        }
+        
+        // Only change from not grabbing to grabbing after multiple consecutive grabbing detections
+        if (!isHandGrabbing && grabbingInfo.isGrabbing && consecutiveGrabbingDetections < requiredConsecutiveDetections)
+        {
+            // Ignore this detection - we need more consecutive grabbing detections to confirm
+            if (enableDebugLogging)
+            {
+                Debug.Log($"[HandGrabbingDetector] Ignoring potential false positive (not grabbing yet). Need {requiredConsecutiveDetections - consecutiveGrabbingDetections} more.");
+            }
+            return;
+        }
+
         // Update detection counts for consistency tracking
         if (grabbingInfo.isGrabbing && !string.IsNullOrEmpty(grabbingInfo.grabbedObject))
         {
@@ -369,41 +409,12 @@ public class HandGrabbingDetector : GeminiGeneral
                 // Override the current detection with our most consistent object
                 grabbingInfo.grabbedObject = mostLikelyObject;
             }
-            
-            // Track which hand is grabbing
-            if (!string.IsNullOrEmpty(grabbingInfo.grabbingHand))
-            {
-                // Increment count for this hand
-                handDetectionCounts[grabbingInfo.grabbingHand]++;
-                
-                // Find the hand with the highest count
-                if (handDetectionCounts["left"] > handDetectionCounts["right"])
-                {
-                    mostLikelyHand = "left";
-                }
-                else
-                {
-                    mostLikelyHand = "right";
-                }
-                
-                // If we have a consistent hand detection, use it
-                if (mostLikelyHand != null && handDetectionCounts[mostLikelyHand] >= minConsistentDetections)
-                {
-                    // Override the current detection with our most consistent hand
-                    grabbingInfo.grabbingHand = mostLikelyHand;
-                }
-            }
         }
         else if (!grabbingInfo.isGrabbing)
         {
             // Reset detection counts when not grabbing
             detectionCounts.Clear();
             mostLikelyObject = null;
-            
-            // Reset hand detection counts
-            handDetectionCounts["left"] = 0;
-            handDetectionCounts["right"] = 0;
-            mostLikelyHand = null;
         }
 
         // Store previous state for comparison
