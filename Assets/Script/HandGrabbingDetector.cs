@@ -72,7 +72,6 @@ public class HandGrabbingDetector : GeminiGeneral
     // private string mostLikelyHand = null;
 
     // Track the currently running detection coroutine
-    private Coroutine currentDetectionCoroutine = null;
     private bool isDetectionInProgress = false;
     private float lastDetectionStartTime = 0f;
 

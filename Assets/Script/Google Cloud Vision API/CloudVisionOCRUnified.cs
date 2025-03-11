@@ -4,7 +4,6 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Text;
 using System;
-using System.Linq;
 
 public class CloudVisionOCRUnified : MonoBehaviour
 {
@@ -14,16 +13,13 @@ public class CloudVisionOCRUnified : MonoBehaviour
     [Tooltip("Your Google Cloud Vision API Key")]
     [SerializeField] private string apiKey = "<YOUR_API_KEY>";
     [Tooltip("RenderTexture to capture and analyze")]
-    public RenderTexture sourceRenderTexture;
+    [SerializeField] private RenderTexture sourceRenderTexture;
     [Tooltip("Choose the OCR mode (FullText: simple text, BoundingBox: word + bounding boxes)")]
     public OCRMode ocrMode = OCRMode.FullText;
     
     // Shared API endpoint URL (for OCR using images:annotate)
     private string visionEndpoint = "https://vision.googleapis.com/v1/images:annotate";
 
-    // Delegate for OCR completion callback
-    public delegate void OCRCompleteCallback(string fullText, List<string> wordList);
-    
     #region Request Payload Data Classes
     // Using a common image data class
     [Serializable]
@@ -144,34 +140,10 @@ public class CloudVisionOCRUnified : MonoBehaviour
     #endregion
 
     /// <summary>
-    /// Sets the Google Cloud Vision API key programmatically
-    /// </summary>
-    public void SetApiKey(string key)
-    {
-        if (string.IsNullOrEmpty(key))
-        {
-            Debug.LogError("Attempted to set empty API key");
-            return;
-        }
-        
-        apiKey = key;
-        Debug.Log("Google Cloud Vision API key set successfully");
-    }
-
-    /// <summary>
     /// Public method to start the OCR process. Called via ContextMenu or from UI.
     /// </summary>
     [ContextMenu("Start OCR")]
     public void StartOCR()
-    {
-        StartOCR(null);
-    }
-    
-    /// <summary>
-    /// Overloaded method to start OCR with a callback handler
-    /// </summary>
-    /// <param name="resultHandler">Handler for OCR results</param>
-    public void StartOCR(object resultHandler)
     {
         if (string.IsNullOrEmpty(apiKey))
         {
@@ -184,52 +156,20 @@ public class CloudVisionOCRUnified : MonoBehaviour
             return;
         }
 
-        // Cast the resultHandler to the correct type if it's not null
-        SphereToggleScript.OCRResultHandler typedHandler = resultHandler as SphereToggleScript.OCRResultHandler;
-
         if (ocrMode == OCRMode.FullText)
-            StartCoroutine(ProcessOCRFullTextRoutine(typedHandler));
+            StartCoroutine(ProcessOCRFullTextRoutine());
         else if (ocrMode == OCRMode.BoundingBox)
-            StartCoroutine(ProcessOCRBoundingBoxRoutine(typedHandler));
+            StartCoroutine(ProcessOCRBoundingBoxRoutine());
     }
 
     /// <summary>
     /// FullText mode: Uses TEXT_DETECTION and parses the simple text annotation.
     /// </summary>
-    private IEnumerator ProcessOCRFullTextRoutine(SphereToggleScript.OCRResultHandler resultHandler = null)
+    private IEnumerator ProcessOCRFullTextRoutine()
     {
-        // Validate API key
-        if (string.IsNullOrEmpty(apiKey) || apiKey == "<YOUR_API_KEY>")
-        {
-            Debug.LogError("Google Cloud Vision API Key is not set. Please set a valid API key in the inspector.");
-            if (resultHandler != null)
-            {
-                resultHandler.HandleOCRResult("", new List<string>());
-            }
-            yield break;
-        }
-        
-        // Validate render texture
-        if (sourceRenderTexture == null)
-        {
-            Debug.LogError("Source RenderTexture is null. Please assign a valid RenderTexture.");
-            if (resultHandler != null)
-            {
-                resultHandler.HandleOCRResult("", new List<string>());
-            }
-            yield break;
-        }
-        
         string base64Image = ConvertRenderTextureToBase64(sourceRenderTexture);
         if (base64Image == null)
-        {
-            Debug.LogError("Failed to convert RenderTexture to base64 string.");
-            if (resultHandler != null)
-            {
-                resultHandler.HandleOCRResult("", new List<string>());
-            }
             yield break;
-        }
 
         // Build payload for TEXT_DETECTION
         AnnotateImageRequests requestData = new AnnotateImageRequests();
@@ -256,16 +196,12 @@ public class CloudVisionOCRUnified : MonoBehaviour
 
         if (webRequest.result != UnityWebRequest.Result.Success)
         {
-            Debug.LogError($"Vision API request failed: {webRequest.error}\nResponse code: {webRequest.responseCode}\nResponse body: {webRequest.downloadHandler.text}");
-            if (resultHandler != null)
-            {
-                resultHandler.HandleOCRResult("", new List<string>());
-            }
+            Debug.LogError($"Vision API request failed: {webRequest.error}");
             yield break;
         }
 
         string jsonResponse = webRequest.downloadHandler.text;
-        // Debug.Log("Vision API response: " + jsonResponse);
+        Debug.Log("Vision API response: " + jsonResponse);
 
         // Parse JSON to extract full text from textAnnotations
         AnnotateImageResponses responseData = JsonUtility.FromJson<AnnotateImageResponses>(jsonResponse);
@@ -276,37 +212,15 @@ public class CloudVisionOCRUnified : MonoBehaviour
             {
                 string detectedText = firstResponse.textAnnotations[0].description;
                 Debug.Log("OCR Recognized Text: " + detectedText);
-                
-                // Extract individual words
-                List<string> wordList = new List<string>();
-                if (detectedText != null)
-                {
-                    string[] words = detectedText.Split(new char[] { ' ', '\n', '\t', '\r' }, StringSplitOptions.RemoveEmptyEntries);
-                    wordList.AddRange(words);
-                }
-                
-                // Call the callback if provided
-                if (resultHandler != null)
-                {
-                    resultHandler.HandleOCRResult(detectedText, wordList);
-                }
             }
             else
             {
                 Debug.LogWarning("No text detected in the image.");
-                if (resultHandler != null)
-                {
-                    resultHandler.HandleOCRResult("", new List<string>());
-                }
             }
         }
         else
         {
             Debug.LogWarning("Empty response from Vision API.");
-            if (resultHandler != null)
-            {
-                resultHandler.HandleOCRResult("", new List<string>());
-            }
         }
     }
 
@@ -314,40 +228,11 @@ public class CloudVisionOCRUnified : MonoBehaviour
     /// BoundingBox mode: Uses DOCUMENT_TEXT_DETECTION and parses the hierarchical response,
     /// concatenating symbols in each word and outputting the bounding box.
     /// </summary>
-    private IEnumerator ProcessOCRBoundingBoxRoutine(SphereToggleScript.OCRResultHandler resultHandler = null)
+    private IEnumerator ProcessOCRBoundingBoxRoutine()
     {
-        // Validate API key
-        if (string.IsNullOrEmpty(apiKey) || apiKey == "<YOUR_API_KEY>")
-        {
-            Debug.LogError("Google Cloud Vision API Key is not set. Please set a valid API key in the inspector.");
-            if (resultHandler != null)
-            {
-                resultHandler.HandleOCRResult("", new List<string>());
-            }
-            yield break;
-        }
-        
-        // Validate render texture
-        if (sourceRenderTexture == null)
-        {
-            Debug.LogError("Source RenderTexture is null. Please assign a valid RenderTexture.");
-            if (resultHandler != null)
-            {
-                resultHandler.HandleOCRResult("", new List<string>());
-            }
-            yield break;
-        }
-        
         string base64Image = ConvertRenderTextureToBase64(sourceRenderTexture);
         if (base64Image == null)
-        {
-            Debug.LogError("Failed to convert RenderTexture to base64 string.");
-            if (resultHandler != null)
-            {
-                resultHandler.HandleOCRResult("", new List<string>());
-            }
             yield break;
-        }
 
         // Build payload for DOCUMENT_TEXT_DETECTION
         AnnotateImageRequests requestData = new AnnotateImageRequests();
@@ -374,30 +259,22 @@ public class CloudVisionOCRUnified : MonoBehaviour
 
         if (webRequest.result != UnityWebRequest.Result.Success)
         {
-            Debug.LogError($"Vision API request failed: {webRequest.error}\nResponse code: {webRequest.responseCode}\nResponse body: {webRequest.downloadHandler.text}");
-            if (resultHandler != null)
-            {
-                resultHandler.HandleOCRResult("", new List<string>());
-            }
+            Debug.LogError("Vision API request failed: " + webRequest.error);
             yield break;
         }
 
         string jsonResponse = webRequest.downloadHandler.text;
-        // Debug.Log("Vision API response: " + jsonResponse);
+        Debug.Log("Vision API response: " + jsonResponse);
 
         // Parse the response to extract bounding boxes for each word
         VisionResponse responseData = JsonUtility.FromJson<VisionResponse>(jsonResponse);
-        string fullDetectedText = "";
-        List<string> wordList = new List<string>();
-        Dictionary<string, SphereToggleScript.BoundingBox> wordBoundingBoxes = new Dictionary<string, SphereToggleScript.BoundingBox>();
-        
         if (responseData.responses != null && responseData.responses.Count > 0)
         {
             // Log the full text from textAnnotations (similar to FullText mode)
             if (responseData.responses[0].textAnnotations != null && responseData.responses[0].textAnnotations.Length > 0)
             {
-                fullDetectedText = responseData.responses[0].textAnnotations[0].description;
-                // Debug.Log("OCR Recognized Text: " + fullDetectedText);
+                string detectedText = responseData.responses[0].textAnnotations[0].description;
+                Debug.Log("OCR Recognized Text: " + detectedText);
             }
             
             FullTextAnnotation fullText = responseData.responses[0].fullTextAnnotation;
@@ -420,26 +297,8 @@ public class CloudVisionOCRUnified : MonoBehaviour
                                         wordText += symbol.text;
                                     }
                                 }
-                                
-                                // Add to word list
-                                if (!string.IsNullOrEmpty(wordText))
-                                {
-                                    wordList.Add(wordText);
-                                    
-                                    // Extract bounding box information directly
-                                    if (word.boundingBox != null && word.boundingBox.vertices != null && word.boundingBox.vertices.Count == 4)
-                                    {
-                                        // Calculate min/max coordinates to create a bounding box
-                                        float minX = word.boundingBox.vertices.Min(v => v.x);
-                                        float minY = word.boundingBox.vertices.Min(v => v.y);
-                                        float maxX = word.boundingBox.vertices.Max(v => v.x);
-                                        float maxY = word.boundingBox.vertices.Max(v => v.y);
-                                        
-                                        // Create and store the bounding box
-                                        SphereToggleScript.BoundingBox box = new SphereToggleScript.BoundingBox(minX, minY, maxX, maxY);
-                                        wordBoundingBoxes[wordText] = box;
-                                    }
-                                }
+                                string box = GetBoundingBoxAsString(word.boundingBox);
+                                Debug.Log($"Detected word: {wordText} with bounding box: {box}");
                             }
                         }
                     }
@@ -449,20 +308,10 @@ public class CloudVisionOCRUnified : MonoBehaviour
             {
                 Debug.LogWarning("No fullTextAnnotation found in the response.");
             }
-            
-            // Call the callback if provided
-            if (resultHandler != null)
-            {
-                resultHandler.HandleOCRResult(fullDetectedText, wordList, wordBoundingBoxes);
-            }
         }
         else
         {
             Debug.LogWarning("Empty response from Vision API.");
-            if (resultHandler != null)
-            {
-                resultHandler.HandleOCRResult("", new List<string>());
-            }
         }
     }
 
@@ -473,48 +322,19 @@ public class CloudVisionOCRUnified : MonoBehaviour
     {
         try
         {
-            if (rt == null)
-            {
-                Debug.LogError("RenderTexture is null");
-                return null;
-            }
-            
-            if (rt.width <= 0 || rt.height <= 0)
-            {
-                Debug.LogError($"Invalid RenderTexture dimensions: {rt.width}x{rt.height}");
-                return null;
-            }
-            
             RenderTexture currentRT = RenderTexture.active;
             RenderTexture.active = rt;
-            
-            // Check if the render texture is actually created and ready
-            if (!rt.IsCreated())
-            {
-                Debug.LogError("RenderTexture is not created. Make sure it's properly initialized.");
-                RenderTexture.active = currentRT;
-                return null;
-            }
-            
             Texture2D image = new Texture2D(rt.width, rt.height, TextureFormat.RGB24, false);
             image.ReadPixels(new Rect(0, 0, rt.width, rt.height), 0, 0);
             image.Apply();
             RenderTexture.active = currentRT;
-            
             byte[] imageBytes = image.EncodeToPNG();
-            if (imageBytes == null || imageBytes.Length == 0)
-            {
-                Debug.LogError("Failed to encode texture to PNG");
-                Destroy(image);
-                return null;
-            }
-            
             Destroy(image);
             return Convert.ToBase64String(imageBytes);
         }
         catch (Exception e)
         {
-            Debug.LogError($"Error converting RenderTexture: {e.Message}\nStack trace: {e.StackTrace}");
+            Debug.LogError("Error converting RenderTexture: " + e.Message);
             return null;
         }
     }
