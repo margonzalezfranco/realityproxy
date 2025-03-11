@@ -71,6 +71,15 @@ public class HandGrabbingDetector : GeminiGeneral
     };
     // private string mostLikelyHand = null;
 
+    // Track the currently running detection coroutine
+    private Coroutine currentDetectionCoroutine = null;
+    private bool isDetectionInProgress = false;
+    private float lastDetectionStartTime = 0f;
+
+    // Track the timestamp of each detection to determine which is most recent
+    private long currentDetectionId = 0;
+    private long lastProcessedDetectionId = -1;
+
     private void Start()
     {
         StartCoroutine(PeriodicDetectionRoutine());
@@ -141,15 +150,43 @@ public class HandGrabbingDetector : GeminiGeneral
         {
             if (isDetecting)
             {
-                yield return StartCoroutine(DetectHandGrabbingRoutine());
+                // Start a new detection if we're not already detecting or if the previous one is taking too long
+                float currentTime = Time.time;
+                if (!isDetectionInProgress || (currentTime - lastDetectionStartTime > detectionPeriod * 2))
+                {
+                    // If there's a previous detection that's taking too long, we'll let it continue
+                    // but we won't wait for it to complete before starting a new one
+                    if (isDetectionInProgress && enableDebugLogging)
+                    {
+                        Debug.Log($"[HandGrabbingDetector] Previous detection taking too long ({currentTime - lastDetectionStartTime:F1}s). Starting new detection.");
+                    }
+                    
+                    // Start a new detection
+                    lastDetectionStartTime = currentTime;
+                    StartCoroutine(DetectHandGrabbingRoutineWithTracking());
+                }
             }
             
+            // Always wait for the detection period before checking again
             yield return new WaitForSeconds(detectionPeriod);
         }
+    }
+    
+    private IEnumerator DetectHandGrabbingRoutineWithTracking()
+    {
+        isDetectionInProgress = true;
+        
+        yield return StartCoroutine(DetectHandGrabbingRoutine());
+        
+        isDetectionInProgress = false;
     }
 
     private IEnumerator DetectHandGrabbingRoutine()
     {
+        // Generate a unique ID for this detection
+        long thisDetectionId = System.Threading.Interlocked.Increment(ref currentDetectionId);
+        float startTime = Time.time;
+        
         // Update known object labels before detection
         UpdateKnownObjectLabels();
         
@@ -163,20 +200,43 @@ public class HandGrabbingDetector : GeminiGeneral
         string contextPrompt = BuildContextAwarePrompt();
 
         // 4) Call Gemini
-        // This now uses the new RequestStatus system which supports concurrent API calls
-        // from multiple components without interfering with each other
         var request = MakeGeminiRequest(contextPrompt, base64Image);
+        
+        // Wait for the request to complete (no timeout)
         while (!request.IsCompleted)
         {
             yield return null;
         }
+        
+        // Log how long the request took
+        if (enableDebugLogging)
+        {
+            Debug.Log($"[HandGrabbingDetector] API request {thisDetectionId} completed in {Time.time - startTime:F1}s");
+        }
+        
         string response = request.Result;
 
         // 5) Parse response
         GrabbingInfo grabbingInfo = ParseGrabbingResponse(response);
         
-        // 6) Update inspector and notify subscribers
-        HandleGrabbingDetection(grabbingInfo);
+        // 6) Only update if this is the most recent completed detection
+        // Use Interlocked to safely check and update the last processed ID
+        if (thisDetectionId > System.Threading.Interlocked.Read(ref lastProcessedDetectionId))
+        {
+            System.Threading.Interlocked.Exchange(ref lastProcessedDetectionId, thisDetectionId);
+            
+            if (enableDebugLogging)
+            {
+                Debug.Log($"[HandGrabbingDetector] Processing results from detection {thisDetectionId} (most recent)");
+            }
+            
+            // Update inspector and notify subscribers
+            HandleGrabbingDetection(grabbingInfo);
+        }
+        else if (enableDebugLogging)
+        {
+            Debug.Log($"[HandGrabbingDetector] Skipping results from detection {thisDetectionId} (newer detection {lastProcessedDetectionId} already processed)");
+        }
 
         // Clean up
         Destroy(frameTex);
@@ -328,7 +388,16 @@ public class HandGrabbingDetector : GeminiGeneral
     /// </summary>
     public void TriggerDetection()
     {
-        StartCoroutine(DetectHandGrabbingRoutine());
+        // Only start a new detection if one isn't already in progress or if the current one is taking too long
+        if (!isDetectionInProgress || (Time.time - lastDetectionStartTime > detectionPeriod * 2))
+        {
+            lastDetectionStartTime = Time.time;
+            StartCoroutine(DetectHandGrabbingRoutineWithTracking());
+        }
+        else if (enableDebugLogging)
+        {
+            Debug.Log("[HandGrabbingDetector] Detection already in progress, skipping manual trigger");
+        }
     }
 
     private void HandleGrabbingDetection(GrabbingInfo grabbingInfo)
