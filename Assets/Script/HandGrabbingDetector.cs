@@ -2,6 +2,7 @@ using System.Collections;
 using UnityEngine;
 using System.Collections.Generic;
 using Newtonsoft.Json;
+using System;
 
 /// <summary>
 /// Analyzes frames to detect if hands are grabbing objects using Gemini vision model.
@@ -71,8 +72,241 @@ public class HandGrabbingDetector : GeminiGeneral
     };
     // private string mostLikelyHand = null;
 
+    private bool isDetectionInProgress = false;
+    private float detectionTimeout = 15f; // Increased timeout to account for retries
+
+    private Coroutine currentDetectionCoroutine = null;
+
+    private float detectionStartTime = 0f;
+    private float maxDetectionDuration = 20f; // Maximum time a detection should take before we consider it stuck
+
+    // Add a request ID to track the latest request
+    private int currentRequestId = 0;
+    private int latestCompletedRequestId = 0;
+
+    private IEnumerator ProcessGeminiRequest(string contextPrompt, string base64Image)
+    {
+        // Increment the request ID to track this request
+        int thisRequestId = ++currentRequestId;
+        
+        if (enableDebugLogging)
+        {
+            Debug.Log($"[HandGrabbingDetector] Starting request #{thisRequestId}");
+        }
+        
+        // Call Gemini API without try-catch
+        yield return WaitForGeminiResponse(contextPrompt, base64Image);
+        
+        // Check if this request is still the most recent one
+        if (thisRequestId < currentRequestId && Time.time - detectionStartTime > 3f)
+        {
+            if (enableDebugLogging)
+            {
+                Debug.Log($"[HandGrabbingDetector] Ignoring results from request #{thisRequestId} because newer request #{currentRequestId} is in progress");
+            }
+            
+            // Don't process the result if a newer request is already in progress
+            isDetectionInProgress = false;
+            yield break;
+        }
+        
+        // Process the result after the API call is complete
+        ProcessDetectionResult(thisRequestId);
+    }
+    
+    private IEnumerator WaitForGeminiResponse(string contextPrompt, string base64Image)
+    {
+        // Log the start of the API call
+        if (enableDebugLogging)
+        {
+            Debug.Log($"[HandGrabbingDetector] Starting Gemini API call at {System.DateTime.Now.ToString("HH:mm:ss.fff")}");
+            Debug.Log($"[HandGrabbingDetector] Image size: {base64Image.Length} characters");
+            Debug.Log($"[HandGrabbingDetector] Prompt size: {contextPrompt.Length} characters");
+        }
+        
+        // Call Gemini with timeout
+        var request = geminiClient.GenerateContent(contextPrompt, base64Image);
+        
+        // Add timeout handling with more detailed logging
+        float timeElapsed = 0f;
+        float logInterval = 2.0f; // Log every 2 seconds
+        float nextLogTime = logInterval;
+        
+        while (!request.IsCompleted && timeElapsed < detectionTimeout)
+        {
+            timeElapsed += Time.deltaTime;
+            
+            // Check if a newer request has been started
+            if (currentRequestId > latestCompletedRequestId + 1 && timeElapsed > 3f)
+            {
+                if (enableDebugLogging)
+                {
+                    Debug.LogWarning("[HandGrabbingDetector] Newer request has started, abandoning this API call");
+                }
+                yield break;
+            }
+            
+            // Log progress periodically
+            if (enableDebugLogging && timeElapsed >= nextLogTime)
+            {
+                Debug.Log($"[HandGrabbingDetector] API call in progress for {timeElapsed:F1} seconds...");
+                nextLogTime = timeElapsed + logInterval;
+                
+                // Check if the request has a status we can log
+                if (request.Status != null)
+                {
+                    Debug.Log($"[HandGrabbingDetector] Request status: {request.Status}");
+                }
+            }
+            
+            yield return null;
+        }
+        
+        // Store the response in a class variable
+        if (timeElapsed >= detectionTimeout)
+        {
+            // Handle timeout with more detailed information
+            if (enableDebugLogging)
+            {
+                Debug.LogWarning($"[HandGrabbingDetector] Detection timed out after {detectionTimeout} seconds at {System.DateTime.Now.ToString("HH:mm:ss.fff")}");
+                
+                // Try to get more information about the request
+                if (request.Exception != null)
+                {
+                    Debug.LogError($"[HandGrabbingDetector] Request exception: {request.Exception}");
+                }
+                
+                // Check network connectivity
+                CheckNetworkConnectivity();
+            }
+            currentResponse = null;
+        }
+        else
+        {
+            try
+            {
+                if (enableDebugLogging)
+                {
+                    Debug.Log($"[HandGrabbingDetector] API call completed after {timeElapsed:F1} seconds");
+                }
+                
+                currentResponse = request.Result;
+                
+                if (enableDebugLogging)
+                {
+                    Debug.Log($"[HandGrabbingDetector] Response received, length: {(currentResponse != null ? currentResponse.Length : 0)} characters");
+                    
+                    // Log a snippet of the response for debugging
+                    if (currentResponse != null && currentResponse.Length > 0)
+                    {
+                        string snippet = currentResponse.Length > 100 ? 
+                            currentResponse.Substring(0, 100) + "..." : 
+                            currentResponse;
+                        Debug.Log($"[HandGrabbingDetector] Response snippet: {snippet}");
+                    }
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"[HandGrabbingDetector] Exception getting API result: {ex}");
+                
+                // Log the full exception details for debugging
+                Debug.LogException(ex);
+                
+                currentResponse = null;
+            }
+        }
+    }
+    
+    private void CheckNetworkConnectivity()
+    {
+        // Check if we can reach the Gemini API endpoint
+        try
+        {
+            System.Net.NetworkInformation.Ping ping = new System.Net.NetworkInformation.Ping();
+            System.Net.NetworkInformation.PingReply reply = ping.Send("generativelanguage.googleapis.com", 1000);
+            
+            if (reply.Status == System.Net.NetworkInformation.IPStatus.Success)
+            {
+                Debug.Log($"[HandGrabbingDetector] Network connectivity check: Success (ping time: {reply.RoundtripTime}ms)");
+            }
+            else
+            {
+                Debug.LogWarning($"[HandGrabbingDetector] Network connectivity check: Failed (status: {reply.Status})");
+            }
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogError($"[HandGrabbingDetector] Network connectivity check failed: {ex.Message}");
+        }
+    }
+    
+    private string currentResponse = null;
+    
+    private void ProcessDetectionResult(int requestId)
+    {
+        try
+        {
+            // Update the latest completed request ID
+            latestCompletedRequestId = requestId;
+            
+            // Parse response
+            GrabbingInfo grabbingInfo = null;
+            if (currentResponse != null)
+            {
+                grabbingInfo = ParseGrabbingResponse(currentResponse);
+            }
+            
+            // Update inspector and notify subscribers
+            if (grabbingInfo != null)
+            {
+                HandleGrabbingDetection(grabbingInfo);
+            }
+            else
+            {
+                // Handle failed detection
+                if (enableDebugLogging)
+                {
+                    Debug.LogWarning("[HandGrabbingDetector] Detection failed or timed out");
+                }
+                
+                // Update UI to show detection failed
+                isHandGrabbing = false;
+                grabbedObjectName = "Detection failed";
+                grabbingHand = "None";
+                lastDetectionTime = System.DateTime.Now.ToString("HH:mm:ss");
+            }
+        }
+        catch (System.Exception ex)
+        {
+            // Handle any unexpected exceptions
+            Debug.LogError($"[HandGrabbingDetector] Exception during response processing: {ex}");
+            
+            // Update UI to show detection failed
+            isHandGrabbing = false;
+            grabbedObjectName = "Exception: " + ex.Message;
+            grabbingHand = "None";
+            lastDetectionTime = System.DateTime.Now.ToString("HH:mm:ss");
+        }
+        finally
+        {
+            // Always reset flags to allow new detection calls
+            currentDetectionCoroutine = null;
+            isDetectionInProgress = false;
+        }
+    }
+
     private void Start()
     {
+        // Validate API key and model name
+        ValidateGeminiSettings();
+        
+        // Enable debug logging in the GeminiAPI if needed
+        if (geminiClient != null && enableDebugLogging)
+        {
+            geminiClient.EnableDebugLogging = true;
+        }
+        
         StartCoroutine(PeriodicDetectionRoutine());
         
         // Initialize known object labels
@@ -82,6 +316,32 @@ public class HandGrabbingDetector : GeminiGeneral
         if (leftHandObject == null || rightHandObject == null)
         {
             FindHandReferences();
+        }
+    }
+    
+    private void ValidateGeminiSettings()
+    {
+        // Check if API key looks valid
+        if (string.IsNullOrEmpty(geminiApiKey) || geminiApiKey.Length < 20)
+        {
+            Debug.LogError("[HandGrabbingDetector] API key appears to be invalid or missing. Please check your Gemini API key.");
+        }
+        
+        // Check if model name is valid
+        if (string.IsNullOrEmpty(geminiModelName))
+        {
+            Debug.LogError("[HandGrabbingDetector] Model name is missing. Please specify a valid Gemini model name.");
+        }
+        else if (!geminiModelName.StartsWith("gemini-"))
+        {
+            Debug.LogWarning("[HandGrabbingDetector] Model name doesn't start with 'gemini-'. Make sure you're using a valid Gemini model name.");
+        }
+        
+        // Log the settings
+        if (enableDebugLogging)
+        {
+            Debug.Log($"[HandGrabbingDetector] Using Gemini model: {geminiModelName}");
+            Debug.Log($"[HandGrabbingDetector] API key: {geminiApiKey.Substring(0, 5)}...{geminiApiKey.Substring(geminiApiKey.Length - 5)}");
         }
     }
     
@@ -141,43 +401,202 @@ public class HandGrabbingDetector : GeminiGeneral
         {
             if (isDetecting)
             {
-                yield return StartCoroutine(DetectHandGrabbingRoutine());
+                // Even if a detection is in progress, start a new one if it's been running too long
+                if (isDetectionInProgress && Time.time - detectionStartTime > 5f)
+                {
+                    if (enableDebugLogging)
+                    {
+                        Debug.LogWarning("[HandGrabbingDetector] Previous detection is taking too long, starting a new one anyway");
+                    }
+                    
+                    // Don't cancel the old one, just let it run in parallel
+                    // But mark that we're not waiting for it anymore
+                    isDetectionInProgress = false;
+                }
+                
+                if (!isDetectionInProgress)
+                {
+                    // Cancel any existing detection that might be stuck
+                    CancelExistingDetection();
+                    
+                    // Start a new detection
+                    currentDetectionCoroutine = StartCoroutine(DetectHandGrabbingRoutine());
+                }
             }
             
             yield return new WaitForSeconds(detectionPeriod);
         }
     }
+    
+    private void CancelExistingDetection()
+    {
+        if (currentDetectionCoroutine != null)
+        {
+            if (enableDebugLogging)
+            {
+                Debug.LogWarning("[HandGrabbingDetector] Cancelling potentially stuck detection process");
+            }
+            
+            StopCoroutine(currentDetectionCoroutine);
+            currentDetectionCoroutine = null;
+            isDetectionInProgress = false;
+        }
+    }
+
+    private void Update()
+    {
+        // Monitor for stuck detections
+        MonitorDetectionHealth();
+    }
+    
+    private void MonitorDetectionHealth()
+    {
+        // If a detection is in progress and has been running for too long, cancel it
+        if (isDetectionInProgress && Time.time - detectionStartTime > maxDetectionDuration)
+        {
+            if (enableDebugLogging)
+            {
+                Debug.LogWarning($"[HandGrabbingDetector] Detection has been running for {Time.time - detectionStartTime:F1} seconds, which exceeds the maximum allowed time of {maxDetectionDuration} seconds. Cancelling.");
+            }
+            
+            CancelExistingDetection();
+            
+            // Update UI to show detection failed
+            isHandGrabbing = false;
+            grabbedObjectName = "Detection timed out";
+            grabbingHand = "None";
+            lastDetectionTime = System.DateTime.Now.ToString("HH:mm:ss");
+        }
+    }
 
     private IEnumerator DetectHandGrabbingRoutine()
     {
+        // Set flag to prevent overlapping detection calls
+        isDetectionInProgress = true;
+        detectionStartTime = Time.time;
+        
         // Update known object labels before detection
         UpdateKnownObjectLabels();
         
         // 1) Capture frame from RenderTexture
-        Texture2D frameTex = CaptureFrame(cameraRenderTex);
-
-        // 2) Convert to base64
-        string base64Image = ConvertTextureToBase64(frameTex);
-
-        // 3) Build context-aware prompt
-        string contextPrompt = BuildContextAwarePrompt();
-
-        // 4) Call Gemini
-        var request = geminiClient.GenerateContent(contextPrompt, base64Image);
-        while (!request.IsCompleted)
-        {
-            yield return null;
-        }
-        string response = request.Result;
-
-        // 5) Parse response
-        GrabbingInfo grabbingInfo = ParseGrabbingResponse(response);
+        Texture2D frameTex = null;
         
-        // 6) Update inspector and notify subscribers
-        HandleGrabbingDetection(grabbingInfo);
+        try
+        {
+            frameTex = CaptureFrame(cameraRenderTex);
+            
+            if (frameTex == null)
+            {
+                if (enableDebugLogging)
+                {
+                    Debug.LogError("[HandGrabbingDetector] Failed to capture frame from camera render texture");
+                }
+                
+                // Clean up and exit
+                isDetectionInProgress = false;
+                currentDetectionCoroutine = null;
+                yield break;
+            }
+            
+            // Always resize the texture to a smaller size for better performance
+            // 256x256 is usually sufficient for hand detection
+            frameTex = ResizeTexture(frameTex, 256, 256);
+            
+            if (enableDebugLogging)
+            {
+                Debug.Log("[HandGrabbingDetector] Resized texture to 256x256 to reduce API payload size");
+            }
+            
+            // 2) Convert to base64
+            string base64Image = ConvertTextureToBase64(frameTex);
+            
+            // Check if the base64 string is too large
+            if (base64Image.Length > 500000) // 500KB
+            {
+                Debug.LogWarning($"[HandGrabbingDetector] Base64 image is very large ({base64Image.Length / 1024}KB), which may cause API timeouts");
+            }
+            
+            // 3) Build context-aware prompt
+            string contextPrompt = BuildContextAwarePrompt();
+            
+            // 4) Start a separate coroutine for the API call
+            StartCoroutine(ProcessGeminiRequest(contextPrompt, base64Image));
+        }
+        catch (System.Exception ex)
+        {
+            // Handle any unexpected exceptions
+            Debug.LogError($"[HandGrabbingDetector] Exception during detection setup: {ex}");
+            
+            // Reset flags
+            isDetectionInProgress = false;
+            currentDetectionCoroutine = null;
+        }
+        finally
+        {
+            // Clean up the texture
+            if (frameTex != null)
+            {
+                Destroy(frameTex);
+            }
+        }
+        
+        yield break;
+    }
 
-        // Clean up
-        Destroy(frameTex);
+    private bool IsTextureTooLarge(Texture2D texture)
+    {
+        // Check if the texture dimensions are too large
+        // A good rule of thumb is to keep images under 1024x1024 for API calls
+        return texture.width > 1024 || texture.height > 1024;
+    }
+    
+    private Texture2D ResizeTexture(Texture2D source, int targetWidth, int targetHeight)
+    {
+        // Create a temporary RenderTexture
+        RenderTexture rt = RenderTexture.GetTemporary(targetWidth, targetHeight);
+        
+        // Blit the source texture to the temporary RenderTexture
+        Graphics.Blit(source, rt);
+        
+        // Remember the active RenderTexture
+        RenderTexture prev = RenderTexture.active;
+        
+        // Set the temporary RenderTexture as active
+        RenderTexture.active = rt;
+        
+        // Create a new texture with the target dimensions
+        Texture2D result = new Texture2D(targetWidth, targetHeight, TextureFormat.RGB24, false);
+        
+        // Read the pixels from the active RenderTexture
+        result.ReadPixels(new Rect(0, 0, targetWidth, targetHeight), 0, 0);
+        
+        // Apply the changes
+        result.Apply();
+        
+        // Restore the previous active RenderTexture
+        RenderTexture.active = prev;
+        
+        // Release the temporary RenderTexture
+        RenderTexture.ReleaseTemporary(rt);
+        
+        return result;
+    }
+
+    /// <summary>
+    /// Encode to JPG and convert to Base64 string.
+    /// </summary>
+    protected string ConvertTextureToBase64(Texture2D tex)
+    {
+        // Use JPG format instead of PNG for smaller payload size
+        // Adjust quality as needed (0-100)
+        byte[] bytes = tex.EncodeToJPG(75);
+        
+        if (enableDebugLogging)
+        {
+            Debug.Log($"[HandGrabbingDetector] Image compressed to {bytes.Length / 1024}KB (JPG format)");
+        }
+        
+        return Convert.ToBase64String(bytes);
     }
 
     private string BuildContextAwarePrompt()
@@ -326,7 +745,55 @@ public class HandGrabbingDetector : GeminiGeneral
     /// </summary>
     public void TriggerDetection()
     {
-        StartCoroutine(DetectHandGrabbingRoutine());
+        // Even if a detection is in progress, start a new one
+        if (isDetectionInProgress && Time.time - detectionStartTime > 3f)
+        {
+            if (enableDebugLogging)
+            {
+                Debug.LogWarning("[HandGrabbingDetector] Previous detection is taking too long, starting a new one anyway");
+            }
+            
+            // Don't cancel the old one, just let it run in parallel
+            // But mark that we're not waiting for it anymore
+            isDetectionInProgress = false;
+        }
+        
+        if (!isDetectionInProgress)
+        {
+            // Cancel any existing detection that might be stuck
+            CancelExistingDetection();
+            
+            // Start a new detection
+            currentDetectionCoroutine = StartCoroutine(DetectHandGrabbingRoutine());
+        }
+    }
+    
+    /// <summary>
+    /// Reset the detection system if it gets stuck
+    /// </summary>
+    public void ResetDetection()
+    {
+        if (enableDebugLogging)
+        {
+            Debug.Log("[HandGrabbingDetector] Manually resetting detection system");
+        }
+        
+        // Cancel any existing detection
+        CancelExistingDetection();
+        
+        // Reset all state variables
+        isDetectionInProgress = false;
+        currentDetectionCoroutine = null;
+        consecutiveGrabbingDetections = 0;
+        consecutiveNonGrabbingDetections = 0;
+        detectionCounts.Clear();
+        mostLikelyObject = null;
+        
+        // Update UI
+        isHandGrabbing = false;
+        grabbedObjectName = "System reset";
+        grabbingHand = "None";
+        lastDetectionTime = System.DateTime.Now.ToString("HH:mm:ss");
     }
 
     private void HandleGrabbingDetection(GrabbingInfo grabbingInfo)
