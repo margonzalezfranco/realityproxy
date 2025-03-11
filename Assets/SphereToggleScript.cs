@@ -1426,7 +1426,7 @@ public class SphereToggleScript : MonoBehaviour
                     tmpText.textWrappingMode = TextWrappingModes.Normal;
                     tmpText.overflowMode = TextOverflowModes.Truncate;
                     tmpText.margin = new Vector4(2f, 2f, 2f, 2f); // Add small margins
-                    tmpText.enableAutoSizing = true; // Enable auto sizing for better fit
+                    // tmpText.enableAutoSizing = true; // Enable auto sizing for better fit
                     tmpText.fontSizeMin = 8;
                     tmpText.fontSizeMax = 18;
                 }
