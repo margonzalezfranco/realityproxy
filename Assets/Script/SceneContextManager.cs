@@ -66,7 +66,9 @@ public class SceneContextManager : GeminiGeneral
         string contextPrompt = BuildContextAwarePrompt();
 
         // 4) Call Gemini
-        var request = geminiClient.GenerateContent(contextPrompt, base64Image);
+        // This now uses the new RequestStatus system which supports concurrent API calls
+        // from multiple components without blocking or interfering with each other
+        var request = MakeGeminiRequest(contextPrompt, base64Image);
         while (!request.IsCompleted)
         {
             yield return null;

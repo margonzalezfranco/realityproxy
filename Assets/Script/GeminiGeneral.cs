@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using Newtonsoft.Json;
+using System.Threading.Tasks;
 
 /// <summary>
 /// Base class for Gemini API integration in Unity.
@@ -22,6 +23,9 @@ public class GeminiGeneral : MonoBehaviour
 
     // A reference to our API client
     protected GeminiAPI geminiClient;
+    
+    // Dictionary to track request tasks by their ID
+    protected Dictionary<string, Task<string>> activeRequests = new Dictionary<string, Task<string>>();
 
     [Serializable]
     public class GeminiRoot
@@ -73,6 +77,48 @@ public class GeminiGeneral : MonoBehaviour
     {
         // Initialize the Gemini client
         geminiClient = new GeminiAPI(geminiModelName, geminiApiKey);
+    }
+    
+    /// <summary>
+    /// Helper class to track request status and result
+    /// </summary>
+    public class RequestStatus
+    {
+        public bool IsCompleted { get; private set; }
+        public string Result { get; private set; }
+        public Exception Error { get; private set; }
+        
+        private Task<string> _task;
+        
+        public RequestStatus(Task<string> task)
+        {
+            _task = task;
+            IsCompleted = false;
+            Result = null;
+            Error = null;
+            
+            // Set up continuation to update status when task completes
+            _task.ContinueWith(t => {
+                IsCompleted = true;
+                if (t.IsFaulted)
+                {
+                    Error = t.Exception;
+                }
+                else
+                {
+                    Result = t.Result;
+                }
+            });
+        }
+    }
+    
+    /// <summary>
+    /// Make a Gemini API request and return a RequestStatus object that can be polled for completion
+    /// </summary>
+    public RequestStatus MakeGeminiRequest(string prompt, string base64Image = null)
+    {
+        var task = geminiClient.GenerateContent(prompt, base64Image);
+        return new RequestStatus(task);
     }
 
     /// <summary>

@@ -2,15 +2,20 @@ using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
 using UnityEngine;
+using System.Collections.Generic;
+using System.Collections.Concurrent;
 
 /// <summary>
 /// A simple REST client for calling Google's Gemini model to generate content.
-/// Adjust the JSON structure and fields as needed to match the Gemini API docs.
+/// Supports concurrent API calls from multiple components.
 /// </summary>
 public class GeminiAPI
 {
     private readonly HttpClient _httpClient;
     private readonly string _baseEndpoint;
+    
+    // Track active requests to ensure they don't interfere with each other
+    private ConcurrentDictionary<string, Task<string>> _activeRequests = new ConcurrentDictionary<string, Task<string>>();
 
     // Provide your own model name and key here
     // e.g., "gemini-2.0-flash"
@@ -24,16 +29,33 @@ public class GeminiAPI
 
     /// <summary>
     /// Send a "generateContent" request to the Gemini model with a user prompt.
-    /// If you need inline images or extra config, adjust the 'parts' and request body.
+    /// This method supports concurrent calls from multiple components.
     /// </summary>
-    public async Task<string> GenerateContent(string userPrompt, string base64Image = null)
+    public Task<string> GenerateContent(string userPrompt, string base64Image = null)
     {
-        // Build the request data. 
-        // Adjust to match your bounding box prompt structure if needed.
-        // For example, if you want to embed an inline image, you might do something like:
-        //   parts: [ { text = userPrompt },
-        //            { inlineData = { data = base64Image, mimeType="image/png" }} ]
-
+        // Generate a unique ID for this request
+        string requestId = System.Guid.NewGuid().ToString();
+        
+        // Create a new task for this specific request
+        var requestTask = MakeApiRequest(requestId, userPrompt, base64Image);
+        
+        // Store the task in our active requests dictionary
+        _activeRequests[requestId] = requestTask;
+        
+        // Return a continuation task that will clean up after completion
+        return requestTask.ContinueWith(task => {
+            // Remove from active requests when done
+            _activeRequests.TryRemove(requestId, out _);
+            return task.Result;
+        });
+    }
+    
+    /// <summary>
+    /// Internal method to make the actual API request
+    /// </summary>
+    private async Task<string> MakeApiRequest(string requestId, string userPrompt, string base64Image)
+    {
+        // Build the request data
         var requestData = new
         {
             contents = new[]
@@ -62,20 +84,33 @@ public class GeminiAPI
         };
 
         // Convert to JSON
-        // For more complex scenarios, you may prefer a more flexible library than JsonUtility.
         string payloadJson = Newtonsoft.Json.JsonConvert.SerializeObject(requestData);
 
         using var content = new StringContent(payloadJson, Encoding.UTF8, "application/json");
 
-        // POST to the Gemini model endpoint
-        var response = await _httpClient.PostAsync(_baseEndpoint, content);
-        var responseString = await response.Content.ReadAsStringAsync();
+        try {
+            // POST to the Gemini model endpoint
+            var response = await _httpClient.PostAsync(_baseEndpoint, content);
+            var responseString = await response.Content.ReadAsStringAsync();
 
-        if (!response.IsSuccessStatusCode)
-        {
-            Debug.LogError($"Gemini API request failed with code {response.StatusCode}\nResponse: {responseString}");
+            if (!response.IsSuccessStatusCode)
+            {
+                Debug.LogError($"Gemini API request {requestId} failed with code {response.StatusCode}\nResponse: {responseString}");
+            }
+
+            return responseString;
         }
-
-        return responseString;
+        catch (System.Exception ex) {
+            Debug.LogError($"Exception in Gemini API request {requestId}: {ex.Message}");
+            return $"{{\"error\": \"{ex.Message}\"}}";
+        }
+    }
+    
+    /// <summary>
+    /// Get the number of currently active requests
+    /// </summary>
+    public int GetActiveRequestCount()
+    {
+        return _activeRequests.Count;
     }
 }

@@ -34,7 +34,9 @@ public class GeminiQuestionAnswerer : GeminiGeneral
         string base64Image = ConvertTextureToBase64(frameTex);
 
         // 3) Call Gemini with the question
-        var request = geminiClient.GenerateContent(questionContent, base64Image);
+        // This now uses the new RequestStatus system which supports concurrent API calls
+        // from multiple components without interfering with each other
+        var request = MakeGeminiRequest(questionContent, base64Image);
         while (!request.IsCompleted)
         {
             yield return null;

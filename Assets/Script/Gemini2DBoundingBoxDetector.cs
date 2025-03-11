@@ -45,7 +45,9 @@ public class Gemini2DBoundingBoxDetector : GeminiGeneral
             "and a text label of their name indicating exactly what the item is (the product name) in \"label\".";
 
         // 4) Call Gemini
-        var request = geminiClient.GenerateContent(prompt, base64Image);
+        // This now uses the new RequestStatus system which supports concurrent API calls
+        // from multiple components without interfering with each other
+        var request = MakeGeminiRequest(prompt, base64Image);
         while (!request.IsCompleted)
         {
             yield return null;

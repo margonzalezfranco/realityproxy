@@ -37,20 +37,20 @@ public class SphereToggleScript : MonoBehaviour
     // New Fields for Gemini Re-Call
     // -----------------------------
     [Header("Gemini Re-Call Settings")]
-    [Tooltip("Your Gemini model name, e.g. 'gemini-2.0-flash'")]
-    public string modelName = "gemini-2.0-flash";
-
     [Tooltip("Your API key")]
-    public string geminiApiKey = "AIzaSyBx5IRXG1FOUN3HdnKFMgsQA5zOcui7Mhc";
-
+    public string geminiApiKey = "YOUR_API_KEY";
+    
     [Tooltip("Your Google Cloud Vision API key for OCR")]
-    public string visionApiKey = "AIzaSyBt5kvN77OvM2edI0TPwVpsfUFQjF2Pq7o";
-
+    public string visionApiKey = "YOUR_VISION_API_KEY";
+    
     [Tooltip("A reference to your Gemini API client script. Make sure it's initialized.")]
-    public GeminiAPI geminiClient;
-
+    public string geminiModelName = "gemini-2.0-flash";
+    
     [Tooltip("A RenderTexture from the camera feed (like a VisionPro or other XR camera).")]
     public RenderTexture cameraRenderTex;
+    
+    [Tooltip("Reference to a GeminiGeneral instance to use for API calls")]
+    public GeminiGeneral geminiGeneral;
 
     [Tooltip("Parent transform/container for the newly created question lines.")]
     [HideInInspector]
@@ -159,26 +159,55 @@ public class SphereToggleScript : MonoBehaviour
 
     private void Start()
     {
-        if (geminiClient == null)
+        // Find a GeminiGeneral instance if one isn't assigned
+        if (geminiGeneral == null)
         {
-            geminiClient = new GeminiAPI(modelName, geminiApiKey);
+            geminiGeneral = FindAnyObjectByType<GeminiGeneral>();
+            if (geminiGeneral == null)
+            {
+                Debug.LogError("No GeminiGeneral instance found in the scene. API calls will fail.");
+            }
         }
-
-        // Initialize the info panel as hidden
-        if (InfoPanel != null)
-        {
-            InfoPanel.SetActive(false);
-        }
+        
+        // Initialize the Gemini client (we don't need this anymore since we're using GeminiGeneral)
+        // geminiClient = new GeminiAPI(geminiModelName, geminiApiKey);
         
         // Subscribe to toggle events
         SubscribeToToggleEvents();
-
-        // Subscribe to scene analysis events
+        
+        // Initialize OCR context
+        if (sceneContextManager != null)
+        {
+            UpdateKnownObjectLabels();
+        }
+        
+        // Start OCR routine if enabled
+        if (ocrUpdateInterval > 0)
+        {
+            ocrRoutine = StartCoroutine(UpdateObjectOCRRoutine());
+        }
+        
+        // Subscribe to scene context events
         if (sceneContextManager != null)
         {
             sceneContextManager.OnSceneContextComplete += HandleSceneAnalysis;
+            
+            // Get current analysis if available
+            var currentAnalysis = sceneContextManager.GetCurrentAnalysis();
+            if (currentAnalysis != null)
+            {
+                HandleSceneAnalysis(currentAnalysis);
+            }
         }
         
+        // Subscribe to log messages for OCR parsing
+        Application.logMessageReceived += CaptureOCRLogMessages;
+        
+        // Start product dimension estimation routine
+        StartCoroutine(EstimateProductDimensionsRoutine());
+        
+        // Create OCR line prefab if needed
+        if (ocrLinePrefab == null && ocrLineCanvas != null)
         // Initialize the OCR component
         if (ocrComponent == null)
         {
@@ -470,12 +499,11 @@ public class SphereToggleScript : MonoBehaviour
         ";
         
         // Call Gemini without an image
-        var requestTask = geminiClient.GenerateContent(prompt, null);
-        
-        while (!requestTask.IsCompleted)
+        var request = geminiGeneral.MakeGeminiRequest(prompt, null);
+        while (!request.IsCompleted)
             yield return null;
             
-        string rawResponse = requestTask.Result;
+        string rawResponse = request.Result;
         string jsonStr = TryExtractJson(rawResponse);
         
         if (!string.IsNullOrEmpty(jsonStr))
@@ -827,116 +855,73 @@ public class SphereToggleScript : MonoBehaviour
 
     private IEnumerator UpdateObjectDescriptionRoutine(string labelContent)
     {
-        while (true)
+        if (inspectionRoutine != null)
         {
-            // 1) Capture the current frame
-            Texture2D frameTex = CaptureFrame(cameraRenderTex);
-            string base64Image = ConvertTextureToBase64(frameTex);
-            Destroy(frameTex);
-
-            // 2) Build the prompt with OCR context
-            string ocrContext = objectOCRContext.Count > 0
-                ? "OCR text detected on the object:\n" + string.Join("\n", objectOCRContext)
-                : "No text detected on the object.";
-
-            // Add bounding box information to the prompt
-            string boundingBoxInfo = "";
-            if (labelBoundingBoxes.Count > 0)
-            {
-                boundingBoxInfo = "Bounding box information for text lines (x, y, width, height):\n";
-                foreach (var kvp in labelBoundingBoxes)
-                {
-                    boundingBoxInfo += $"- \"{kvp.Key}\": {kvp.Value.x}, {kvp.Value.y}, {kvp.Value.width}, {kvp.Value.height}\n";
-                }
-            }
-
-            // Modify the prompt to request JSON format and include OCR context with bounding boxes
-            string prompt = $@"
-                Analyze this image and determine if a hand is pointing at any object or text. Provide a JSON response with the following structure:
-                {{
-                  ""isPointing"": true/false,
-                  ""pointedArea"": ""[specific text line or object name being pointed at, or 'unknown' if unclear]"",
-                  ""pointingHand"": ""left""/""right"",
-                  ""description"": ""[brief description of what is being pointed at]""
-                }}
-
-                Context about the object being inspected:
-                - Object name: {labelContent}
-                - {ocrContext}
-                - {boundingBoxInfo}
-
-                Focus on hand positions and gestures that indicate pointing.
-                IMPORTANT: If you detect pointing, the pointedArea MUST be one of:
-                1. A complete line of text from the OCR context (not just a single word)
-                2. One of these known text lines: {string.Join("\n", knownObjectLabels)}
-                
-                When determining which line is being pointed at, consider:
-                1. The position of the finger relative to the bounding boxes of text
-                2. Choose the text line whose bounding box is closest to the pointing finger
-                
-                If the object being pointed at doesn't match any detected text lines or known names, use 'unknown'.
-                Always specify which hand (left or right) is doing the pointing in the pointingHand field.
-                If no pointing is detected, set isPointing to false and leave other fields with default values.
-            ";
-
-            // 3) Call Gemini
-            var requestTask = geminiClient.GenerateContent(prompt, base64Image);
-            
-            while (!requestTask.IsCompleted)
-                yield return null;
-
-            string rawResponse = requestTask.Result;
-            
-            // First extract the JSON from the response
-            string jsonStr = TryExtractJson(rawResponse);
-            
-            if (!string.IsNullOrEmpty(jsonStr))
-            {
-                try
-                {
-                    var pointingInfo = JsonConvert.DeserializeObject<PointingDescription>(jsonStr);
-                    bool isPointingNow = pointingInfo.isPointing;
-                    
-                    // Update pointing state if changed
-                    if (isPointingNow != currentlyPointing)
-                    {
-                        currentlyPointing = isPointingNow;
-                        OnPointingStateChanged?.Invoke(currentlyPointing);
-                    }
-                    
-                    if (isPointingNow)
-                    {
-                        // Update which area is being pointed at
-                        UpdatePointedArea(pointingInfo.pointedArea);
-                        
-                        // Update the visualization
-                        UpdatePointingVisualization();
-                    }
-
-                    // Update UI elements
-                    if (tmpPointingText != null && isPointingNow)
-                    {
-                        tmpPointingText.text = pointingInfo.pointedArea;
-                    }
-                    
-                    if (descriptionText != null)
-                    {
-                        descriptionText.text = pointingInfo.description;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Debug.LogError($"Failed to parse pointing description JSON: {ex}\nJSON string: {jsonStr}");
-                }
-            }
-            else
-            {
-                Debug.LogError("Failed to extract JSON from Gemini response");
-            }
-
-            // Wait for the specified interval before next update
-            yield return new WaitForSeconds(inspectionUpdateInterval);
+            StopCoroutine(inspectionRoutine);
         }
+        
+        // If we have OCR data, include it in the context
+        string ocrContext = "";
+        if (objectOCRContext.Count > 0)
+        {
+            ocrContext = "OCR Text detected on object: " + string.Join(" ", objectOCRContext);
+        }
+        else if (hasOptimalContext && !string.IsNullOrEmpty(optimalOCRContext))
+        {
+            ocrContext = "OCR Text detected on object: " + optimalOCRContext;
+        }
+        
+        // Get scene context if available
+        string sceneTypeContext = "";
+        string taskContext = "";
+        
+        if (currentSceneAnalysis != null)
+        {
+            sceneTypeContext = $"Current environment: {currentSceneAnalysis.sceneType}";
+            
+            if (currentSceneAnalysis.possibleTasks != null && currentSceneAnalysis.possibleTasks.Count > 0)
+            {
+                taskContext = $"Possible tasks in this environment: {string.Join(", ", currentSceneAnalysis.possibleTasks)}";
+            }
+        }
+        
+        // Capture the current frame
+        Texture2D frameTex = CaptureFrame(cameraRenderTex);
+        
+        // Convert to base64
+        string base64Image = ConvertTextureToBase64(frameTex);
+        
+        // Build the prompt
+        string prompt = $@"
+            Analyze this image showing a {labelContent}.
+            {ocrContext}
+            {sceneTypeContext}
+            {taskContext}
+            
+            Provide a detailed description of the object, including:
+            1. What it is and what it's used for
+            2. Key features visible in the image
+            3. Any text or labels visible on it
+            4. How it might be relevant to the current environment
+            
+            Keep the description concise (max 3-4 sentences) but informative.
+        ";
+        
+        // Call Gemini with the image
+        var request = geminiGeneral.MakeGeminiRequest(prompt, base64Image);
+        while (!request.IsCompleted)
+            yield return null;
+            
+        string response = request.Result;
+        
+        // Update the description text
+        if (descriptionText != null)
+        {
+            descriptionText.text = response;
+        }
+        
+        // Wait for the specified interval before next update
+        yield return new WaitForSeconds(inspectionUpdateInterval);
     }
 
     private void UpdatePointingVisualization()
@@ -1574,43 +1559,27 @@ public class SphereToggleScript : MonoBehaviour
     /// </summary>
     private IEnumerator GenerateQuestionsRoutine(string labelContent)
     {
-        // 1) Capture the camera frame -> Base64
+        // Clear any previous questions
+        ClearPreviousQuestions();
+        
+        // Capture the current frame
         Texture2D frameTex = CaptureFrame(cameraRenderTex);
+        
+        // Convert to base64
         string base64Image = ConvertTextureToBase64(frameTex);
-        Destroy(frameTex);  // free the temporary texture
-
-        // 2) Build a simple prompt that references the label Content
-        //    "Ask up to 5 questions about this item"
-
-        // based on the current scene context and task context:
-        string prompt = $@"
-            Given the current scene context: {currentSceneContext},
-            and the potential tasks: {currentTaskContext},
-            and that the user is holding / selecting this item: {labelContent},
-
-            Please return a JSON list of possible user questions about this product/item.
-            Focus on questions that are relevant to the current scene context and tasks.
-            Return only the most likely questions, up to 5 maximum.
-            In the format:
-            json
-            [
-            ""Question 1"",
-            ""Question 2"",
-            ...
-            ]
-            ";
-
-        // 3) Call Gemini
-        var requestTask = geminiClient.GenerateContent(prompt, base64Image);
-
-        while (!requestTask.IsCompleted)
+        
+        // Build the prompt
+        string prompt = $"Analyze this image showing a {labelContent}. Generate 3-5 specific questions that someone might ask about this object. Focus on questions that can be answered by looking at the image. Format as a JSON array of strings.";
+        
+        // Call Gemini with the image
+        var request = geminiGeneral.MakeGeminiRequest(prompt, base64Image);
+        while (!request.IsCompleted)
             yield return null;
-
-        string geminiResponse = requestTask.Result;
-        // Debug.Log("Gemini Questions Response:\n" + geminiResponse);
-
-        // 4) Extract JSON
-        string extractedJson = TryExtractJson(geminiResponse);
+            
+        string response = request.Result;
+        
+        // Try to extract JSON from the response
+        string extractedJson = TryExtractJson(response);
         Debug.Log("Gemini Questions Response - Extracted JSON:\n" + extractedJson);
 
         if (string.IsNullOrEmpty(extractedJson))
@@ -1632,8 +1601,6 @@ public class SphereToggleScript : MonoBehaviour
         }
 
         // 5) Instantiate UI elements for each question
-        ClearPreviousQuestions();
-
         if (questionsList != null && questionsList.Count > 0)
         {
             float currentY = -60f;  // Start at the top
@@ -1690,66 +1657,65 @@ public class SphereToggleScript : MonoBehaviour
     /// </summary>
     private IEnumerator GenerateRelationshipsRoutine(string inHandLabel)
     {
-        // 1) Gather all recognized anchors from sceneObjManager
-        var anchors = sceneObjManager.GetAllAnchors();
-        List<string> itemLabels = new List<string>();
-        foreach (var a in anchors)
-        {
-            itemLabels.Add(a.label);
-        }
-        // remove the "in-hand" label so it doesn't appear in the "others"
-        itemLabels.Remove(inHandLabel);
-
-        // Check if there are any other objects in the scene
-        if (itemLabels.Count == 0)
-        {
-            Debug.Log($"No other objects detected in the scene besides {inHandLabel}. Cannot generate relationships.");
-            yield break; // Exit the coroutine early
-        }
-
-        // future possible feature:
-        // categorize the current user intent based on the scene context and task context -> "Compare", "Find similar", "Find task-related objects", etc. then use it as a part of the context to guide the relationship generation.
+        // Capture the current frame
+        Texture2D frameTex = CaptureFrame(cameraRenderTex);
+        
+        // Convert to base64
+        string base64Image = ConvertTextureToBase64(frameTex);
+        
+        // Get all known objects from the scene manager
+        UpdateKnownObjectLabels();
+        
+        // Build the prompt
+        string objectsContext = knownObjectLabels.Count > 0 ? 
+            "Known objects in the scene: " + string.Join(", ", knownObjectLabels) : 
+            "No other known objects detected yet.";
+            
+        string sceneContext = !string.IsNullOrEmpty(currentSceneContext) ? 
+            $"Current environment: {currentSceneContext}" : 
+            "Unknown environment";
+            
+        string taskContext = !string.IsNullOrEmpty(currentTaskContext) ? 
+            $"Current task context: {currentTaskContext}" : 
+            "No specific task";
         
         string prompt = $@"
-        Given this scene context: {currentSceneContext},
-        the potential tasks: {currentTaskContext},
-        and that the user is holding / selecting this item: {inHandLabel},
-
-        Find objects that are most related to this {inHandLabel} in the current scene, considering:
-        1. The overall scene context and task
-        2. Spatial relationships
-        3. Functional relationships in the context of the task
-        4. Common usage patterns
-
-        Reminder: Don't include unrelated items in the output which are not related to the current task. It should be functionally related to the {inHandLabel}.
-
-        Choose only from these detected items: {string.Join(", ", itemLabels)}.
-
-        Output a JSON object where each key is a related object and its value is a brief relationship description (max 5 words).
-        Example format:
-        {{
-          ""object1"": ""used together for cooking"",
-          ""object2"": ""located next to item"",
-          ""object3"": ""complements main task""
-        }}
-
-        if you don't find any meaningful relationships between the {inHandLabel} and other items in the current scene, return an empty JSON object:
-        {{}}
+            Analyze this image showing a person holding a {inHandLabel}.
+            
+            {objectsContext}
+            {sceneContext}
+            {taskContext}
+            
+            Generate a JSON response with:
+            1. A list of potential relationships between the {inHandLabel} and other objects in the scene
+            2. Possible actions the user might want to take with the {inHandLabel} in this context
+            
+            Format as:
+            {{
+              ""relationships"": [
+                {{
+                  ""relatedObject"": ""object name"",
+                  ""relationship"": ""description of relationship""
+                }},
+                ...
+              ],
+              ""possibleActions"": [
+                ""action 1"",
+                ""action 2"",
+                ...
+              ]
+            }}
         ";
-
-        Debug.Log("Relationships prompt:\n" + prompt);
-
-        // 3) Call Gemini (not using an image here, but you could if relevant)
-        var requestTask = geminiClient.GenerateContent(prompt, null);
         
-        while (!requestTask.IsCompleted)
+        // Call Gemini with the image
+        var request = geminiGeneral.MakeGeminiRequest(prompt, base64Image);
+        while (!request.IsCompleted)
             yield return null;
-
-        string rawResponse = requestTask.Result;
-        // Debug.Log($"Relationships raw response:\n{rawResponse}");
-
-        // 4) Extract JSON portion
-        string extractedJson = TryExtractJson(rawResponse);
+            
+        string response = request.Result;
+        
+        // Try to extract JSON from the response
+        string extractedJson = TryExtractJson(response);
         Debug.Log("Relationships - Extracted JSON:\n" + extractedJson);
 
         if (string.IsNullOrEmpty(extractedJson))
@@ -1791,7 +1757,7 @@ public class SphereToggleScript : MonoBehaviour
             Debug.LogWarning($"No anchor found for this sphere GameObject!");
             yield break;
         }
-        relationLineManager.ShowRelationships(myAnchor, relationshipsDict, anchors);
+        relationLineManager.ShowRelationships(myAnchor, relationshipsDict, sceneObjManager.GetAllAnchors());
     }
 
     /// <summary>
@@ -2096,12 +2062,11 @@ public class SphereToggleScript : MonoBehaviour
         ";
         
         // Call Gemini without an image
-        var requestTask = geminiClient.GenerateContent(prompt, null);
-        
-        while (!requestTask.IsCompleted)
+        var request = geminiGeneral.MakeGeminiRequest(prompt, null);
+        while (!request.IsCompleted)
             yield return null;
             
-        string rawResponse = requestTask.Result;
+        string rawResponse = request.Result;
         string jsonStr = TryExtractJson(rawResponse);
         
         if (!string.IsNullOrEmpty(jsonStr))
