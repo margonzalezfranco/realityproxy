@@ -232,8 +232,8 @@ public class SceneObjectManager : MonoBehaviour
         {
             sphereToggleScript.descriptionText = descriptionText;
             sphereToggleScript.descriptionPanel = descriptionPanel;
-            sphereToggleScript.pointingPlane = pointingPlane;
-            sphereToggleScript.pointingPlaneText = pointingPlaneText;
+            sphereToggleScript.pointingPlane = pointingPlane.transform;
+            sphereToggleScript.tmpPointingText = pointingPlaneText;
         }
 
         if (handTracking != null)

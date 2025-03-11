@@ -283,6 +283,7 @@ MonoBehaviour:
   InfoPanel: {fileID: 0}
   modelName: gemini-2.0-flash
   geminiApiKey: AIzaSyAoYU7ZM-AImpfA0faIBBz8ovLb_7n0QF4
+  visionApiKey: AIzaSyBt5kvN77OvM2edI0TPwVpsfUFQjF2Pq7o
   cameraRenderTex: {fileID: 8400000, guid: 78e2b50f1cd8640efa61e2994d5eaec2, type: 2}
   questionsParent: {fileID: 0}
   questionPrefab: {fileID: 8332209716421791987, guid: afb3b284441664fef8669ab537fb8b5f, type: 3}
@@ -294,8 +295,15 @@ MonoBehaviour:
   menuOffset: {x: -6.5, y: 1, z: -1.5}
   descriptionPanel: {fileID: 0}
   descriptionText: {fileID: 0}
-  inspectionUpdateInterval: 5
+  inspectionUpdateInterval: 1
+  ocrComponent: {fileID: 0}
+  ocrUpdateInterval: 3
   handTracking: {fileID: 0}
   pointingPlane: {fileID: 0}
-  pointingPlaneText: {fileID: 0}
-  planeUpOffset: 0.02
+  tmpPointingText: {fileID: 0}
+  pointingPlaneOffset: 0.2
+  ocrLinePrefab: {fileID: 8332209716421791987, guid: d029c8febda544818a79fbf22d180b17, type: 3}
+  ocrLineCanvas: {fileID: 0}
+  highlightedLineMaterial: {fileID: 2100000, guid: 36d23d5fd7ae3452294b63e6599b7635, type: 2}
+  normalLineMaterial: {fileID: 2100000, guid: 2ce25bbe4864f4f5ab457e08addf1a1c, type: 2}
+  ocrCanvasScaleOverride: 0
