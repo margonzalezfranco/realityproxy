@@ -5937,7 +5937,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   geminiModelName: gemini-2.0-flash
-  geminiApiKey: AIzaSyAoYU7ZM-AImpfA0faIBBz8ovLb_7n0QF4
+  geminiApiKey: AIzaSyBW9yzvyBns2i7rnQhIWKnjMVWjGhZOHpY
   cameraRenderTex: {fileID: 8400000, guid: 78e2b50f1cd8640efa61e2994d5eaec2, type: 2}
   analysisPeriod: 20
   isAnalyzing: 1
@@ -5974,9 +5974,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   geminiModelName: gemini-2.0-flash-lite
-  geminiApiKey: AIzaSyAoYU7ZM-AImpfA0faIBBz8ovLb_7n0QF4
+  geminiApiKey: AIzaSyBW9yzvyBns2i7rnQhIWKnjMVWjGhZOHpY
   cameraRenderTex: {fileID: 8400000, guid: 78e2b50f1cd8640efa61e2994d5eaec2, type: 2}
-  detectionPeriod: 0.5
+  detectionPeriod: 3
   isDetecting: 1
   enableDebugLogging: 0
   sceneManager: {fileID: 1242229081}
@@ -6063,7 +6063,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   geminiModelName: gemini-2.0-flash
-  geminiApiKey: AIzaSyAoYU7ZM-AImpfA0faIBBz8ovLb_7n0QF4
+  geminiApiKey: AIzaSyBW9yzvyBns2i7rnQhIWKnjMVWjGhZOHpY
   cameraRenderTex: {fileID: 8400000, guid: 78e2b50f1cd8640efa61e2994d5eaec2, type: 2}
   defaultMaterial: {fileID: 2100000, guid: 2ce25bbe4864f4f5ab457e08addf1a1c, type: 2}
   cylinderSegments: 24
@@ -7967,7 +7967,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   geminiModelName: gemini-2.0-flash
-  geminiApiKey: AIzaSyAoYU7ZM-AImpfA0faIBBz8ovLb_7n0QF4
+  geminiApiKey: AIzaSyBW9yzvyBns2i7rnQhIWKnjMVWjGhZOHpY
   cameraRenderTex: {fileID: 8400000, guid: 78e2b50f1cd8640efa61e2994d5eaec2, type: 2}
   overlayCanvas: {fileID: 349830609}
   boundingBoxPrefab: {fileID: 4748099091582676251, guid: 8f190f4c2167b4f82b2e0e8bca5f1d2d, type: 3}
@@ -8027,7 +8027,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   geminiModelName: gemini-2.0-flash
-  geminiApiKey: AIzaSyAoYU7ZM-AImpfA0faIBBz8ovLb_7n0QF4
+  geminiApiKey: AIzaSyBW9yzvyBns2i7rnQhIWKnjMVWjGhZOHpY
   cameraRenderTex: {fileID: 8400000, guid: 78e2b50f1cd8640efa61e2994d5eaec2, type: 2}
   answerText: {fileID: 634796336}
   onAnswerReceived:

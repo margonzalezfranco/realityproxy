@@ -282,7 +282,7 @@ MonoBehaviour:
   menuScript: {fileID: 0}
   InfoPanel: {fileID: 0}
   modelName: gemini-2.0-flash
-  geminiApiKey: AIzaSyAoYU7ZM-AImpfA0faIBBz8ovLb_7n0QF4
+  geminiApiKey: AIzaSyBW9yzvyBns2i7rnQhIWKnjMVWjGhZOHpY
   visionApiKey: AIzaSyBt5kvN77OvM2edI0TPwVpsfUFQjF2Pq7o
   cameraRenderTex: {fileID: 8400000, guid: 78e2b50f1cd8640efa61e2994d5eaec2, type: 2}
   questionsParent: {fileID: 0}

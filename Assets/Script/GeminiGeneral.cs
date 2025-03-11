@@ -14,7 +14,7 @@ public class GeminiGeneral : MonoBehaviour
     public string geminiModelName = "gemini-2.0-flash";
 
     [Tooltip("Your API key")]
-    public string geminiApiKey = "AIzaSyAoYU7ZM-AImpfA0faIBBz8ovLb_7n0QF4";
+    public string geminiApiKey = "AIzaSyBW9yzvyBns2i7rnQhIWKnjMVWjGhZOHpY";
 
     [Header("Capture Settings")]
     [Tooltip("RenderTexture that displays the Vision Pro camera feed.")]

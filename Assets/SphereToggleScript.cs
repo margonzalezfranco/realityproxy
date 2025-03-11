@@ -41,7 +41,7 @@ public class SphereToggleScript : MonoBehaviour
     public string modelName = "gemini-2.0-flash";
 
     [Tooltip("Your API key")]
-    public string geminiApiKey = "AIzaSyAoYU7ZM-AImpfA0faIBBz8ovLb_7n0QF4";
+    public string geminiApiKey = "AIzaSyBW9yzvyBns2i7rnQhIWKnjMVWjGhZOHpY";
 
     [Tooltip("Your Google Cloud Vision API key for OCR")]
     public string visionApiKey = "AIzaSyBt5kvN77OvM2edI0TPwVpsfUFQjF2Pq7o";
@@ -602,6 +602,17 @@ public class SphereToggleScript : MonoBehaviour
         // Debug.Log($"Updated OCR context: {ocrText}");
         // Debug.Log($"Updated known labels (lines and words): {string.Join(", ", knownObjectLabels)}");
         Debug.Log($"Stored bounding boxes for {labelBoundingBoxes.Count} labels");
+        
+        // Update the visualization if we have bounding boxes
+        if (labelBoundingBoxes.Count > 0)
+        {
+            // If we're already showing the visualization, update it
+            if (ocrLineCanvas != null && ocrLineCanvas.gameObject.activeInHierarchy)
+            {
+                Debug.Log("Updating pointing visualization after OCR context change");
+                UpdatePointingVisualization();
+            }
+        }
     }
     
     /// <summary>
@@ -1348,19 +1359,30 @@ public class SphereToggleScript : MonoBehaviour
                 RectTransform rectTransform = lineVisualizer.GetComponent<RectTransform>();
                 if (rectTransform != null)
                 {
-                    // Convert normalized coordinates to UI coordinates
-                    // Note: Canvas coordinates have origin at center, UI typically has 0,0 at top-left
+                    // Calculate the size based on normalized dimensions
+                    float width = normalizedWidth * ocrPanel.GetComponent<RectTransform>().rect.width;
+                    float height = normalizedHeight * ocrPanel.GetComponent<RectTransform>().rect.height;
                     
-                    // Set anchors to stretch with parent size changes
-                    rectTransform.anchorMin = new Vector2(normalizedX, 1 - normalizedY - normalizedHeight);
-                    rectTransform.anchorMax = new Vector2(normalizedX + normalizedWidth, 1 - normalizedY);
+                    // Set the rect size
+                    rectTransform.sizeDelta = new Vector2(width, height);
+                    
+                    // Use centered anchors for position-based layout
+                    rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
+                    rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
                     rectTransform.pivot = new Vector2(0.5f, 0.5f);
                     
-                    // Set the rect size to match the calculated size
-                    rectTransform.anchoredPosition = Vector2.zero;
-                    rectTransform.sizeDelta = Vector2.zero; // Size is determined by anchors
+                    // Calculate the center position of this element in normalized space
+                    float centerX = normalizedX + (normalizedWidth / 2);
+                    float centerY = 1 - (normalizedY + (normalizedHeight / 2)); // Invert Y for Unity UI
                     
-                    Debug.Log($"Configured RectTransform for '{lineText}': anchors = {rectTransform.anchorMin} to {rectTransform.anchorMax}");
+                    // Convert to panel local coordinates
+                    float posX = (centerX - 0.5f) * ocrPanel.GetComponent<RectTransform>().rect.width;
+                    float posY = (centerY - 0.5f) * ocrPanel.GetComponent<RectTransform>().rect.height;
+                    
+                    // Set the position
+                    rectTransform.localPosition = new Vector3(posX, posY, 0);
+                    
+                    Debug.Log($"Updated position for '{lineText}': size = {rectTransform.sizeDelta}, localPosition = {rectTransform.localPosition}");
                 }
                 
                 // Apply appropriate material based on whether this is the pointed line
@@ -1438,6 +1460,12 @@ public class SphereToggleScript : MonoBehaviour
             
             // After all lines are created, adjust the canvas size to fit the content
             AdjustCanvasSizeToContent();
+            
+            // Update positions of all line visualizers
+            UpdateLineVisualizerPositions();
+            
+            // Debug bounding boxes
+            DebugBoundingBoxes();
             
             // Log the final world scale for debugging
             LogCanvasWorldScale();
@@ -2144,9 +2172,10 @@ public class SphereToggleScript : MonoBehaviour
         
         // Add a RectTransform component for UI positioning
         RectTransform rt = prefab.AddComponent<RectTransform>();
-        rt.anchorMin = Vector2.zero;
-        rt.anchorMax = Vector2.one;
-        rt.sizeDelta = Vector2.zero;
+        rt.anchorMin = new Vector2(0.5f, 0.5f); // Center anchors
+        rt.anchorMax = new Vector2(0.5f, 0.5f);
+        rt.pivot = new Vector2(0.5f, 0.5f);     // Center pivot
+        rt.sizeDelta = new Vector2(100, 30);    // Default size
         
         // Add an Image component for the background
         Image img = prefab.AddComponent<Image>();
@@ -2248,11 +2277,103 @@ public class SphereToggleScript : MonoBehaviour
             contentWidth = Mathf.Max(contentWidth, 10f);
             contentHeight = Mathf.Max(contentHeight, 10f);
             
+            // Store the old size to check if we need to update positions
+            Vector2 oldSize = canvasRect.sizeDelta;
+            
             // Set a new canvas size based on the content
             canvasRect.sizeDelta = new Vector2(contentWidth, contentHeight);
             
-            Debug.Log($"Adjusted canvas size to: {contentWidth}x{contentHeight} to fit content between anchors {minAnchor} and {maxAnchor}");
+            Debug.Log($"Adjusted canvas size from {oldSize} to: {contentWidth}x{contentHeight} to fit content between anchors {minAnchor} and {maxAnchor}");
+            
+            // If the size changed significantly, we need to update line positions
+            if (Mathf.Abs(oldSize.x - contentWidth) > 0.1f || Mathf.Abs(oldSize.y - contentHeight) > 0.1f)
+            {
+                Debug.Log("Canvas size changed significantly, updating line positions");
+                // Force canvas update
+                Canvas.ForceUpdateCanvases();
+                
+                // Update line positions with the new canvas size
+                UpdateLinePositionsAfterCanvasResize();
+            }
         }
+    }
+    
+    // Update line positions after canvas resize
+    private void UpdateLinePositionsAfterCanvasResize()
+    {
+        if (ocrLineVisualizers.Count == 0 || labelBoundingBoxes.Count == 0)
+            return;
+            
+        Debug.Log("Updating line positions after canvas resize");
+        
+        // Calculate the overall bounding box
+        Rect overallBounds = CalculateOverallBoundingBox();
+        
+        // Find the panel that contains all the lines
+        Transform ocrPanel = ocrLineCanvas.transform.Find("OCRPanel");
+        if (ocrPanel == null)
+            return;
+            
+        RectTransform panelRect = ocrPanel.GetComponent<RectTransform>();
+        if (panelRect == null)
+            return;
+            
+        // Get the panel's width and height
+        float panelWidth = panelRect.rect.width;
+        float panelHeight = panelRect.rect.height;
+        
+        Debug.Log($"Panel dimensions: {panelWidth}x{panelHeight}");
+        
+        // Update each line visualizer position
+        foreach (GameObject visualizer in ocrLineVisualizers)
+        {
+            if (visualizer == null)
+                continue;
+                
+            string lineText = visualizer.name.Replace("Line_", "");
+            
+            if (labelBoundingBoxes.TryGetValue(lineText, out Rect lineBounds))
+            {
+                // Calculate normalized position within overall bounds (0-1 range)
+                float normalizedX = (lineBounds.x - overallBounds.x) / overallBounds.width;
+                float normalizedY = (lineBounds.y - overallBounds.y) / overallBounds.height;
+                float normalizedWidth = lineBounds.width / overallBounds.width;
+                float normalizedHeight = lineBounds.height / overallBounds.height;
+                
+                // Update RectTransform
+                RectTransform rectTransform = visualizer.GetComponent<RectTransform>();
+                if (rectTransform != null)
+                {
+                    // Calculate the size based on normalized dimensions
+                    float width = normalizedWidth * panelWidth;
+                    float height = normalizedHeight * panelHeight;
+                    
+                    // Set the rect size
+                    rectTransform.sizeDelta = new Vector2(width, height);
+                    
+                    // Use centered anchors for position-based layout
+                    rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
+                    rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+                    rectTransform.pivot = new Vector2(0.5f, 0.5f);
+                    
+                    // Calculate the center position of this element in normalized space
+                    float centerX = normalizedX + (normalizedWidth / 2);
+                    float centerY = 1 - (normalizedY + (normalizedHeight / 2)); // Invert Y for Unity UI
+                    
+                    // Convert to panel local coordinates
+                    float posX = (centerX - 0.5f) * panelWidth;
+                    float posY = (centerY - 0.5f) * panelHeight;
+                    
+                    // Set the position
+                    rectTransform.localPosition = new Vector3(posX, posY, 0);
+                    
+                    Debug.Log($"Updated position after resize for '{lineText}': size = {rectTransform.sizeDelta}, localPosition = {rectTransform.localPosition}");
+                }
+            }
+        }
+        
+        // Force canvas update
+        Canvas.ForceUpdateCanvases();
     }
 
     // Log the actual world scale of the canvas for debugging
@@ -2288,5 +2409,153 @@ public class SphereToggleScript : MonoBehaviour
             
             Debug.Log($"Canvas world size: {worldSize.x}m × {worldSize.y}m (from rect size: {canvasSize.x} × {canvasSize.y})");
         }
+    }
+
+    // Update positions of all line visualizers based on current bounding boxes
+    private void UpdateLineVisualizerPositions()
+    {
+        if (ocrLineVisualizers.Count == 0 || labelBoundingBoxes.Count == 0)
+            return;
+            
+        Debug.Log("Updating positions of all line visualizers");
+        
+        // Calculate the overall bounding box
+        Rect overallBounds = CalculateOverallBoundingBox();
+        
+        // Find the panel that contains all the lines
+        Transform ocrPanel = ocrLineCanvas.transform.Find("OCRPanel");
+        if (ocrPanel == null)
+            return;
+            
+        bool hasPointedArea = !string.IsNullOrEmpty(currentPointedArea);
+            
+        // Update each line visualizer position
+        foreach (GameObject visualizer in ocrLineVisualizers)
+        {
+            if (visualizer == null)
+                continue;
+                
+            string lineText = visualizer.name.Replace("Line_", "");
+            
+            if (labelBoundingBoxes.TryGetValue(lineText, out Rect lineBounds))
+            {
+                // Calculate normalized position within overall bounds (0-1 range)
+                float normalizedX = (lineBounds.x - overallBounds.x) / overallBounds.width;
+                float normalizedY = (lineBounds.y - overallBounds.y) / overallBounds.height;
+                float normalizedWidth = lineBounds.width / overallBounds.width;
+                float normalizedHeight = lineBounds.height / overallBounds.height;
+                
+                // Update RectTransform
+                RectTransform rectTransform = visualizer.GetComponent<RectTransform>();
+                if (rectTransform != null)
+                {
+                    rectTransform.anchorMin = new Vector2(normalizedX, 1 - normalizedY - normalizedHeight);
+                    rectTransform.anchorMax = new Vector2(normalizedX + normalizedWidth, 1 - normalizedY);
+                    rectTransform.anchoredPosition = Vector2.zero;
+                    rectTransform.sizeDelta = Vector2.zero;
+                    
+                    // Set the local position explicitly to ensure proper positioning
+                    rectTransform.localPosition = new Vector3(
+                        (normalizedX + normalizedWidth/2 - 0.5f) * ocrPanel.GetComponent<RectTransform>().rect.width,
+                        (0.5f - (1 - normalizedY - normalizedHeight/2)) * ocrPanel.GetComponent<RectTransform>().rect.height,
+                        0
+                    );
+                    
+                    Debug.Log($"Updated position for '{lineText}': anchors = {rectTransform.anchorMin} to {rectTransform.anchorMax}, localPosition = {rectTransform.localPosition}");
+                }
+                
+                // Update material/color based on whether this is the pointed line
+                bool isPointedLine = lineText == currentPointedArea;
+                Image img = visualizer.GetComponent<Image>();
+                
+                if (img != null)
+                {
+                    if (isPointedLine && hasPointedArea)
+                    {
+                        // Apply highlighted material/color
+                        if (highlightedLineMaterial != null)
+                        {
+                            img.material = highlightedLineMaterial;
+                        }
+                        img.color = Color.yellow;
+                        
+                        // Make the pointed line slightly larger
+                        if (rectTransform != null)
+                        {
+                            rectTransform.localScale = Vector3.one * 1.1f;
+                        }
+                    }
+                    else
+                    {
+                        // Apply normal material/color
+                        if (normalLineMaterial != null)
+                        {
+                            img.material = normalLineMaterial;
+                        }
+                        img.color = new Color(1f, 1f, 1f, 0.5f); // Semi-transparent white
+                        
+                        // Reset scale
+                        if (rectTransform != null)
+                        {
+                            rectTransform.localScale = Vector3.one;
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Force canvas update
+        Canvas.ForceUpdateCanvases();
+    }
+
+    // Debug method to log all bounding boxes
+    private void DebugBoundingBoxes()
+    {
+        if (labelBoundingBoxes.Count == 0)
+        {
+            Debug.LogWarning("No bounding boxes to debug");
+            return;
+        }
+        
+        Debug.Log("=== BOUNDING BOX DEBUG ===");
+        Debug.Log($"Total bounding boxes: {labelBoundingBoxes.Count}");
+        
+        Rect overallBounds = CalculateOverallBoundingBox();
+        Debug.Log($"Overall bounds: {overallBounds}");
+        
+        foreach (var kvp in labelBoundingBoxes)
+        {
+            string lineText = kvp.Key;
+            Rect bounds = kvp.Value;
+            
+            // Calculate normalized position
+            float normalizedX = (bounds.x - overallBounds.x) / overallBounds.width;
+            float normalizedY = (bounds.y - overallBounds.y) / overallBounds.height;
+            float normalizedWidth = bounds.width / overallBounds.width;
+            float normalizedHeight = bounds.height / overallBounds.height;
+            
+            Debug.Log($"Line: '{lineText}' - Bounds: {bounds}, Normalized: X={normalizedX:F3}, Y={normalizedY:F3}, W={normalizedWidth:F3}, H={normalizedHeight:F3}");
+            
+            // Find the corresponding visualizer
+            GameObject visualizer = ocrLineVisualizers.Find(v => v != null && v.name == "Line_" + lineText);
+            if (visualizer != null)
+            {
+                RectTransform rt = visualizer.GetComponent<RectTransform>();
+                if (rt != null)
+                {
+                    Debug.Log($"  Visualizer: AnchorMin={rt.anchorMin}, AnchorMax={rt.anchorMax}, LocalPos={rt.localPosition}");
+                }
+                else
+                {
+                    Debug.LogWarning($"  Visualizer for '{lineText}' has no RectTransform");
+                }
+            }
+            else
+            {
+                Debug.LogWarning($"  No visualizer found for '{lineText}'");
+            }
+        }
+        
+        Debug.Log("=== END BOUNDING BOX DEBUG ===");
     }
 }
