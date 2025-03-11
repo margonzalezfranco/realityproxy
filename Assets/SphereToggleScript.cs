@@ -56,7 +56,7 @@ public class SphereToggleScript : MonoBehaviour
     [HideInInspector]
     public Transform questionsParent;
 
-    [Tooltip("Prefab that displays each question. Should have a TextMeshProUGUI or Text inside.")]
+    [Tooltip("Prefab that displays each question. Should have a TextMeshPro or Text inside.")]
     public GameObject questionPrefab;
 
     [Header("Question Answering")]
@@ -88,7 +88,7 @@ public class SphereToggleScript : MonoBehaviour
     [Header("Object Inspection")]
     [Tooltip("Panel that shows the object description during inspection")]
     public GameObject descriptionPanel;
-    [Tooltip("TextMeshProUGUI component that displays the object description")]
+    [Tooltip("TextMeshPro component that displays the object description")]
     public TextMeshPro descriptionText;
     [Tooltip("How often to update the description (in seconds)")]
     public float inspectionUpdateInterval = 1f;
@@ -182,10 +182,16 @@ public class SphereToggleScript : MonoBehaviour
         // Initialize the OCR component
         if (ocrComponent == null)
         {
-            ocrComponent = GetComponent<CloudVisionOCRUnified>();
+            // First try to find the component in the scene
+            ocrComponent = FindAnyObjectByType<CloudVisionOCRUnified>();
+            
             if (ocrComponent == null)
             {
-                ocrComponent = gameObject.AddComponent<CloudVisionOCRUnified>();
+                Debug.LogWarning("No CloudVisionOCRUnified component found in the scene. OCR functionality will be limited.");
+            }
+            else
+            {
+                Debug.Log("Found existing CloudVisionOCRUnified component in the scene.");
             }
         }
         
@@ -1391,10 +1397,10 @@ public class SphereToggleScript : MonoBehaviour
                 }
                 
                 // Add TextMeshPro component for text display
-                TextMeshProUGUI tmpText = lineVisualizer.GetComponentInChildren<TextMeshProUGUI>();
+                TextMeshPro tmpText = lineVisualizer.GetComponentInChildren<TextMeshPro>();
                 if (tmpText == null)
                 {
-                    Debug.Log($"Creating new TextMeshProUGUI for '{lineText}'");
+                    Debug.Log($"Creating new TextMeshPro for '{lineText}'");
                     GameObject textObj = new GameObject("Text");
                     textObj.transform.SetParent(lineVisualizer.transform, false);
                     
@@ -1405,7 +1411,7 @@ public class SphereToggleScript : MonoBehaviour
                     textRect.offsetMin = Vector2.zero;
                     textRect.offsetMax = Vector2.zero;
                     
-                    tmpText = textObj.AddComponent<TextMeshProUGUI>();
+                    tmpText = textObj.AddComponent<TextMeshPro>();
                     tmpText.alignment = TextAlignmentOptions.Center;
                     tmpText.fontSize = 14;
                 }
@@ -2146,19 +2152,38 @@ public class SphereToggleScript : MonoBehaviour
         Image img = prefab.AddComponent<Image>();
         img.color = new Color(0.2f, 0.2f, 0.2f, 0.7f); // Dark gray, semi-transparent
         
-        // Create a child GameObject for the text
-        GameObject textObj = new GameObject("Text");
-        textObj.transform.SetParent(prefab.transform, false);
+        // Find or create a child GameObject for the text
+        GameObject textObj = prefab.transform.Find("Text")?.gameObject;
+        TextMeshPro tmpText;
         
-        // Add RectTransform to the text and make it fill the parent
-        RectTransform textRt = textObj.AddComponent<RectTransform>();
-        textRt.anchorMin = Vector2.zero;
-        textRt.anchorMax = Vector2.one;
-        textRt.offsetMin = new Vector2(2, 2); // 2px padding
-        textRt.offsetMax = new Vector2(-2, -2); // 2px padding
+        if (textObj != null)
+        {
+            // Get the existing TextMeshPro component
+            tmpText = textObj.GetComponent<TextMeshPro>();
+            if (tmpText == null)
+            {
+                Debug.LogWarning("Text GameObject found but missing TextMeshPro component. Adding one.");
+                tmpText = textObj.AddComponent<TextMeshPro>();
+            }
+        }
+        else
+        {
+            // Create a new Text GameObject if it doesn't exist
+            textObj = new GameObject("Text");
+            textObj.transform.SetParent(prefab.transform, false);
+            
+            // Add RectTransform to the text and make it fill the parent
+            RectTransform textRt = textObj.AddComponent<RectTransform>();
+            textRt.anchorMin = Vector2.zero;
+            textRt.anchorMax = Vector2.one;
+            textRt.offsetMin = new Vector2(2, 2); // 2px padding
+            textRt.offsetMax = new Vector2(-2, -2); // 2px padding
+            
+            // Add TextMeshPro component
+            tmpText = textObj.AddComponent<TextMeshPro>();
+        }
         
-        // Add TextMeshProUGUI component
-        TextMeshProUGUI tmpText = textObj.AddComponent<TextMeshProUGUI>();
+        // Configure the TextMeshPro component
         tmpText.alignment = TextAlignmentOptions.Center;
         tmpText.fontSize = 14;
         tmpText.color = Color.white;
