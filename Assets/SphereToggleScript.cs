@@ -41,7 +41,7 @@ public class SphereToggleScript : MonoBehaviour
     public string modelName = "gemini-2.0-flash";
 
     [Tooltip("Your API key")]
-    public string geminiApiKey = "AIzaSyBW9yzvyBns2i7rnQhIWKnjMVWjGhZOHpY";
+    public string geminiApiKey = "AIzaSyBx5IRXG1FOUN3HdnKFMgsQA5zOcui7Mhc";
 
     [Tooltip("Your Google Cloud Vision API key for OCR")]
     public string visionApiKey = "AIzaSyBt5kvN77OvM2edI0TPwVpsfUFQjF2Pq7o";
