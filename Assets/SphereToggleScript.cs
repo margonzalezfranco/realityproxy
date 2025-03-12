@@ -392,50 +392,52 @@ public class SphereToggleScript : MonoBehaviour
                 
                 if (pointingHand.isTracked && pointingHand.GetJoint(XRHandJointID.IndexTip).TryGetPose(out Pose fingerTipPose))
                 {
-        if (pointingPlane != null)
-        {
-            // Ensure the plane is active
+                    if (pointingPlane != null)
+                    {
+                        //// pointingPlane: the root label that is spawned at the finger tip relative to the holding hand, and it moves with the finger tip while looking at the camera ////
+
+                        // Ensure the plane is active
                         pointingPlane.SetActive(true);
 
                         // Calculate initial relative position if not set
                         if (relativePosition == Vector3.zero)
-            {
+                        {
                             relativePosition = holdingHand.transform.InverseTransformPoint(fingerTipPose.position);
                         }
 
-                // If LazyFollow doesn't exist, add it
-                var lazyFollow = pointingPlane.GetComponent<DualTargetLazyFollow>();
-                if (lazyFollow == null)
-                {
+                        // If LazyFollow doesn't exist, add it
+                        var lazyFollow = pointingPlane.GetComponent<DualTargetLazyFollow>();
+                        if (lazyFollow == null)
+                        {
                             lazyFollow = pointingPlane.AddComponent<DualTargetLazyFollow>();
-                    
-                    // Configure following parameters
-                    lazyFollow.movementSpeed = 20f;
-                    lazyFollow.movementSpeedVariancePercentage = 0.25f;
-                    lazyFollow.minDistanceAllowed = 0.02f;
-                    lazyFollow.maxDistanceAllowed = 0.05f;
-                    lazyFollow.timeUntilThresholdReachesMaxDistance = 0.3f;
-                    
-                    lazyFollow.minAngleAllowed = 3f;
-                    lazyFollow.maxAngleAllowed = 15f;
-                    lazyFollow.timeUntilThresholdReachesMaxAngle = 0.3f;
-                    
-                    lazyFollow.positionFollowMode = LazyFollow.PositionFollowMode.Follow;
-                    lazyFollow.rotationFollowMode = LazyFollow.RotationFollowMode.LookAt;
-                    
-                            lazyFollow.positionTarget = holdingHand.transform;
-                    lazyFollow.rotationTarget = Camera.main.transform;
-                }
+                            
+                            // Configure following parameters
+                            lazyFollow.movementSpeed = 20f;
+                            lazyFollow.movementSpeedVariancePercentage = 0.25f;
+                            lazyFollow.minDistanceAllowed = 0.02f;
+                            lazyFollow.maxDistanceAllowed = 0.05f;
+                            lazyFollow.timeUntilThresholdReachesMaxDistance = 0.3f;
+                            
+                            lazyFollow.minAngleAllowed = 3f;
+                            lazyFollow.maxAngleAllowed = 15f;
+                            lazyFollow.timeUntilThresholdReachesMaxAngle = 0.3f;
+                            
+                            lazyFollow.positionFollowMode = LazyFollow.PositionFollowMode.Follow;
+                            lazyFollow.rotationFollowMode = LazyFollow.RotationFollowMode.LookAt;
+                            
+                            lazyFollow.positionTarget = holdingHand.transform; // move with the holding hand
+                            lazyFollow.rotationTarget = Camera.main.transform; // look at the camera
+                        }
 
                         // Update the relative position for continuous tracking
                         relativePosition = holdingHand.transform.InverseTransformPoint(fingerTipPose.position);
 
-                // Add up offset to the relative position
+                        // Add up offset to the relative position
                         Vector3 offsetPosition = relativePosition + (Vector3.up * planeUpOffset);
-                
-                // Update the LazyFollow target offset
-                lazyFollow.targetOffset = offsetPosition;
-            }
+                        
+                        // Update the LazyFollow target offset
+                        lazyFollow.targetOffset = offsetPosition;
+                    }
                 }
             }
         }
