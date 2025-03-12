@@ -12,6 +12,10 @@ public class SurfaceScanOCR : MonoBehaviour
     [Tooltip("Reference to the CloudVisionOCR component")]
     public CloudVisionOCRUnified ocrComponent;
 
+    [Header("OCR Settings")]
+    [Tooltip("Optional delay before triggering OCR (seconds)")]
+    public float ocrDelay = 0f;
+
     [Tooltip("Whether to automatically trigger OCR when surface length is completed")]
     public bool autoTriggerOCR = true;
 
@@ -50,9 +54,25 @@ public class SurfaceScanOCR : MonoBehaviour
         if (!autoTriggerOCR)
             return;
 
-        Debug.Log($"Surface length completed from {startPoint} to {endPoint} - Triggering OCR scan immediately");
+        Debug.Log($"Surface length completed from {startPoint} to {endPoint} - Preparing to scan with OCR");
         
-        // Trigger OCR scan immediately
+        // Start OCR scanning with optional delay
+        if (ocrDelay > 0)
+        {
+            StartCoroutine(DelayedOCRScan());
+        }
+        else
+        {
+            PerformOCRScan();
+        }
+    }
+
+    /// <summary>
+    /// Coroutine to delay OCR scanning
+    /// </summary>
+    private IEnumerator DelayedOCRScan()
+    {
+        yield return new WaitForSeconds(ocrDelay);
         PerformOCRScan();
     }
 
