@@ -20,6 +20,32 @@ public class CloudVisionOCRUnified : MonoBehaviour
     // Shared API endpoint URL (for OCR using images:annotate)
     private string visionEndpoint = "https://vision.googleapis.com/v1/images:annotate";
 
+    // Store a custom source texture that overrides the render texture if set
+    private Texture2D customSourceTexture;
+    
+    /// <summary>
+    /// Set a custom texture to use for OCR instead of the render texture
+    /// </summary>
+    /// <param name="texture">The texture to analyze</param>
+    public void SetSourceTexture(Texture2D texture)
+    {
+        customSourceTexture = texture;
+        Debug.Log($"Custom source texture set: {texture.width}x{texture.height}");
+    }
+
+    /// <summary>
+    /// Clear the custom source texture and revert to using the render texture
+    /// </summary>
+    public void ClearSourceTexture()
+    {
+        if (customSourceTexture != null)
+        {
+            Destroy(customSourceTexture);
+            customSourceTexture = null;
+            Debug.Log("Custom source texture cleared");
+        }
+    }
+
     #region Request Payload Data Classes
     // Using a common image data class
     [Serializable]
@@ -150,9 +176,11 @@ public class CloudVisionOCRUnified : MonoBehaviour
             Debug.LogError("API key not set. Please assign your Google Cloud Vision API key.");
             return;
         }
-        if (sourceRenderTexture == null)
+        
+        // Check if we have either a custom texture or render texture to analyze
+        if (customSourceTexture == null && sourceRenderTexture == null)
         {
-            Debug.LogError("RenderTexture not set. Please assign a RenderTexture to analyze.");
+            Debug.LogError("No texture available for analysis. Please assign a RenderTexture or set a custom texture.");
             return;
         }
 
@@ -167,7 +195,18 @@ public class CloudVisionOCRUnified : MonoBehaviour
     /// </summary>
     private IEnumerator ProcessOCRFullTextRoutine()
     {
-        string base64Image = ConvertRenderTextureToBase64(sourceRenderTexture);
+        string base64Image;
+        
+        // Use the custom texture if available, otherwise use the render texture
+        if (customSourceTexture != null)
+        {
+            base64Image = ConvertTexture2DToBase64(customSourceTexture);
+        }
+        else
+        {
+            base64Image = ConvertRenderTextureToBase64(sourceRenderTexture);
+        }
+        
         if (base64Image == null)
             yield break;
 
@@ -230,7 +269,18 @@ public class CloudVisionOCRUnified : MonoBehaviour
     /// </summary>
     private IEnumerator ProcessOCRBoundingBoxRoutine()
     {
-        string base64Image = ConvertRenderTextureToBase64(sourceRenderTexture);
+        string base64Image;
+        
+        // Use the custom texture if available, otherwise use the render texture
+        if (customSourceTexture != null)
+        {
+            base64Image = ConvertTexture2DToBase64(customSourceTexture);
+        }
+        else
+        {
+            base64Image = ConvertRenderTextureToBase64(sourceRenderTexture);
+        }
+        
         if (base64Image == null)
             yield break;
 
@@ -335,6 +385,23 @@ public class CloudVisionOCRUnified : MonoBehaviour
         catch (Exception e)
         {
             Debug.LogError("Error converting RenderTexture: " + e.Message);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Helper to convert a Texture2D to a Base64 PNG string.
+    /// </summary>
+    private string ConvertTexture2DToBase64(Texture2D texture)
+    {
+        try
+        {
+            byte[] imageBytes = texture.EncodeToPNG();
+            return Convert.ToBase64String(imageBytes);
+        }
+        catch (Exception e)
+        {
+            Debug.LogError("Error converting Texture2D: " + e.Message);
             return null;
         }
     }

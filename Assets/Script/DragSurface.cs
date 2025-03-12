@@ -27,6 +27,10 @@ public class DragSurface : MonoBehaviour
     public delegate void SurfaceLengthCompletedHandler(Vector3 startPoint, Vector3 endPoint);
     public static event SurfaceLengthCompletedHandler OnSurfaceLengthCompleted;
 
+    // Delegate and event for complete surface creation
+    public delegate void SurfaceCompletedHandler(Vector3 point1, Vector3 point2, Vector3 point3, Vector3 point4);
+    public static event SurfaceCompletedHandler OnSurfaceCompleted;
+
     [Header("Dependencies")]
     [Tooltip("Reference to the hand tracking component")]
     public MyHandTracking handTracking;
@@ -309,6 +313,9 @@ public class DragSurface : MonoBehaviour
             currentState = SurfaceCreationState.Completed;
             
             Debug.Log($"Surface completed. Point3: {point3}");
+            
+            // Trigger the event for surface completion
+            OnSurfaceCompleted?.Invoke(point1, point2, point3, point4);
             
             // Update debug visualizers
             UpdateDebugVisualizers();
