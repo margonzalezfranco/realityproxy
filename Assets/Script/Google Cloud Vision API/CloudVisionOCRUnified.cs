@@ -23,6 +23,31 @@ public class CloudVisionOCRUnified : MonoBehaviour
     // Store a custom source texture that overrides the render texture if set
     private Texture2D customSourceTexture;
     
+    // Event system to notify subscribers about OCR results with line bounding boxes
+    public delegate void OCRResultHandler(string fullText, List<LineData> lines);
+    public event OCRResultHandler OnOCRComplete;
+    
+    /// <summary>
+    /// Class to store line text and its corresponding bounding box
+    /// </summary>
+    [Serializable]
+    public class LineData
+    {
+        public string text;
+        public Rect boundingBox;
+        
+        public LineData(string text, Rect boundingBox)
+        {
+            this.text = text;
+            this.boundingBox = boundingBox;
+        }
+        
+        public override string ToString()
+        {
+            return $"{text} => BBox: {boundingBox}";
+        }
+    }
+    
     /// <summary>
     /// Set a custom texture to use for OCR instead of the render texture
     /// </summary>
@@ -251,6 +276,26 @@ public class CloudVisionOCRUnified : MonoBehaviour
             {
                 string detectedText = firstResponse.textAnnotations[0].description;
                 Debug.Log("OCR Recognized Text: " + detectedText);
+                
+                // For FullText mode, we don't have word bounding boxes, but we can still extract lines
+                // Create line data objects without bounding boxes
+                List<LineData> lines = new List<LineData>();
+                string[] textLines = detectedText.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+                
+                foreach (string line in textLines)
+                {
+                    if (!string.IsNullOrWhiteSpace(line))
+                    {
+                        string trimmedLine = line.Trim();
+                        lines.Add(new LineData(trimmedLine, new Rect(0, 0, 0, 0)));
+                    }
+                }
+                
+                // Notify subscribers about the OCR result
+                if (OnOCRComplete != null)
+                {
+                    OnOCRComplete(detectedText, lines);
+                }
             }
             else
             {
@@ -320,12 +365,16 @@ public class CloudVisionOCRUnified : MonoBehaviour
         VisionResponse responseData = JsonUtility.FromJson<VisionResponse>(jsonResponse);
         if (responseData.responses != null && responseData.responses.Count > 0)
         {
-            // Log the full text from textAnnotations (similar to FullText mode)
+            // Log the full text from textAnnotations
+            string detectedText = "";
             if (responseData.responses[0].textAnnotations != null && responseData.responses[0].textAnnotations.Length > 0)
             {
-                string detectedText = responseData.responses[0].textAnnotations[0].description;
+                detectedText = responseData.responses[0].textAnnotations[0].description;
                 Debug.Log("OCR Recognized Text: " + detectedText);
             }
+            
+            // Dictionary to store word-level bounding boxes
+            Dictionary<string, Rect> wordBoundingBoxes = new Dictionary<string, Rect>();
             
             FullTextAnnotation fullText = responseData.responses[0].fullTextAnnotation;
             if (fullText != null && fullText.pages != null && fullText.pages.Count > 0)
@@ -338,7 +387,7 @@ public class CloudVisionOCRUnified : MonoBehaviour
                         {
                             foreach (Word word in paragraph.words)
                             {
-                                // Concatenate symbols to form the complete word text.
+                                // Concatenate symbols to form the complete word text
                                 string wordText = "";
                                 if (word.symbols != null)
                                 {
@@ -347,11 +396,28 @@ public class CloudVisionOCRUnified : MonoBehaviour
                                         wordText += symbol.text;
                                     }
                                 }
+                                
+                                // Convert BoundingPoly to Rect
+                                Rect wordRect = BoundingPolyToRect(word.boundingBox);
+                                
+                                // Store the word and its bounding box
+                                wordBoundingBoxes[wordText] = wordRect;
+                                
                                 string box = GetBoundingBoxAsString(word.boundingBox);
                                 Debug.Log($"Detected word: {wordText} with bounding box: {box}");
                             }
                         }
                     }
+                }
+                
+                // Process lines and combine word bounding boxes
+                List<LineData> lines = ExtractLinesWithBoundingBoxes(detectedText, wordBoundingBoxes);
+                Debug.Log($"Extracted {lines.Count} lines with combined bounding boxes");
+                
+                // Notify subscribers about the OCR result
+                if (OnOCRComplete != null)
+                {
+                    OnOCRComplete(detectedText, lines);
                 }
             }
             else
@@ -419,5 +485,101 @@ public class CloudVisionOCRUnified : MonoBehaviour
             sb.Append($"({vertex.x}, {vertex.y}) ");
         }
         return sb.ToString();
+    }
+    
+    /// <summary>
+    /// Converts a BoundingPoly from Google Cloud Vision to a Unity Rect
+    /// </summary>
+    private Rect BoundingPolyToRect(BoundingPoly boundingPoly)
+    {
+        if (boundingPoly == null || boundingPoly.vertices == null || boundingPoly.vertices.Count < 4)
+            return new Rect(0, 0, 0, 0);
+            
+        float minX = float.MaxValue;
+        float minY = float.MaxValue;
+        float maxX = float.MinValue;
+        float maxY = float.MinValue;
+        
+        foreach (var vertex in boundingPoly.vertices)
+        {
+            minX = Mathf.Min(minX, vertex.x);
+            minY = Mathf.Min(minY, vertex.y);
+            maxX = Mathf.Max(maxX, vertex.x);
+            maxY = Mathf.Max(maxY, vertex.y);
+        }
+        
+        return new Rect(minX, minY, maxX - minX, maxY - minY);
+    }
+    
+    /// <summary>
+    /// Combines multiple Rect bounding boxes into a single encompassing Rect
+    /// </summary>
+    private Rect CombineBoundingBoxes(List<Rect> boxes)
+    {
+        if (boxes == null || boxes.Count == 0)
+            return new Rect(0, 0, 0, 0);
+            
+        float minX = float.MaxValue;
+        float minY = float.MaxValue;
+        float maxX = float.MinValue;
+        float maxY = float.MinValue;
+        
+        foreach (var box in boxes)
+        {
+            minX = Mathf.Min(minX, box.x);
+            minY = Mathf.Min(minY, box.y);
+            maxX = Mathf.Max(maxX, box.x + box.width);
+            maxY = Mathf.Max(maxY, box.y + box.height);
+        }
+        
+        return new Rect(minX, minY, maxX - minX, maxY - minY);
+    }
+    
+    /// <summary>
+    /// Extracts lines from OCR text and combines word bounding boxes into line bounding boxes
+    /// </summary>
+    private List<LineData> ExtractLinesWithBoundingBoxes(string fullText, Dictionary<string, Rect> wordBoundingBoxes)
+    {
+        List<LineData> lines = new List<LineData>();
+        
+        // Extract lines from OCR text
+        string[] textLines = fullText.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+        
+        foreach (string line in textLines)
+        {
+            if (string.IsNullOrWhiteSpace(line))
+                continue;
+                
+            string trimmedLine = line.Trim();
+            
+            // Split the line into words to match with bounding boxes
+            string[] lineWords = trimmedLine.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            
+            // Find all words in this line that have bounding boxes
+            List<Rect> boxesInLine = new List<Rect>();
+            foreach (string word in lineWords)
+            {
+                if (wordBoundingBoxes.TryGetValue(word, out Rect box))
+                {
+                    boxesInLine.Add(box);
+                }
+            }
+            
+            // If we found bounding boxes for words in this line, combine them
+            if (boxesInLine.Count > 0)
+            {
+                Rect combinedBox = CombineBoundingBoxes(boxesInLine);
+                lines.Add(new LineData(trimmedLine, combinedBox));
+                Debug.Log($"Line: '{trimmedLine}' with bounding box: {combinedBox}");
+            }
+            else
+            {
+                // If no bounding boxes found for words in this line, add the line without a bounding box
+                lines.Add(new LineData(trimmedLine, new Rect(0, 0, 0, 0)));
+                Debug.Log($"Line without bounding box: '{trimmedLine}'");
+            }
+        }
+        
+        return lines;
     }
 }
