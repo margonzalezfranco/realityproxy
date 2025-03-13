@@ -469,7 +469,7 @@ public class DragSurface : MonoBehaviour
         return projectedPoint;
     }
     
-    private void ClearCurrentSurface()
+    public void ClearCurrentSurface()
     {
         // Cancel any pending reset
         StopAllCoroutines();

@@ -71,6 +71,17 @@ namespace PolySpatial.Template
             transform.localScale = m_StartingScale * scale;
         }
 
+        /// <summary>
+        /// Updates the internal reference scale used for button press scaling effects.
+        /// Call this method after manually setting the transform's scale to ensure
+        /// that press scaling effects work correctly.
+        /// </summary>
+        public void UpdateReferenceScale()
+        {
+            if (m_ScaleBackground)
+                m_StartingScale = transform.localScale;
+        }
+
         IEnumerator Delay(float time)
         {
             m_Delay = true;

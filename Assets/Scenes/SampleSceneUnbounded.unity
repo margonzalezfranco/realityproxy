@@ -3433,7 +3433,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 780958558}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c8534e17a0f90604c9afd4f5c73d829f, type: 3}
   m_Name: 
@@ -4056,7 +4056,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 866230893}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c8534e17a0f90604c9afd4f5c73d829f, type: 3}
   m_Name: 
@@ -4224,7 +4224,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &959326052
 RectTransform:
   m_ObjectHideFlags: 0
@@ -6264,6 +6264,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: MenuElement
       objectReference: {fileID: 0}
+    - target: {fileID: 919132149155446097, guid: 9184914e7058e408db2f8b8c35bf442c, type: 3}
+      propertyPath: m_IsActive
+      value: 1
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects:
@@ -7652,6 +7656,12 @@ MonoBehaviour:
   debugLineMaterial: {fileID: 0}
   debugLineWidth: 0.002
   visualizationDuration: 5
+  geminiPrompter: {fileID: 1557741986}
+  responsePanel: {fileID: 1828629623}
+  ocrTextPromptTemplate: 'This is text I scanned from my environment with OCR: "{0}".
+    Please explain what this text means, what it''s from, and why it might be important.
+    Keep the response concise in 20 words.'
+  responseVerticalOffset: 0.02
 --- !u!1 &1490084817
 GameObject:
   m_ObjectHideFlags: 0
@@ -8130,6 +8140,7 @@ GameObject:
   - component: {fileID: 1557741983}
   - component: {fileID: 1557741984}
   - component: {fileID: 1557741985}
+  - component: {fileID: 1557741986}
   m_Layer: 0
   m_Name: GEMINI
   m_TagString: Untagged
@@ -8231,6 +8242,26 @@ MonoBehaviour:
   apiKey: AIzaSyBt5kvN77OvM2edI0TPwVpsfUFQjF2Pq7o
   sourceRenderTexture: {fileID: 8400000, guid: 78e2b50f1cd8640efa61e2994d5eaec2, type: 2}
   ocrMode: 1
+--- !u!114 &1557741986
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1557741980}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: cea5aed79cc6249f699c0cf0b42fb9a9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  geminiModelName: gemini-2.0-flash
+  geminiApiKey: AIzaSyBx5IRXG1FOUN3HdnKFMgsQA5zOcui7Mhc
+  cameraRenderTex: {fileID: 8400000, guid: 78e2b50f1cd8640efa61e2994d5eaec2, type: 2}
+  defaultPromptTemplate: 'Given the image, please respond to this: {0}'
+  responseText: {fileID: 0}
+  onResponseReceived:
+    m_PersistentCalls:
+      m_Calls: []
 --- !u!1 &1579789970
 GameObject:
   m_ObjectHideFlags: 0
@@ -8247,7 +8278,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &1579789971
 RectTransform:
   m_ObjectHideFlags: 0
@@ -9348,6 +9379,83 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1822363550}
   m_CullTransparentMesh: 1
+--- !u!1001 &1828629622
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: 3456538722240382328, guid: ad99367dbb9c7405c9eb94fb9072dfaa, type: 3}
+      propertyPath: m_LocalScale.x
+      value: 0.04
+      objectReference: {fileID: 0}
+    - target: {fileID: 3456538722240382328, guid: ad99367dbb9c7405c9eb94fb9072dfaa, type: 3}
+      propertyPath: m_LocalScale.y
+      value: 0.04
+      objectReference: {fileID: 0}
+    - target: {fileID: 3456538722240382328, guid: ad99367dbb9c7405c9eb94fb9072dfaa, type: 3}
+      propertyPath: m_LocalScale.z
+      value: 0.008714052
+      objectReference: {fileID: 0}
+    - target: {fileID: 3456538722240382328, guid: ad99367dbb9c7405c9eb94fb9072dfaa, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3456538722240382328, guid: ad99367dbb9c7405c9eb94fb9072dfaa, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 5
+      objectReference: {fileID: 0}
+    - target: {fileID: 3456538722240382328, guid: ad99367dbb9c7405c9eb94fb9072dfaa, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3456538722240382328, guid: ad99367dbb9c7405c9eb94fb9072dfaa, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 3456538722240382328, guid: ad99367dbb9c7405c9eb94fb9072dfaa, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3456538722240382328, guid: ad99367dbb9c7405c9eb94fb9072dfaa, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3456538722240382328, guid: ad99367dbb9c7405c9eb94fb9072dfaa, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3456538722240382328, guid: ad99367dbb9c7405c9eb94fb9072dfaa, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3456538722240382328, guid: ad99367dbb9c7405c9eb94fb9072dfaa, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3456538722240382328, guid: ad99367dbb9c7405c9eb94fb9072dfaa, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6077778735486634915, guid: ad99367dbb9c7405c9eb94fb9072dfaa, type: 3}
+      propertyPath: m_Name
+      value: Description Panel
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 7138117150144506976, guid: ad99367dbb9c7405c9eb94fb9072dfaa, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 0}
+  m_SourcePrefab: {fileID: 100100000, guid: ad99367dbb9c7405c9eb94fb9072dfaa, type: 3}
+--- !u!1 &1828629623 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 6077778735486634915, guid: ad99367dbb9c7405c9eb94fb9072dfaa, type: 3}
+  m_PrefabInstance: {fileID: 1828629622}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &1832711996
 GameObject:
   m_ObjectHideFlags: 0
@@ -9540,7 +9648,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!4 &1861026697
 Transform:
   m_ObjectHideFlags: 0
@@ -11434,3 +11542,4 @@ SceneRoots:
   - {fileID: 1538632899}
   - {fileID: 1083609193}
   - {fileID: 1483904741}
+  - {fileID: 1828629622}

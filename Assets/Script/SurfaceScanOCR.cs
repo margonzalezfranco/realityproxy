@@ -19,6 +19,9 @@ public class SurfaceScanOCR : MonoBehaviour
     [Tooltip("Optional delay before triggering OCR (seconds)")]
     public float ocrDelay = 0f;
 
+    [Tooltip("Whether to automatically clear the surface after OCR completes")]
+    public bool clearOCRSurfaceAfterGetOCR = true;
+
     public RenderTexture cameraRenderTex;
     
     [Header("OCR Line Rendering")]
@@ -121,6 +124,26 @@ public class SurfaceScanOCR : MonoBehaviour
     private RectTransform canvasCropAreaRect;
     private Image canvasCropAreaImage;
 
+    [Header("Gemini Integration")]
+    [Tooltip("Reference to GeminiDefaultPrompter component for processing OCR text")]
+    public GeminiDefaultPrompter geminiPrompter;
+
+    [Tooltip("Panel to display Gemini's response")]
+    public GameObject responsePanel;
+    
+    [Tooltip("TextMeshPro component in the response panel")]
+    private TextMeshPro responseText;
+    
+    [Tooltip("Custom prompt template for OCR text analysis")]
+    [TextArea(3, 6)]
+    public string ocrTextPromptTemplate = "This is text I scanned from my environment with OCR: \"{0}\". Please explain what this text means, what it's from, and why it might be important. Keep the response concise.";
+    
+    [Tooltip("Vertical offset for the response panel above the OCR line")]
+    public float responseVerticalOffset = 0.03f; // 3cm above the OCR line
+    
+    // Reference to the currently active OCR line that triggered a response
+    private GameObject activeResponseLine;
+
     // Start method to subscribe to events
     private void Start()
     {
@@ -176,6 +199,19 @@ public class SurfaceScanOCR : MonoBehaviour
 
         // Subscribe to OCR completed event
         ocrComponent.OnOCRComplete += HandleOCRComplete;
+
+        // Find the TextMeshPro component in the response panel
+        if (responsePanel != null)
+        {
+            responseText = responsePanel.GetComponentInChildren<TextMeshPro>();
+            if (responseText == null)
+            {
+                Debug.LogWarning("No TextMeshPro component found in responsePanel!");
+            }
+            
+            // Initially hide the response panel
+            responsePanel.SetActive(false);
+        }
     }
 
     // Unsubscribe from events when this object is destroyed
@@ -1117,17 +1153,54 @@ public class SurfaceScanOCR : MonoBehaviour
                 textMesh.text = line.text;
                 
                 // Use a fixed font size instead of scaling based on dimensions
-                textMesh.fontSize = 8f * 0.01f; // Fixed font size - adjust this value as needed
+                textMesh.fontSize = 6f * 0.01f; // Fixed font size - adjust this value as needed
                 
                 // Center the text
                 textMesh.alignment = TextAlignmentOptions.Center;
-                textMesh.transform.localPosition = surfaceNormal * 0.005f;
+                textMesh.transform.localPosition = surfaceNormal * 0.001f;
                 textMesh.transform.localRotation = Quaternion.identity;
                 
                 // Scale and position the background to match the bounding box
                 backgroundTransform.localScale = new Vector3(lineWidth, lineHeight, 0.001f);
                 backgroundTransform.localPosition = Vector3.zero;
                 backgroundTransform.localRotation = Quaternion.identity;
+                
+                // Get the SpatialUIButton component from the background
+                var button = backgroundTransform.gameObject.GetComponent<PolySpatial.Template.SpatialUIButton>();
+                if (button != null)
+                {
+                    // Update the reference scale after manually setting it
+                    button.UpdateReferenceScale();
+                    
+                    // Store the text for the closure
+                    string ocrText = line.text;
+                    
+                    // Add a listener to the WasPressed event
+                    button.WasPressed += (buttonText, renderer, index) => 
+                    {
+                        if (geminiPrompter != null)
+                        {
+                            // Store a reference to the OCR line that triggered the response
+                            activeResponseLine = ocrLine;
+                            
+                            // Call RequestResponse with the custom template and the OCR text
+                            // Use the callback to position the response panel and set its text
+                            geminiPrompter.RequestResponseWithCallback(
+                                ocrTextPromptTemplate, 
+                                ocrText, 
+                                (response) => PositionResponsePanel(response, ocrLine, surfaceNormal)
+                            );
+                        }
+                        else
+                        {
+                            Debug.LogWarning("No GeminiDefaultPrompter reference set.");
+                        }
+                    };
+                }
+                else
+                {
+                    Debug.LogWarning("Background doesn't have a SpatialUIButton component.");
+                }
                 
                 Debug.Log($"Created OCR line '{line.text}' at position {linePosition}, " + 
                           $"with size {lineWidth} x {lineHeight}");
@@ -1140,6 +1213,68 @@ public class SurfaceScanOCR : MonoBehaviour
             // Add to created lines list for cleanup
             createdOCRLines.Add(ocrLine);
         }
+        
+        // Clear the current surface if the option is enabled
+        if (clearOCRSurfaceAfterGetOCR && lastScannedSurface != null)
+        {
+            // Get the DragSurface component and clear the surface
+            DragSurface dragSurface = FindAnyObjectByType<DragSurface>();
+            if (dragSurface != null)
+            {
+                Debug.Log("Clearing surface after OCR completion");
+                dragSurface.ClearCurrentSurface();
+            }
+            else
+            {
+                Debug.LogWarning("Could not find DragSurface component to clear the surface");
+            }
+        }
+    }
+    
+    /// <summary>
+    /// Positions the response panel above the OCR line and sets its text
+    /// </summary>
+    /// <param name="responseText">The text to display in the response panel</param>
+    /// <param name="ocrLine">The OCR line that triggered the response</param>
+    /// <param name="surfaceNormal">The normal of the surface for proper offset direction</param>
+    private void PositionResponsePanel(string response, GameObject ocrLine, Vector3 surfaceNormal)
+    {
+        if (responsePanel == null || ocrLine == null)
+        {
+            Debug.LogWarning("Cannot position response panel: panel or OCR line is null");
+            return;
+        }
+        
+        // Set the response text
+        if (responseText != null)
+        {
+            responseText.text = response;
+        }
+        
+        // Set the parent of the response panel to the OCR line
+        responsePanel.transform.SetParent(ocrLine.transform);
+        
+        // Position the panel above the OCR line with an offset
+        responsePanel.transform.localPosition = new Vector3(0, responseVerticalOffset, 0);
+        
+        // Ensure the panel is facing the same direction as the OCR line
+        responsePanel.transform.localRotation = Quaternion.identity;
+        
+        // Make the panel visible
+        responsePanel.SetActive(true);
+    }
+    
+    /// <summary>
+    /// Hides the response panel and resets its parent
+    /// </summary>
+    public void HideResponsePanel()
+    {
+        if (responsePanel != null)
+        {
+            responsePanel.SetActive(false);
+            responsePanel.transform.SetParent(null);
+            activeResponseLine = null;
+        }
     }
     
     /// <summary>
@@ -1147,6 +1282,9 @@ public class SurfaceScanOCR : MonoBehaviour
     /// </summary>
     public void ClearOCRLines()
     {
+        // First hide the response panel
+        HideResponsePanel();
+        
         foreach (GameObject ocrLine in createdOCRLines)
         {
             if (ocrLine != null)
