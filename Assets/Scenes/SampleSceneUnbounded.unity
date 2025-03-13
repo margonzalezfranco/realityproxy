@@ -7630,6 +7630,11 @@ MonoBehaviour:
   ocrComponent: {fileID: 1557741985}
   ocrDelay: 0
   cameraRenderTex: {fileID: 8400000, guid: 78e2b50f1cd8640efa61e2994d5eaec2, type: 2}
+  ocrLinePrefab: {fileID: 275724851718909089, guid: 3fcbe3abccd894a5ca955f5ee81063d2, type: 3}
+  ocrLineContainer: {fileID: 0}
+  textZOffset: 0.001
+  textScaleFactor: 0.001
+  clearPreviousOCRLines: 1
   offsetNode: {fileID: 1875304742}
   offsetNodeFOV: 72.5
   offsetNodeAspect: 1.7777778

@@ -2,6 +2,7 @@ using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine.UI; // Add for UI components
+using TMPro; // Add for TextMeshPro
 
 /// <summary>
 /// SurfaceScanOCR: Listens for surface drawing events and triggers OCR scanning
@@ -19,6 +20,38 @@ public class SurfaceScanOCR : MonoBehaviour
     public float ocrDelay = 0f;
 
     public RenderTexture cameraRenderTex;
+    
+    [Header("OCR Line Rendering")]
+    [Tooltip("Prefab to use for OCR text lines")]
+    public GameObject ocrLinePrefab;
+    
+    [Tooltip("Parent transform to hold all OCR text lines")]
+    public Transform ocrLineContainer;
+    
+    [Tooltip("Z-offset for text from the surface (in meters)")]
+    public float textZOffset = 0.001f;
+    
+    [Tooltip("Scale factor for text size")]
+    public float textScaleFactor = 0.001f;
+    
+    [Tooltip("If true, destroy previous OCR lines before creating new ones")]
+    public bool clearPreviousOCRLines = true;
+    
+    // Reference to the most recently scanned surface
+    private GameObject lastScannedSurface;
+    
+    // References to the corners of the last scanned surface
+    private Vector3 surfacePoint1;
+    private Vector3 surfacePoint2;
+    private Vector3 surfacePoint3;
+    private Vector3 surfacePoint4;
+    
+    // Reference to the OCR lines created
+    private List<GameObject> createdOCRLines = new List<GameObject>();
+    
+    // Reference to the cropped texture dimensions
+    private int croppedTextureWidth;
+    private int croppedTextureHeight;
     
     [Header("Camera Offset Settings")]
     [Tooltip("The offset node representing the virtual RGB camera position")]
@@ -140,6 +173,9 @@ public class SurfaceScanOCR : MonoBehaviour
 
         // Only subscribe to surface completion events
         DragSurface.OnSurfaceCompleted += HandleSurfaceCompleted;
+
+        // Subscribe to OCR completed event
+        ocrComponent.OnOCRComplete += HandleOCRComplete;
     }
 
     // Unsubscribe from events when this object is destroyed
@@ -147,6 +183,12 @@ public class SurfaceScanOCR : MonoBehaviour
     {
         // Only unsubscribe from surface completion events
         DragSurface.OnSurfaceCompleted -= HandleSurfaceCompleted;
+        
+        // Unsubscribe from OCR events
+        if (ocrComponent != null)
+        {
+            ocrComponent.OnOCRComplete -= HandleOCRComplete;
+        }
         
         // Clean up any remaining visualizations
         ClearDebugVisualizations();
@@ -328,8 +370,23 @@ public class SurfaceScanOCR : MonoBehaviour
     {
         Debug.Log($"Surface fully completed with corners at {point1}, {point2}, {point3}, {point4} - Preparing to scan with OCR");
         
+        // Store the surface corners for later use
+        surfacePoint1 = point1;
+        surfacePoint2 = point2;
+        surfacePoint3 = point3;
+        surfacePoint4 = point4;
+        
+        // Get a reference to the surface object
+        lastScannedSurface = GameObject.Find("DragSurface");
+        
         // Clean up any previous visualizations
         ClearDebugVisualizations();
+        
+        // Clear previous OCR lines if enabled
+        if (clearPreviousOCRLines)
+        {
+            ClearOCRLines();
+        }
         
         // Process the surface crop and perform OCR
         if (ocrDelay > 0)
@@ -609,6 +666,10 @@ public class SurfaceScanOCR : MonoBehaviour
             {
                 StartCoroutine(ClearVisualizationsAfterDelay(visualizationDuration));
             }
+
+            // Store crop dimensions for later use in text positioning
+            croppedTextureWidth = cropWidth;
+            croppedTextureHeight = cropHeight;
         }
         catch (System.Exception e)
         {
@@ -962,5 +1023,147 @@ public class SurfaceScanOCR : MonoBehaviour
         {
             Debug.LogError($"Error saving cropped texture: {e.Message}");
         }
+    }
+
+    /// <summary>
+    /// Handles OCR results and places text on the surface
+    /// </summary>
+    private void HandleOCRComplete(string fullText, List<CloudVisionOCRUnified.LineData> lines)
+    {
+        Debug.Log($"OCR completed with {lines.Count} lines of text");
+        
+        // Check if we have a valid surface to place text on
+        if (lastScannedSurface == null)
+        {
+            Debug.LogWarning("No valid surface found to place OCR text. Make sure the surface exists.");
+            return;
+        }
+        
+        // Check if we have a valid OCR line prefab
+        if (ocrLinePrefab == null)
+        {
+            Debug.LogError("OCRLine prefab not assigned. Can't create OCR text.");
+            return;
+        }
+        
+        // Create a container for the OCR lines if not assigned
+        if (ocrLineContainer == null)
+        {
+            GameObject container = new GameObject("OCRLineContainer");
+            ocrLineContainer = container.transform;
+        }
+        
+        // Calculate surface dimensions and orientation
+        Vector3 surfaceWidth = surfacePoint2 - surfacePoint1;
+        Vector3 surfaceHeight = surfacePoint3 - surfacePoint2;
+        Vector3 surfaceNormal = Vector3.Cross(surfaceWidth, surfaceHeight).normalized;
+        
+        // Calculate surface center
+        Vector3 surfaceCenter = (surfacePoint1 + surfacePoint2 + surfacePoint3 + surfacePoint4) / 4f;
+        
+        // Calculate surface dimensions
+        float surfaceWidthMagnitude = surfaceWidth.magnitude;
+        float surfaceHeightMagnitude = surfaceHeight.magnitude;
+        
+        // Create right and up vectors for the surface
+        Vector3 surfaceRight = surfaceWidth.normalized;
+        Vector3 surfaceUp = Vector3.Cross(surfaceNormal, surfaceRight).normalized;
+        
+        Debug.Log($"Surface dimensions: {surfaceWidthMagnitude} x {surfaceHeightMagnitude}");
+        Debug.Log($"Cropped texture dimensions: {croppedTextureWidth} x {croppedTextureHeight}");
+        
+        // Create a rotation for the surface plane
+        Quaternion surfaceRotation = Quaternion.LookRotation(surfaceNormal, surfaceUp);
+        
+        // Process each OCR line
+        foreach (CloudVisionOCRUnified.LineData line in lines)
+        {
+            // Skip lines with no bounding box or empty text
+            if (line.boundingBox.width <= 0 || line.boundingBox.height <= 0 || string.IsNullOrEmpty(line.text))
+            {
+                continue;
+            }
+            
+            // Calculate position on the surface based on the bounding box
+            float centerX = line.boundingBox.x + (line.boundingBox.width / 2f);
+            float centerY = line.boundingBox.y + (line.boundingBox.height / 2f);
+            
+            float normalizedX = centerX / croppedTextureWidth;
+            float normalizedY = centerY / croppedTextureHeight;
+            
+            // Calculate position in world space on the surface
+            Vector3 linePosition = surfacePoint1 + 
+                                  surfaceRight * (normalizedX * surfaceWidthMagnitude) + 
+                                  surfaceUp * (normalizedY * surfaceHeightMagnitude);
+            
+            // Add slight offset to prevent z-fighting
+            linePosition += surfaceNormal * textZOffset;
+            
+            // Calculate scale based on bounding box and surface dimensions
+            float lineWidth = line.boundingBox.width / croppedTextureWidth * surfaceWidthMagnitude;
+            float lineHeight = line.boundingBox.height / croppedTextureHeight * surfaceHeightMagnitude;
+            
+            // Create the OCR line object
+            GameObject ocrLine = Instantiate(ocrLinePrefab, linePosition, surfaceRotation, ocrLineContainer);
+            ocrLine.name = $"OCRLine_{line.text}";
+            
+            // Get the text component
+            Transform textTransform = ocrLine.transform.Find("Text (TMP)");
+            Transform backgroundTransform = ocrLine.transform.Find("Background");
+            
+            if (textTransform != null && backgroundTransform != null)
+            {
+                // Set the text content
+                TextMeshPro textMesh = textTransform.GetComponent<TextMeshPro>();
+                if (textMesh != null)
+                {
+                    textMesh.text = line.text;
+                    
+                    // Scale the text based on bounding box and adjust for readability
+                    float textScale = Mathf.Min(lineWidth, lineHeight) * textScaleFactor;
+                    textMesh.rectTransform.localScale = new Vector3(textScale, textScale, textScale);
+                    
+                    // Center the text
+                    textMesh.alignment = TextAlignmentOptions.Center;
+                }
+                
+                // Scale and position the background to match the text bounding box
+                backgroundTransform.localScale = new Vector3(lineWidth, lineHeight, 0.001f);
+                
+                // Position background to align with the text bounding box's center
+                backgroundTransform.localPosition = Vector3.zero; // Center at the spawned position
+                
+                // Adjust the spawn position instead
+                linePosition = surfacePoint1 + 
+                             surfaceRight * (normalizedX * surfaceWidthMagnitude) + 
+                             surfaceUp * (normalizedY * surfaceHeightMagnitude);
+                
+                Debug.Log($"Created OCR line '{line.text}' at position {linePosition}, " + 
+                          $"with size {lineWidth} x {lineHeight}");
+            }
+            else
+            {
+                Debug.LogWarning($"OCRLine prefab doesn't have expected children: 'Text (TMP)' and 'Background'");
+            }
+            
+            // Add to created lines list for cleanup
+            createdOCRLines.Add(ocrLine);
+        }
+    }
+    
+    /// <summary>
+    /// Clears all OCR lines created previously
+    /// </summary>
+    public void ClearOCRLines()
+    {
+        foreach (GameObject ocrLine in createdOCRLines)
+        {
+            if (ocrLine != null)
+            {
+                Destroy(ocrLine);
+            }
+        }
+        
+        createdOCRLines.Clear();
     }
 } 
