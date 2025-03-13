@@ -32,7 +32,7 @@ public class SurfaceScanOCR : MonoBehaviour
     public float textZOffset = 0.001f;
     
     [Tooltip("Scale factor for text size")]
-    public float textScaleFactor = 0.001f;
+    public float textScaleFactor = 0.1f;
     
     [Tooltip("If true, destroy previous OCR lines before creating new ones")]
     public bool clearPreviousOCRLines = true;
@@ -1073,7 +1073,7 @@ public class SurfaceScanOCR : MonoBehaviour
         Debug.Log($"Cropped texture dimensions: {croppedTextureWidth} x {croppedTextureHeight}");
         
         // Create a rotation for the surface plane
-        Quaternion surfaceRotation = Quaternion.LookRotation(surfaceNormal, surfaceUp);
+        Quaternion surfaceRotation = Quaternion.LookRotation(-surfaceNormal, -surfaceUp);
         
         // Process each OCR line
         foreach (CloudVisionOCRUnified.LineData line in lines)
@@ -1107,43 +1107,34 @@ public class SurfaceScanOCR : MonoBehaviour
             GameObject ocrLine = Instantiate(ocrLinePrefab, linePosition, surfaceRotation, ocrLineContainer);
             ocrLine.name = $"OCRLine_{line.text}";
             
-            // Get the text component
-            Transform textTransform = ocrLine.transform.Find("Text (TMP)");
+            // Get the text component and background as direct children of the OCR line
+            TextMeshPro textMesh = ocrLine.GetComponentInChildren<TextMeshPro>();
             Transform backgroundTransform = ocrLine.transform.Find("Background");
             
-            if (textTransform != null && backgroundTransform != null)
+            if (textMesh != null && backgroundTransform != null)
             {
                 // Set the text content
-                TextMeshPro textMesh = textTransform.GetComponent<TextMeshPro>();
-                if (textMesh != null)
-                {
-                    textMesh.text = line.text;
-                    
-                    // Scale the text based on bounding box and adjust for readability
-                    float textScale = Mathf.Min(lineWidth, lineHeight) * textScaleFactor;
-                    textMesh.rectTransform.localScale = new Vector3(textScale, textScale, textScale);
-                    
-                    // Center the text
-                    textMesh.alignment = TextAlignmentOptions.Center;
-                }
+                textMesh.text = line.text;
                 
-                // Scale and position the background to match the text bounding box
+                // Use a fixed font size instead of scaling based on dimensions
+                textMesh.fontSize = 8f * 0.01f; // Fixed font size - adjust this value as needed
+                
+                // Center the text
+                textMesh.alignment = TextAlignmentOptions.Center;
+                textMesh.transform.localPosition = surfaceNormal * 0.005f;
+                textMesh.transform.localRotation = Quaternion.identity;
+                
+                // Scale and position the background to match the bounding box
                 backgroundTransform.localScale = new Vector3(lineWidth, lineHeight, 0.001f);
-                
-                // Position background to align with the text bounding box's center
-                backgroundTransform.localPosition = Vector3.zero; // Center at the spawned position
-                
-                // Adjust the spawn position instead
-                linePosition = surfacePoint1 + 
-                             surfaceRight * (normalizedX * surfaceWidthMagnitude) + 
-                             surfaceUp * (normalizedY * surfaceHeightMagnitude);
+                backgroundTransform.localPosition = Vector3.zero;
+                backgroundTransform.localRotation = Quaternion.identity;
                 
                 Debug.Log($"Created OCR line '{line.text}' at position {linePosition}, " + 
                           $"with size {lineWidth} x {lineHeight}");
             }
             else
             {
-                Debug.LogWarning($"OCRLine prefab doesn't have expected children: 'Text (TMP)' and 'Background'");
+                Debug.LogWarning($"OCRLine prefab doesn't have expected components: TextMeshPro or 'Background'");
             }
             
             // Add to created lines list for cleanup
