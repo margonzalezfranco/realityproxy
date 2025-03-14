@@ -88,6 +88,10 @@ public class DragSurface : MonoBehaviour
     private bool isAwaitingSecondPinch = false;
     private float doublePinchTimeThreshold = 1.0f; // Time window for double-pinch detection (in seconds)
     private bool lastPinchWasLeft = false; // Track which hand performed the last pinch
+    
+    // Additional variables for recovery mechanism
+    private float longTimeoutThreshold = 5.0f; // Time window for giving up completely and resetting
+    private bool hasLoggedTimeoutWarning = false;
 
     void Start()
     {
@@ -135,16 +139,29 @@ public class DragSurface : MonoBehaviour
         }
         
         // Check for double-pinch timeout
-        if (isAwaitingSecondPinch && (Time.time - lastPinchTime) >= doublePinchTimeThreshold)
+        if (isAwaitingSecondPinch)
         {
-            // Double-pinch timeout occurred
-            isAwaitingSecondPinch = false;
+            float timeSinceLastPinch = Time.time - lastPinchTime;
             
-            // If we were waiting to start drawing, revert to None state
-            if (currentState == SurfaceCreationState.AwaitingSecondPinch)
+            // First warning at normal timeout
+            if (timeSinceLastPinch >= doublePinchTimeThreshold && !hasLoggedTimeoutWarning)
             {
-                currentState = SurfaceCreationState.None;
-                Debug.Log("Double-pinch timeout. Please try again.");
+                Debug.Log($"Double-pinch window expired. Please use your {(lastPinchWasLeft ? "left" : "right")} hand to pinch again to retry, or wait for auto-reset.");
+                hasLoggedTimeoutWarning = true;
+            }
+            
+            // Complete reset after long timeout
+            if (timeSinceLastPinch >= longTimeoutThreshold)
+            {
+                isAwaitingSecondPinch = false;
+                hasLoggedTimeoutWarning = false;
+                
+                // If we were waiting to start drawing, revert to None state
+                if (currentState == SurfaceCreationState.AwaitingSecondPinch)
+                {
+                    currentState = SurfaceCreationState.None;
+                    Debug.Log("Auto-reset complete. Ready for new interaction.");
+                }
             }
         }
     }
@@ -153,11 +170,12 @@ public class DragSurface : MonoBehaviour
     {
         float currentTime = Time.time;
         
-        // Handle double-pinch detection
-        if (isAwaitingSecondPinch && (currentTime - lastPinchTime) < doublePinchTimeThreshold && isLeft == lastPinchWasLeft)
+        // Handle double-pinch detection - now more permissive
+        if (isAwaitingSecondPinch && (currentTime - lastPinchTime) < longTimeoutThreshold)
         {
-            // This is the second pinch of a double-pinch sequence
+            // This is a pinch during the waiting period - accept it even if from different hand
             isAwaitingSecondPinch = false;
+            hasLoggedTimeoutWarning = false;
             
             switch (currentState)
             {
@@ -183,10 +201,11 @@ public class DragSurface : MonoBehaviour
             case SurfaceCreationState.None:
                 // Set up for potential double-pinch to start drawing
                 isAwaitingSecondPinch = true;
+                hasLoggedTimeoutWarning = false;
                 lastPinchTime = currentTime;
                 lastPinchWasLeft = isLeft;
                 currentState = SurfaceCreationState.AwaitingSecondPinch;
-                Debug.Log("First pinch detected. Pinch again within 1 second to start drawing.");
+                Debug.Log($"First pinch detected with {(isLeft ? "left" : "right")} hand. Pinch again within 1 second to start drawing.");
                 break;
                 
             case SurfaceCreationState.DrawingHeight:
@@ -196,14 +215,16 @@ public class DragSurface : MonoBehaviour
             case SurfaceCreationState.Completed:
                 // Set up for potential double-pinch to clear surface
                 isAwaitingSecondPinch = true;
+                hasLoggedTimeoutWarning = false;
                 lastPinchTime = currentTime;
                 lastPinchWasLeft = isLeft;
-                Debug.Log("First pinch detected. Pinch again within 1 second to clear the surface.");
+                Debug.Log($"First pinch detected with {(isLeft ? "left" : "right")} hand. Pinch again within 1 second to clear the surface.");
                 break;
                 
             default:
                 // Reset double-pinch detection for other states
                 isAwaitingSecondPinch = false;
+                hasLoggedTimeoutWarning = false;
                 break;
         }
     }
