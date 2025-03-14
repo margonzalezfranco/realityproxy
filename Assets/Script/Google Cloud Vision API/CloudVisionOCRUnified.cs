@@ -267,6 +267,10 @@ public class CloudVisionOCRUnified : MonoBehaviour
         string jsonResponse = webRequest.downloadHandler.text;
         Debug.Log("Vision API response: " + jsonResponse);
 
+        // Initialize empty results
+        string detectedText = "";
+        List<LineData> lines = new List<LineData>();
+
         // Parse JSON to extract full text from textAnnotations
         AnnotateImageResponses responseData = JsonUtility.FromJson<AnnotateImageResponses>(jsonResponse);
         if (responseData.responses != null && responseData.responses.Length > 0)
@@ -274,12 +278,11 @@ public class CloudVisionOCRUnified : MonoBehaviour
             AnnotateImageResponse firstResponse = responseData.responses[0];
             if (firstResponse.textAnnotations != null && firstResponse.textAnnotations.Length > 0)
             {
-                string detectedText = firstResponse.textAnnotations[0].description;
+                detectedText = firstResponse.textAnnotations[0].description;
                 Debug.Log("OCR Recognized Text: " + detectedText);
                 
                 // For FullText mode, we don't have word bounding boxes, but we can still extract lines
                 // Create line data objects without bounding boxes
-                List<LineData> lines = new List<LineData>();
                 string[] textLines = detectedText.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
                 
                 foreach (string line in textLines)
@@ -290,12 +293,6 @@ public class CloudVisionOCRUnified : MonoBehaviour
                         lines.Add(new LineData(trimmedLine, new Rect(0, 0, 0, 0)));
                     }
                 }
-                
-                // Notify subscribers about the OCR result
-                if (OnOCRComplete != null)
-                {
-                    OnOCRComplete(detectedText, lines);
-                }
             }
             else
             {
@@ -305,6 +302,14 @@ public class CloudVisionOCRUnified : MonoBehaviour
         else
         {
             Debug.LogWarning("Empty response from Vision API.");
+        }
+        
+        // Always notify subscribers about the OCR result, even if no text was found
+        // This ensures that semantic processing can still happen for non-text elements
+        if (OnOCRComplete != null)
+        {
+            Debug.Log($"Invoking OnOCRComplete with {lines.Count} lines of text");
+            OnOCRComplete(detectedText, lines);
         }
     }
 
@@ -361,12 +366,15 @@ public class CloudVisionOCRUnified : MonoBehaviour
         string jsonResponse = webRequest.downloadHandler.text;
         Debug.Log("Vision API response: " + jsonResponse);
 
+        // Initialize empty results
+        string detectedText = "";
+        List<LineData> lines = new List<LineData>();
+
         // Parse the response to extract bounding boxes for each word
         VisionResponse responseData = JsonUtility.FromJson<VisionResponse>(jsonResponse);
         if (responseData.responses != null && responseData.responses.Count > 0)
         {
             // Log the full text from textAnnotations
-            string detectedText = "";
             if (responseData.responses[0].textAnnotations != null && responseData.responses[0].textAnnotations.Length > 0)
             {
                 detectedText = responseData.responses[0].textAnnotations[0].description;
@@ -411,14 +419,8 @@ public class CloudVisionOCRUnified : MonoBehaviour
                 }
                 
                 // Process lines and combine word bounding boxes
-                List<LineData> lines = ExtractLinesWithBoundingBoxes(detectedText, wordBoundingBoxes);
+                lines = ExtractLinesWithBoundingBoxes(detectedText, wordBoundingBoxes);
                 Debug.Log($"Extracted {lines.Count} lines with combined bounding boxes");
-                
-                // Notify subscribers about the OCR result
-                if (OnOCRComplete != null)
-                {
-                    OnOCRComplete(detectedText, lines);
-                }
             }
             else
             {
@@ -428,6 +430,14 @@ public class CloudVisionOCRUnified : MonoBehaviour
         else
         {
             Debug.LogWarning("Empty response from Vision API.");
+        }
+        
+        // Always notify subscribers about the OCR result, even if no text was found
+        // This ensures that semantic processing can still happen for non-text elements
+        if (OnOCRComplete != null)
+        {
+            Debug.Log($"Invoking OnOCRComplete with {lines.Count} lines of text");
+            OnOCRComplete(detectedText, lines);
         }
     }
 

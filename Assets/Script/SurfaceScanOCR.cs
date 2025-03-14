@@ -9,7 +9,7 @@ using TMPro; // Add for TextMeshPro
 /// This class connects the DragSurface system with the CloudVisionOCRUnified system
 /// to perform OCR scanning when a user completes drawing a full surface (all four points).
 /// </summary>
-public class SurfaceScanOCR : MonoBehaviour
+public class SurfaceScanOCR : GeminiGeneral
 {
     [Header("Dependencies")]
     [Tooltip("Reference to the CloudVisionOCR component")]
@@ -21,15 +21,53 @@ public class SurfaceScanOCR : MonoBehaviour
 
     [Tooltip("Whether to automatically clear the surface after OCR completes")]
     public bool clearOCRSurfaceAfterGetOCR = true;
-
-    public RenderTexture cameraRenderTex;
+    
+    // Line data structures for OCR and Semantic results
+    
+    /// <summary>
+    /// Represents a semantic line with text and bounding box from Gemini's processing
+    /// </summary>
+    [System.Serializable]
+    public class SemanticLineData
+    {
+        public string text;
+        public Rect boundingBox;
+        
+        public SemanticLineData(string text, Rect boundingBox)
+        {
+            this.text = text;
+            this.boundingBox = boundingBox;
+        }
+        
+        public override string ToString()
+        {
+            return $"{text} => Semantic BBox: {boundingBox}";
+        }
+    }
+    
+    // Reference to the OCR lines created
+    private List<GameObject> createdOCRLines = new List<GameObject>();
+    
+    // Reference to the semantic lines created
+    private List<GameObject> createdSemanticLines = new List<GameObject>();
+    
+    // Store the most recent OCR results for Gemini processing
+    private string lastOcrFullText;
+    private List<CloudVisionOCRUnified.LineData> lastOcrLines;
     
     [Header("OCR Line Rendering")]
     [Tooltip("Prefab to use for OCR text lines")]
     public GameObject ocrLinePrefab;
     
+    [Header("Semantic Line Rendering")]
+    [Tooltip("Prefab to use for semantic text lines")]
+    public GameObject semanticLinePrefab;
+    
     [Tooltip("Parent transform to hold all OCR text lines")]
     public Transform ocrLineContainer;
+    
+    [Tooltip("Parent transform to hold all semantic text lines")]
+    public Transform semanticLineContainer;
     
     [Tooltip("Z-offset for text from the surface (in meters)")]
     public float textZOffset = 0.001f;
@@ -40,6 +78,9 @@ public class SurfaceScanOCR : MonoBehaviour
     [Tooltip("If true, destroy previous OCR lines before creating new ones")]
     public bool clearPreviousOCRLines = true;
     
+    [Tooltip("If true, destroy previous semantic lines before creating new ones")]
+    public bool clearPreviousSemanticLines = true;
+    
     // Reference to the most recently scanned surface
     private GameObject lastScannedSurface;
     
@@ -48,9 +89,6 @@ public class SurfaceScanOCR : MonoBehaviour
     private Vector3 surfacePoint2;
     private Vector3 surfacePoint3;
     private Vector3 surfacePoint4;
-    
-    // Reference to the OCR lines created
-    private List<GameObject> createdOCRLines = new List<GameObject>();
     
     // Reference to the cropped texture dimensions
     private int croppedTextureWidth;
@@ -138,11 +176,30 @@ public class SurfaceScanOCR : MonoBehaviour
     [TextArea(3, 6)]
     public string ocrTextPromptTemplate = "This is text I scanned from my environment with OCR: \"{0}\". Please explain what this text means, what it's from, and why it might be important. Keep the response concise.";
     
+    [Tooltip("Prompt template for semantic line extraction")]
+    [TextArea(3, 10)]
+    public string semanticLinePromptTemplate = "I'm analyzing a scanned image with OCR results. I need you to identify FUNCTIONAL AREAS in this image, not just text lines. Analyze both text and visual elements.\n\n1. Identify meaningful functional regions (e.g., 'Nutrition Facts Table', 'USB Ports Section', 'Control Panel').\n2. For each region, create a bounding box that encompasses the entire functional area.\n3. Write a concise functional label that describes what that area represents, not just the text.\n4. Identify non-text elements too (buttons, ports, switches, icons) and label their function.\n\nGroup nearby text lines that serve the same purpose into single functional areas. Don't just combine sentences - focus on grouping elements by their functional purpose.\n\nReturn your results as a JSON array: [{\"text\":\"[LABEL DESCRIBING FUNCTION]\",\"boundingBox\":{\"x\":10,\"y\":20,\"width\":100,\"height\":30}}]\n\nOriginal OCR lines for reference: {0}";
+    
+    [Tooltip("Color for semantic line visualization")]
+    public Color semanticLineColor = new Color(0.2f, 0.8f, 0.2f, 0.8f);
+    
     [Tooltip("Vertical offset for the response panel above the OCR line")]
     public float responseVerticalOffset = 0.03f; // 3cm above the OCR line
     
+    [Tooltip("Whether to automatically process semantic lines after OCR completes")]
+    public bool autoProcessSemanticLines = true;
+    
     // Reference to the currently active OCR line that triggered a response
     private GameObject activeResponseLine;
+
+    // Override the Awake method from GeminiGeneral
+    protected override void Awake()
+    {
+        // Call the base class Awake to initialize Gemini client
+        base.Awake();
+        
+        // Additional initialization specific to SurfaceScanOCR
+    }
 
     // Start method to subscribe to events
     private void Start()
@@ -211,6 +268,20 @@ public class SurfaceScanOCR : MonoBehaviour
             
             // Initially hide the response panel
             responsePanel.SetActive(false);
+        }
+        
+        // Create the semantic line container if not already assigned
+        if (semanticLineContainer == null)
+        {
+            GameObject container = new GameObject("SemanticLineContainer");
+            semanticLineContainer = container.transform;
+        }
+        
+        // If semantic line prefab is not assigned, use the OCR line prefab
+        if (semanticLinePrefab == null && ocrLinePrefab != null)
+        {
+            semanticLinePrefab = ocrLinePrefab;
+            Debug.Log("Using OCR line prefab for semantic lines.");
         }
     }
 
@@ -284,8 +355,8 @@ public class SurfaceScanOCR : MonoBehaviour
         
         // For UI canvas display, we need to invert the Y coordinate system
         // since Unity UI has (0,0) at top-left, but our texture coordinates are from bottom-left
-        float displayMinY = cameraRenderTex.height - maxY;
-        float displayMaxY = cameraRenderTex.height - minY;
+        float displayMinY = base.cameraRenderTex.height - maxY;
+        float displayMaxY = base.cameraRenderTex.height - minY;
         
         Debug.Log($"Canvas display coords: Y range from {displayMinY} to {displayMaxY}");
         
@@ -559,10 +630,10 @@ public class SurfaceScanOCR : MonoBehaviour
         maxV = Mathf.Clamp01(maxV);
         
         // Convert UV coordinates to pixel coordinates in the render texture
-        float minX = minU * cameraRenderTex.width;
-        float minY = minV * cameraRenderTex.height;
-        float maxX = maxU * cameraRenderTex.width;
-        float maxY = maxV * cameraRenderTex.height;
+        float minX = minU * base.cameraRenderTex.width;
+        float minY = minV * base.cameraRenderTex.height;
+        float maxX = maxU * base.cameraRenderTex.width;
+        float maxY = maxV * base.cameraRenderTex.height;
         
         // Adjust Y coordinates - this is now unnecessary, as the UV coordinates are 
         // already in the correct orientation for GetPixels
@@ -575,8 +646,8 @@ public class SurfaceScanOCR : MonoBehaviour
         // Calculate final crop dimensions, ensuring they're within the texture bounds
         minX = Mathf.Max(0, minX);
         minY = Mathf.Max(0, minY);
-        maxX = Mathf.Min(cameraRenderTex.width, maxX);
-        maxY = Mathf.Min(cameraRenderTex.height, maxY);
+        maxX = Mathf.Min(base.cameraRenderTex.width, maxX);
+        maxY = Mathf.Min(base.cameraRenderTex.height, maxY);
         
         int cropWidth = Mathf.FloorToInt(maxX - minX);
         int cropHeight = Mathf.FloorToInt(maxY - minY);
@@ -601,15 +672,15 @@ public class SurfaceScanOCR : MonoBehaviour
         RenderTexture prevRT = RenderTexture.active;
         
         // Create a temporary Texture2D to read from the render texture
-        Texture2D fullScreenTexture = new Texture2D(cameraRenderTex.width, cameraRenderTex.height, TextureFormat.RGBA32, false);
+        Texture2D fullScreenTexture = new Texture2D(base.cameraRenderTex.width, base.cameraRenderTex.height, TextureFormat.RGBA32, false);
         
         try
         {
             // Set the camera render texture as active
-            RenderTexture.active = cameraRenderTex;
+            RenderTexture.active = base.cameraRenderTex;
             
             // Read the entire screen
-            fullScreenTexture.ReadPixels(new Rect(0, 0, cameraRenderTex.width, cameraRenderTex.height), 0, 0);
+            fullScreenTexture.ReadPixels(new Rect(0, 0, base.cameraRenderTex.width, base.cameraRenderTex.height), 0, 0);
             fullScreenTexture.Apply();
             
             // Create the cropped texture with exact dimensions
@@ -1068,6 +1139,10 @@ public class SurfaceScanOCR : MonoBehaviour
     {
         Debug.Log($"OCR completed with {lines.Count} lines of text");
         
+        // Store the OCR results for potential Gemini processing
+        lastOcrFullText = fullText;
+        lastOcrLines = lines;
+        
         // Check if we have a valid surface to place text on
         if (lastScannedSurface == null)
         {
@@ -1075,18 +1150,579 @@ public class SurfaceScanOCR : MonoBehaviour
             return;
         }
         
-        // Check if we have a valid OCR line prefab
-        if (ocrLinePrefab == null)
+        // Only create OCR lines if we have actual text results
+        if (lines != null && lines.Count > 0)
         {
-            Debug.LogError("OCRLine prefab not assigned. Can't create OCR text.");
+            // Check if we have a valid OCR line prefab
+            if (ocrLinePrefab == null)
+            {
+                Debug.LogError("OCRLine prefab not assigned. Can't create OCR text.");
+                return;
+            }
+            
+            // Create a container for the OCR lines if not assigned
+            if (ocrLineContainer == null)
+            {
+                GameObject container = new GameObject("OCRLineContainer");
+                ocrLineContainer = container.transform;
+            }
+            
+            // Calculate surface dimensions and orientation
+            Vector3 surfaceWidth = surfacePoint2 - surfacePoint1;
+            Vector3 surfaceHeight = surfacePoint3 - surfacePoint2;
+            Vector3 surfaceNormal = Vector3.Cross(surfaceWidth, surfaceHeight).normalized;
+            
+            // Calculate surface center
+            Vector3 surfaceCenter = (surfacePoint1 + surfacePoint2 + surfacePoint3 + surfacePoint4) / 4f;
+            
+            // Calculate surface dimensions
+            float surfaceWidthMagnitude = surfaceWidth.magnitude;
+            float surfaceHeightMagnitude = surfaceHeight.magnitude;
+            
+            // Create right and up vectors for the surface
+            Vector3 surfaceRight = surfaceWidth.normalized;
+            Vector3 surfaceUp = Vector3.Cross(surfaceNormal, surfaceRight).normalized;
+            
+            Debug.Log($"Surface dimensions: {surfaceWidthMagnitude} x {surfaceHeightMagnitude}");
+            Debug.Log($"Cropped texture dimensions: {croppedTextureWidth} x {croppedTextureHeight}");
+            
+            // Create a rotation for the surface plane
+            Quaternion surfaceRotation = Quaternion.LookRotation(-surfaceNormal, -surfaceUp);
+            
+            // Process each OCR line
+            foreach (CloudVisionOCRUnified.LineData line in lines)
+            {
+                // Skip lines with no bounding box or empty text
+                if (line.boundingBox.width <= 0 || line.boundingBox.height <= 0 || string.IsNullOrEmpty(line.text))
+                {
+                    continue;
+                }
+                
+                // Calculate position on the surface based on the bounding box
+                float centerX = line.boundingBox.x + (line.boundingBox.width / 2f);
+                float centerY = line.boundingBox.y + (line.boundingBox.height / 2f);
+                
+                float normalizedX = centerX / croppedTextureWidth;
+                float normalizedY = centerY / croppedTextureHeight;
+                
+                // Calculate position in world space on the surface
+                Vector3 linePosition = surfacePoint1 + 
+                                      surfaceRight * (normalizedX * surfaceWidthMagnitude) + 
+                                      surfaceUp * (normalizedY * surfaceHeightMagnitude);
+                
+                // Add slight offset to prevent z-fighting
+                linePosition += surfaceNormal * textZOffset;
+                
+                // Calculate scale based on bounding box and surface dimensions
+                float lineWidth = line.boundingBox.width / croppedTextureWidth * surfaceWidthMagnitude;
+                float lineHeight = line.boundingBox.height / croppedTextureHeight * surfaceHeightMagnitude;
+                
+                // Create the OCR line object
+                GameObject ocrLine = Instantiate(ocrLinePrefab, linePosition, surfaceRotation, ocrLineContainer);
+                ocrLine.name = $"OCRLine_{line.text}";
+                
+                // Get the text component and background as direct children of the OCR line
+                TextMeshPro textMesh = ocrLine.GetComponentInChildren<TextMeshPro>();
+                Transform backgroundTransform = ocrLine.transform.Find("Background");
+                
+                if (textMesh != null && backgroundTransform != null)
+                {
+                    // Set the text content
+                    textMesh.text = line.text;
+                    
+                    // Use a fixed font size instead of scaling based on dimensions
+                    textMesh.fontSize = 6f * 0.01f; // Fixed font size - adjust this value as needed
+                    
+                    // Center the text
+                    textMesh.alignment = TextAlignmentOptions.Center;
+                    textMesh.transform.localPosition = surfaceNormal * 0.001f;
+                    textMesh.transform.localRotation = Quaternion.identity;
+                    
+                    // Scale and position the background to match the bounding box
+                    backgroundTransform.localScale = new Vector3(lineWidth, lineHeight, 0.001f);
+                    backgroundTransform.localPosition = Vector3.zero;
+                    backgroundTransform.localRotation = Quaternion.identity;
+                    
+                    // Get the SpatialUIButton component from the background
+                    var button = backgroundTransform.gameObject.GetComponent<PolySpatial.Template.SpatialUIButton>();
+                    if (button != null)
+                    {
+                        // Update the reference scale after manually setting it
+                        button.UpdateReferenceScale();
+                        
+                        // Store the text for the closure
+                        string ocrText = line.text;
+                        
+                        // Add a listener to the WasPressed event
+                        button.WasPressed += (buttonText, renderer, index) => 
+                        {
+                            if (geminiPrompter != null)
+                            {
+                                // Store a reference to the OCR line that triggered the response
+                                activeResponseLine = ocrLine;
+                                
+                                // Call RequestResponse with the custom template and the OCR text
+                                // Use the callback to position the response panel and set its text
+                                geminiPrompter.RequestResponseWithCallback(
+                                    ocrTextPromptTemplate, 
+                                    ocrText, 
+                                    (response) => PositionResponsePanel(response, ocrLine, surfaceNormal)
+                                );
+                            }
+                            else
+                            {
+                                Debug.LogWarning("No GeminiDefaultPrompter reference set.");
+                            }
+                        };
+                    }
+                    else
+                    {
+                        Debug.LogWarning("Background doesn't have a SpatialUIButton component.");
+                    }
+                    
+                    Debug.Log($"Created OCR line '{line.text}' at position {linePosition}, " + 
+                              $"with size {lineWidth} x {lineHeight}");
+                }
+                else
+                {
+                    Debug.LogWarning($"OCRLine prefab doesn't have expected components: TextMeshPro or 'Background'");
+                }
+                
+                // Add to created lines list for cleanup
+                createdOCRLines.Add(ocrLine);
+            }
+        }
+        else
+        {
+            Debug.Log("OCR did not detect any text lines. Will proceed with semantic analysis to identify visual elements.");
+        }
+        
+        // Modified approach: If we need to process semantic lines AND clear the surface,
+        // we'll do it in sequence using a coroutine
+        if (autoProcessSemanticLines && clearOCRSurfaceAfterGetOCR)
+        {
+            StartCoroutine(ProcessSemanticLinesThenClearSurface());
+        }
+        else
+        {
+            // Handle each option independently
+            if (autoProcessSemanticLines)
+            {
+                ProcessSemanticLines();
+            }
+            
+            if (clearOCRSurfaceAfterGetOCR)
+            {
+                ClearSurface();
+            }
+        }
+    }
+    
+    /// <summary>
+    /// Coroutine to process semantic lines and then clear the surface once complete
+    /// </summary>
+    private IEnumerator ProcessSemanticLinesThenClearSurface()
+    {
+        // First process semantic lines
+        if (lastCroppedTexture != null)
+        {
+            // Initialize empty OCR lines list if none exist or it's empty
+            if (lastOcrLines == null || lastOcrLines.Count == 0)
+            {
+                Debug.Log("No OCR lines detected in ProcessSemanticLinesThenClearSurface, but proceeding with semantic analysis to identify non-text elements");
+                lastOcrLines = new List<CloudVisionOCRUnified.LineData>();
+            }
+            else
+            {
+                Debug.Log($"Processing semantic lines before clearing surface with {lastOcrLines.Count} OCR lines");
+            }
+            
+            // Format OCR lines for the prompt
+            string ocrLinesText = FormatOCRLinesForPrompt(lastOcrLines);
+            
+            // Create prompt for semantic lines
+            string prompt = semanticLinePromptTemplate.Replace("{0}", ocrLinesText);
+            
+            // Convert image to base64
+            string base64Image = ConvertTextureToBase64(lastCroppedTexture);
+            
+            // Make the request
+            var request = MakeGeminiRequest(prompt, base64Image);
+            
+            // Wait for the request to complete
+            float timeout = 30f;
+            float elapsed = 0f;
+            
+            Debug.Log("Waiting for semantic line processing to complete before clearing surface...");
+            
+            while (!request.IsCompleted && elapsed < timeout)
+            {
+                elapsed += Time.deltaTime;
+                yield return null;
+            }
+            
+            if (elapsed >= timeout)
+            {
+                Debug.LogError("Semantic line processing timed out");
+            }
+            else if (request.Error != null)
+            {
+                Debug.LogError($"Semantic line processing failed: {request.Error}");
+            }
+            else
+            {
+                // Process the response
+                string response = request.Result;
+                if (!string.IsNullOrEmpty(response))
+                {
+                    string parsedResponse = ParseGeminiRawResponse(response);
+                    List<SemanticLineData> semanticLines = ExtractSemanticLinesFromResponse(parsedResponse);
+                    
+                    if (semanticLines.Count > 0)
+                    {
+                        CreateSemanticLines(semanticLines);
+                        Debug.Log($"Created {semanticLines.Count} semantic lines before clearing surface");
+                    }
+                    else
+                    {
+                        Debug.Log("No semantic lines extracted from Gemini response");
+                    }
+                }
+                else
+                {
+                    Debug.LogWarning("Empty response from Gemini for semantic line processing");
+                }
+            }
+        }
+        else
+        {
+            Debug.LogError("Cannot process semantic lines: No cropped texture available");
+        }
+        
+        // Now clear the surface
+        ClearOCRLines();
+        ClearSurface();
+    }
+    
+    /// <summary>
+    /// Clear the current surface
+    /// </summary>
+    private void ClearSurface()
+    {
+        // Get the DragSurface component and clear the surface
+        DragSurface dragSurface = FindAnyObjectByType<DragSurface>();
+        if (dragSurface != null)
+        {
+            Debug.Log("Clearing surface after OCR/semantic processing");
+            dragSurface.ClearCurrentSurface();
+        }
+        else
+        {
+            Debug.LogWarning("Could not find DragSurface component to clear the surface");
+        }
+    }
+    
+    /// <summary>
+    /// Process OCR results with Gemini to extract semantic lines
+    /// </summary>
+    [ContextMenu("Process Semantic Lines")]
+    public void ProcessSemanticLines()
+    {
+        Debug.Log("ProcessSemanticLines - Starting");
+        
+        if (lastCroppedTexture == null)
+        {
+            Debug.LogError("No cropped texture available for semantic line processing");
             return;
         }
         
-        // Create a container for the OCR lines if not assigned
-        if (ocrLineContainer == null)
+        // MODIFIED: Still proceed with semantic processing even without OCR lines
+        // This allows detection of non-text elements like ports, buttons, etc.
+        if (lastOcrLines == null || lastOcrLines.Count == 0)
         {
-            GameObject container = new GameObject("OCRLineContainer");
-            ocrLineContainer = container.transform;
+            Debug.Log("No OCR lines detected, but proceeding with semantic analysis to identify non-text elements");
+            lastOcrLines = new List<CloudVisionOCRUnified.LineData>(); // Initialize empty list
+        }
+        else
+        {
+            Debug.Log($"ProcessSemanticLines - OCR lines count: {lastOcrLines.Count}");
+        }
+        
+        try {
+            // Convert the OCR lines to a string format for the prompt
+            string ocrLinesText = FormatOCRLinesForPrompt(lastOcrLines);
+            
+            Debug.Log("Formatted OCR lines (truncated if long): " + 
+                     (ocrLinesText.Length > 200 ? ocrLinesText.Substring(0, 200) + "..." : ocrLinesText));
+            
+            // SAFER APPROACH: Instead of using string.Format, just use string concatenation
+            // This avoids issues with curly braces in the template
+            string prompt = semanticLinePromptTemplate.Replace("{0}", ocrLinesText);
+            
+            Debug.Log("Successfully created prompt");
+            
+            Debug.Log("Sending image and OCR lines to Gemini for semantic processing...");
+            
+            // Convert the image to base64
+            string base64Image = ConvertTextureToBase64(lastCroppedTexture);
+            
+            // Send request to Gemini with both image and OCR text
+            StartCoroutine(RequestSemanticLines(prompt, base64Image));
+        }
+        catch (System.Exception ex) {
+            Debug.LogError($"Exception in ProcessSemanticLines: {ex.GetType().Name} - {ex.Message}");
+            Debug.LogError($"Stack trace: {ex.StackTrace}");
+        }
+    }
+    
+    /// <summary>
+    /// Format OCR lines for the Gemini prompt
+    /// </summary>
+    private string FormatOCRLinesForPrompt(List<CloudVisionOCRUnified.LineData> lines)
+    {
+        try {
+            // Handle empty or null lines
+            if (lines == null || lines.Count == 0)
+            {
+                Debug.Log("FormatOCRLinesForPrompt - No OCR lines to format, returning empty array");
+                return "[]";  // Return empty JSON array
+            }
+            
+            Debug.Log("FormatOCRLinesForPrompt - Starting with " + lines.Count + " lines");
+            
+            System.Text.StringBuilder sb = new System.Text.StringBuilder();
+            sb.Append("[");
+            
+            for (int i = 0; i < lines.Count; i++)
+            {
+                CloudVisionOCRUnified.LineData line = lines[i];
+                
+                Debug.Log($"Processing line {i}: Text = '{line.text}', Bounding box = {line.boundingBox}");
+                
+                sb.Append("{\"text\":\"");
+                sb.Append(line.text.Replace("\"", "\\\""));  // Escape quotes
+                sb.Append("\",\"boundingBox\":{");
+                sb.Append($"\"x\":{line.boundingBox.x},");
+                sb.Append($"\"y\":{line.boundingBox.y},");
+                sb.Append($"\"width\":{line.boundingBox.width},");
+                sb.Append($"\"height\":{line.boundingBox.height}");
+                sb.Append("}}");
+                
+                if (i < lines.Count - 1)
+                {
+                    sb.Append(",");
+                }
+            }
+            
+            sb.Append("]");
+            
+            Debug.Log("FormatOCRLinesForPrompt - Successfully completed");
+            return sb.ToString();
+        }
+        catch (System.Exception ex) {
+            Debug.LogError($"Exception in FormatOCRLinesForPrompt: {ex.GetType().Name} - {ex.Message}");
+            return "[]"; // Return empty array as fallback
+        }
+    }
+    
+    /// <summary>
+    /// Send a request to Gemini for semantic line processing
+    /// </summary>
+    private IEnumerator RequestSemanticLines(string prompt, string base64Image)
+    {
+        Debug.Log("RequestSemanticLines - Starting Gemini request");
+        
+        if (clearPreviousSemanticLines)
+        {
+            ClearSemanticLines();
+        }
+        
+        // Make the API request outside try-catch
+        Debug.Log("Making Gemini API request...");
+        var request = MakeGeminiRequest(prompt, base64Image);
+        
+        // Wait for the request to complete (also outside try-catch)
+        Debug.Log("Waiting for Gemini API request to complete...");
+        float timeout = 30f; // 30 second timeout
+        float elapsed = 0f;
+        
+        while (!request.IsCompleted && elapsed < timeout)
+        {
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+        
+        if (elapsed >= timeout)
+        {
+            Debug.LogError("Gemini request timed out after 30 seconds");
+            yield break;
+        }
+        
+        Debug.Log($"Gemini request completed. IsCompleted: {request.IsCompleted}, HasError: {(request.Error != null)}");
+        
+        // Process results in try-catch after waiting is complete
+        try {
+            // Check for errors
+            if (request.Error != null)
+            {
+                Debug.LogError($"Gemini request failed: {request.Error}");
+                yield break;
+            }
+            
+            // Parse the response
+            string response = request.Result;
+            Debug.Log($"Received raw response from Gemini ({response.Length} chars): {(response.Length > 100 ? response.Substring(0, 100) + "..." : response)}");
+            
+            if (string.IsNullOrEmpty(response))
+            {
+                Debug.LogError("Received empty response from Gemini");
+                yield break;
+            }
+            
+            string parsedResponse = ParseGeminiRawResponse(response);
+            
+            if (string.IsNullOrEmpty(parsedResponse))
+            {
+                Debug.LogError("Failed to parse Gemini response");
+                yield break;
+            }
+            
+            Debug.Log($"Parsed Gemini response: {parsedResponse}");
+            
+            // Extract semantic lines from the response
+            List<SemanticLineData> semanticLines = ExtractSemanticLinesFromResponse(parsedResponse);
+            
+            Debug.Log($"Extracted {semanticLines.Count} semantic lines from Gemini response");
+            
+            // Process semantic lines
+            if (semanticLines.Count > 0)
+            {
+                Debug.Log("Creating semantic lines in 3D space");
+                CreateSemanticLines(semanticLines);
+            }
+            else
+            {
+                Debug.LogWarning("No semantic lines extracted from Gemini response");
+            }
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError($"Error processing semantic lines: {e.GetType().Name} - {e.Message}");
+            Debug.LogError($"Stack trace: {e.StackTrace}");
+        }
+    }
+    
+    /// <summary>
+    /// Extract semantic lines from the Gemini response
+    /// </summary>
+    private List<SemanticLineData> ExtractSemanticLinesFromResponse(string response)
+    {
+        List<SemanticLineData> semanticLines = new List<SemanticLineData>();
+        
+        try
+        {
+            Debug.Log("Extracting semantic lines from response...");
+            // Try to parse the JSON from the response
+            // First, find JSON array in the response if it's wrapped in text
+            int startIndex = response.IndexOf('[');
+            int endIndex = response.LastIndexOf(']');
+            
+            Debug.Log($"JSON markers: startIndex={startIndex}, endIndex={endIndex}");
+            
+            if (startIndex >= 0 && endIndex > startIndex)
+            {
+                // Extract just the JSON array part
+                string jsonArray = response.Substring(startIndex, endIndex - startIndex + 1);
+                Debug.Log($"Extracted JSON array: {jsonArray}");
+                
+                try {
+                    // Parse as array
+                    List<Dictionary<string, object>> lines = Newtonsoft.Json.JsonConvert.DeserializeObject<List<Dictionary<string, object>>>(jsonArray);
+                    Debug.Log($"Deserialized {lines.Count} lines from JSON");
+                    
+                    foreach (var line in lines)
+                    {
+                        // Get the text
+                        string text = line.ContainsKey("text") ? line["text"].ToString() : "";
+                        
+                        // Get the bounding box
+                        if (line.ContainsKey("boundingBox"))
+                        {
+                            var bboxDict = line["boundingBox"] as Newtonsoft.Json.Linq.JObject;
+                            if (bboxDict != null)
+                            {
+                                float x = bboxDict.Value<float>("x");
+                                float y = bboxDict.Value<float>("y");
+                                float width = bboxDict.Value<float>("width");
+                                float height = bboxDict.Value<float>("height");
+                                
+                                Rect boundingBox = new Rect(x, y, width, height);
+                                semanticLines.Add(new SemanticLineData(text, boundingBox));
+                                Debug.Log($"Added semantic line: '{text}' with bbox: {boundingBox}");
+                            }
+                            else
+                            {
+                                Debug.LogWarning($"Could not parse bounding box for line: {text}");
+                            }
+                        }
+                        else
+                        {
+                            Debug.LogWarning($"Line is missing boundingBox property: {text}");
+                        }
+                    }
+                }
+                catch (Newtonsoft.Json.JsonException jsonEx) {
+                    Debug.LogError($"JSON parsing error: {jsonEx.Message}");
+                    Debug.LogError($"Attempted to parse: {jsonArray}");
+                }
+            }
+            else
+            {
+                Debug.LogError($"Could not find valid JSON array in Gemini response. Response: {response}");
+            }
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError($"Error extracting semantic lines: {e.GetType().Name} - {e.Message}");
+        }
+        
+        return semanticLines;
+    }
+    
+    /// <summary>
+    /// Create semantic lines in 3D space from processed data
+    /// </summary>
+    private void CreateSemanticLines(List<SemanticLineData> semanticLines)
+    {
+        Debug.Log($"Creating {semanticLines.Count} semantic lines in 3D space");
+        
+        // Check if we have a valid surface
+        if (lastScannedSurface == null)
+        {
+            Debug.LogError("No valid surface found to place semantic lines - lastScannedSurface is null");
+            return;
+        }
+        
+        // Check if we have a valid prefab
+        if (semanticLinePrefab == null)
+        {
+            Debug.LogError("Semantic line prefab not assigned. Attempting to use OCR line prefab...");
+            
+            if (ocrLinePrefab != null) {
+                Debug.Log("Using OCR line prefab as fallback for semantic lines");
+                semanticLinePrefab = ocrLinePrefab;
+            } else {
+                Debug.LogError("Both semanticLinePrefab and ocrLinePrefab are null. Cannot create semantic lines.");
+                return;
+            }
+        }
+        
+        // Create container if needed
+        if (semanticLineContainer == null)
+        {
+            Debug.Log("Creating semantic line container since none was assigned");
+            GameObject container = new GameObject("SemanticLineContainer");
+            semanticLineContainer = container.transform;
         }
         
         // Calculate surface dimensions and orientation
@@ -1094,8 +1730,7 @@ public class SurfaceScanOCR : MonoBehaviour
         Vector3 surfaceHeight = surfacePoint3 - surfacePoint2;
         Vector3 surfaceNormal = Vector3.Cross(surfaceWidth, surfaceHeight).normalized;
         
-        // Calculate surface center
-        Vector3 surfaceCenter = (surfacePoint1 + surfacePoint2 + surfacePoint3 + surfacePoint4) / 4f;
+        Debug.Log($"Surface dimensions for semantic lines: width={surfaceWidth.magnitude}, height={surfaceHeight.magnitude}, normal={surfaceNormal}");
         
         // Calculate surface dimensions
         float surfaceWidthMagnitude = surfaceWidth.magnitude;
@@ -1105,18 +1740,18 @@ public class SurfaceScanOCR : MonoBehaviour
         Vector3 surfaceRight = surfaceWidth.normalized;
         Vector3 surfaceUp = Vector3.Cross(surfaceNormal, surfaceRight).normalized;
         
-        Debug.Log($"Surface dimensions: {surfaceWidthMagnitude} x {surfaceHeightMagnitude}");
-        Debug.Log($"Cropped texture dimensions: {croppedTextureWidth} x {croppedTextureHeight}");
-        
         // Create a rotation for the surface plane
         Quaternion surfaceRotation = Quaternion.LookRotation(-surfaceNormal, -surfaceUp);
         
-        // Process each OCR line
-        foreach (CloudVisionOCRUnified.LineData line in lines)
+        // Process each semantic line
+        int lineCount = 0;
+        foreach (SemanticLineData line in semanticLines)
         {
+            lineCount++;
             // Skip lines with no bounding box or empty text
             if (line.boundingBox.width <= 0 || line.boundingBox.height <= 0 || string.IsNullOrEmpty(line.text))
             {
+                Debug.LogWarning($"Skipping semantic line {lineCount}: Invalid dimensions or empty text");
                 continue;
             }
             
@@ -1132,28 +1767,33 @@ public class SurfaceScanOCR : MonoBehaviour
                                   surfaceRight * (normalizedX * surfaceWidthMagnitude) + 
                                   surfaceUp * (normalizedY * surfaceHeightMagnitude);
             
-            // Add slight offset to prevent z-fighting
-            linePosition += surfaceNormal * textZOffset;
+            // Add slight offset (more than OCR lines to prevent z-fighting)
+            linePosition += surfaceNormal * (textZOffset * 2f);
             
             // Calculate scale based on bounding box and surface dimensions
             float lineWidth = line.boundingBox.width / croppedTextureWidth * surfaceWidthMagnitude;
             float lineHeight = line.boundingBox.height / croppedTextureHeight * surfaceHeightMagnitude;
             
-            // Create the OCR line object
-            GameObject ocrLine = Instantiate(ocrLinePrefab, linePosition, surfaceRotation, ocrLineContainer);
-            ocrLine.name = $"OCRLine_{line.text}";
+            Debug.Log($"Creating semantic line {lineCount}: '{line.text}' at position {linePosition}, with size {lineWidth} x {lineHeight}");
             
-            // Get the text component and background as direct children of the OCR line
-            TextMeshPro textMesh = ocrLine.GetComponentInChildren<TextMeshPro>();
-            Transform backgroundTransform = ocrLine.transform.Find("Background");
+            // Create the semantic line object
+            GameObject semanticLine = Instantiate(semanticLinePrefab, linePosition, surfaceRotation, semanticLineContainer);
+            semanticLine.name = $"SemanticLine_{line.text}";
+            
+            // Get the text component and background
+            TextMeshPro textMesh = semanticLine.GetComponentInChildren<TextMeshPro>();
+            Transform backgroundTransform = semanticLine.transform.Find("Background");
             
             if (textMesh != null && backgroundTransform != null)
             {
                 // Set the text content
                 textMesh.text = line.text;
                 
-                // Use a fixed font size instead of scaling based on dimensions
-                textMesh.fontSize = 6f * 0.01f; // Fixed font size - adjust this value as needed
+                // Use a fixed font size
+                textMesh.fontSize = 7f * 0.01f; // Slightly larger than OCR lines
+                
+                // Set a different color for semantic lines
+                textMesh.color = Color.white; // Clear white text 
                 
                 // Center the text
                 textMesh.alignment = TextAlignmentOptions.Center;
@@ -1165,6 +1805,18 @@ public class SurfaceScanOCR : MonoBehaviour
                 backgroundTransform.localPosition = Vector3.zero;
                 backgroundTransform.localRotation = Quaternion.identity;
                 
+                // Set a different color for the background
+                Renderer backgroundRenderer = backgroundTransform.GetComponent<Renderer>();
+                if (backgroundRenderer != null)
+                {
+                    backgroundRenderer.material.color = semanticLineColor;
+                    Debug.Log($"Set semantic line background color to {semanticLineColor}");
+                }
+                else
+                {
+                    Debug.LogWarning("Background doesn't have a Renderer component");
+                }
+
                 // Get the SpatialUIButton component from the background
                 var button = backgroundTransform.gameObject.GetComponent<PolySpatial.Template.SpatialUIButton>();
                 if (button != null)
@@ -1173,62 +1825,58 @@ public class SurfaceScanOCR : MonoBehaviour
                     button.UpdateReferenceScale();
                     
                     // Store the text for the closure
-                    string ocrText = line.text;
+                    string semanticText = line.text;
                     
-                    // Add a listener to the WasPressed event
+                    // Add a listener to the WasPressed event (similar to OCR lines)
                     button.WasPressed += (buttonText, renderer, index) => 
                     {
                         if (geminiPrompter != null)
                         {
-                            // Store a reference to the OCR line that triggered the response
-                            activeResponseLine = ocrLine;
+                            // Store a reference to the semantic line that triggered the response
+                            activeResponseLine = semanticLine;
                             
-                            // Call RequestResponse with the custom template and the OCR text
-                            // Use the callback to position the response panel and set its text
+                            // Call RequestResponse with the semantic text
                             geminiPrompter.RequestResponseWithCallback(
                                 ocrTextPromptTemplate, 
-                                ocrText, 
-                                (response) => PositionResponsePanel(response, ocrLine, surfaceNormal)
+                                semanticText, 
+                                (response) => PositionResponsePanel(response, semanticLine, surfaceNormal)
                             );
-                        }
-                        else
-                        {
-                            Debug.LogWarning("No GeminiDefaultPrompter reference set.");
                         }
                     };
                 }
                 else
                 {
-                    Debug.LogWarning("Background doesn't have a SpatialUIButton component.");
+                    Debug.LogWarning("Background doesn't have a SpatialUIButton component");
                 }
                 
-                Debug.Log($"Created OCR line '{line.text}' at position {linePosition}, " + 
-                          $"with size {lineWidth} x {lineHeight}");
+                Debug.Log($"Successfully created semantic line '{line.text}' at position {linePosition}, with size {lineWidth} x {lineHeight}");
             }
             else
             {
-                Debug.LogWarning($"OCRLine prefab doesn't have expected components: TextMeshPro or 'Background'");
+                Debug.LogError($"Semantic line prefab missing components: TextMeshPro={textMesh!=null}, Background={backgroundTransform!=null}");
             }
             
             // Add to created lines list for cleanup
-            createdOCRLines.Add(ocrLine);
+            createdSemanticLines.Add(semanticLine);
         }
         
-        // Clear the current surface if the option is enabled
-        if (clearOCRSurfaceAfterGetOCR && lastScannedSurface != null)
+        Debug.Log($"Finished creating {createdSemanticLines.Count} semantic lines. Check if they are visible in the scene.");
+    }
+    
+    /// <summary>
+    /// Clears all semantic lines created previously
+    /// </summary>
+    public void ClearSemanticLines()
+    {
+        foreach (GameObject semanticLine in createdSemanticLines)
         {
-            // Get the DragSurface component and clear the surface
-            DragSurface dragSurface = FindAnyObjectByType<DragSurface>();
-            if (dragSurface != null)
+            if (semanticLine != null)
             {
-                Debug.Log("Clearing surface after OCR completion");
-                dragSurface.ClearCurrentSurface();
-            }
-            else
-            {
-                Debug.LogWarning("Could not find DragSurface component to clear the surface");
+                Destroy(semanticLine);
             }
         }
+        
+        createdSemanticLines.Clear();
     }
     
     /// <summary>
