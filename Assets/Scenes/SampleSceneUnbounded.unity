@@ -7667,18 +7667,9 @@ MonoBehaviour:
   ocrTextPromptTemplate: 'This is text I scanned from my environment with OCR: "{0}".
     Please explain what this text means, what it''s from, and why it might be important.
     Keep the response concise in 20 words.'
-  semanticLinePromptTemplate: 'I''ve scanned text from an image using OCR. I''m sending
-    you the image and the OCR results with their bounding boxes. Please analyze and
-    combine the OCR lines into semantically meaningful lines. For example, if there
-    are multiple fragmented lines that form a sentence or related concept, combine
-    them into a single semantic line. Return your results as a JSON array of semantic
-    lines with their combined bounding boxes. Sample format: [{"text":"Combined semantic
-    text","boundingBox":{"x":10,"y":20,"width":100,"height":30}}]. Original OCR lines:
-    {0}'
-  semanticLineColor: {r: 0.2, g: 0.8, b: 0.2, a: 0.8}
+  semanticLineColor: {r: 0.19607843, g: 0.5764706, b: 0.78431374, a: 1}
   responseVerticalOffset: 0.02
   autoProcessSemanticLines: 1
-  persistSemanticLinesAfterSurfaceClear: 1
 --- !u!1 &1490084817
 GameObject:
   m_ObjectHideFlags: 0

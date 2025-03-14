@@ -178,7 +178,93 @@ public class SurfaceScanOCR : GeminiGeneral
     
     [Tooltip("Prompt template for semantic line extraction")]
     [TextArea(3, 10)]
-    public string semanticLinePromptTemplate = "I'm analyzing a scanned image with OCR results. I need you to identify FUNCTIONAL AREAS in this image, not just text lines. Analyze both text and visual elements.\n\n1. Identify meaningful functional regions (e.g., 'Nutrition Facts Table', 'USB Ports Section', 'Control Panel').\n2. For each region, create a bounding box that encompasses the entire functional area.\n3. Write a concise functional label that describes what that area represents, not just the text.\n4. Identify non-text elements too (buttons, ports, switches, icons) and label their function.\n\nGroup nearby text lines that serve the same purpose into single functional areas. Don't just combine sentences - focus on grouping elements by their functional purpose.\n\nReturn your results as a JSON array: [{\"text\":\"[LABEL DESCRIBING FUNCTION]\",\"boundingBox\":{\"x\":10,\"y\":20,\"width\":100,\"height\":30}}]\n\nOriginal OCR lines for reference: {0}";
+    private string semanticLinePromptTemplate = @"
+    You're analyzing a scanned image with OCR results **and** additional visual elements. 
+    Your task is to identify FUNCTIONAL AREAS in the image—not just textual lines—and 
+    return them in a JSON array, where each entry has:
+    1) A concise label (string) that describes the overall function or meaning of that region 
+    (for example, “Nutrition Facts Section” or “USB Ports and Cable Connections”).
+    2) A bounding box (x, y, width, height) that fully covers all relevant text **and** any 
+    associated non-text elements (icons, ports, switches, etc.) belonging to that region. 
+    Image Dimensions and Coordinate System:
+    - The image is {1} pixels wide and {2} pixels high
+    - IMPORTANT: Use a coordinate system where (0,0) is at the BOTTOM-LEFT corner of the image
+    - The TOP-RIGHT corner of the image is at ({1}, {2})
+    - All coordinates must be within these bounds
+    - Even if there are no text elements detected, please identify visually distinct regions
+
+    ### CRITICAL - Bounding Box Rules:
+    - Bounding boxes MUST NOT overlap with each other
+    - One functional area MUST NOT completely contain another.
+    - MUST NOT include the biggest bounding box in the response, which is {1} pixels wide and {2} pixels high. Only consider the contents inside the object.
+    - If you identify overlapping functional areas, divide them into separate non-overlapping regions
+    - Each region should be visually and functionally distinct
+    - Prefer fewer, well-defined regions over many small fragmented ones
+    - Keep adequate spacing between bounding boxes (at least 5-10 pixels)
+
+    ### Instructions:
+
+    1. **Group** any nearby OCR lines that serve the **same functional purpose** into one 
+    bounding box, instead of returning many small lines. For instance, multiple lines 
+    describing “Nutrition Facts” or “Settings Panel” should be merged into a single 
+    labeled functional area. 
+    
+    2. **Include non-text elements** that have a clear function (e.g., ports, switches, 
+    controls, icons) in the same bounding box if they belong together. Even if 
+    something has no text, label its purpose or function (e.g., “LAN port,” 
+    “Power button,” “USB icon area,” etc.). 
+
+    3. **Return a bounding box** in the same coordinate system as the OCR lines, 
+    but make it large enough to encompass the entire functional area 
+    (text + any relevant graphics). 
+    - The coordinate system has (0, 0) at the bottom-left, 
+        with `width` and `height` in pixels. 
+    - If you must approximate bounding boxes for non-text elements, do your best 
+        to place them accurately around those areas.
+
+    4. **Be concise** in your labeling. Provide short functional names rather than 
+    large blocks of text. 
+
+    5. **Only provide 3 - 8 functional areas.**
+
+    6. **Output format**: A strict JSON array, like:
+    ```
+    [
+    {
+        ""text"": ""[FUNCTIONAL LABEL]"",
+        ""boundingBox"": {""x"": 10, ""y"": 20, ""width"": 100, ""height"": 30}
+    },
+    ...
+    ]
+    ```
+    Do not include any extra keys or commentary outside this array.
+
+    ### Important:
+    - Do **not** merely combine adjacent text into one sentence; 
+    **combine** or **group** based on **function** or usage (e.g., “Nutrition Facts,” 
+    “Router Ports,” “Safety Warnings,” etc.).
+    - If the image depicts machinery, panels, or ports without text, you should 
+    still produce an entry with a bounding box and a functional label.
+    - If no OCR lines were detected, focus on identifying visual regions based on color, 
+    shape, and apparent functionality.
+    - Remember: NO OVERLAPPING OR NESTED BOUNDING BOXES - each area must be completely separate.
+
+    Below are the raw OCR lines (with bounding boxes) you can reference. 
+    However, your output **should** merge or supersede these smaller OCR bounding 
+    boxes if they belong to one larger functional area:
+
+    Original OCR lines:
+    {0}
+    ";
+
+    // Add a method to update the prompt with the dimensions of the cropped texture
+    private string FormatSemanticPromptWithDimensions(string basePrompt, int width, int height, string ocrLinesText)
+    {
+        string prompt = basePrompt.Replace("{0}", ocrLinesText)
+                                  .Replace("{1}", width.ToString())
+                                  .Replace("{2}", height.ToString());
+        return prompt;
+    }
     
     [Tooltip("Color for semantic line visualization")]
     public Color semanticLineColor = new Color(0.2f, 0.8f, 0.2f, 0.8f);
@@ -492,6 +578,7 @@ public class SurfaceScanOCR : GeminiGeneral
         // Clear previous OCR lines if enabled
         if (clearPreviousOCRLines)
         {
+            ClearSemanticLines();
             ClearOCRLines();
         }
         
@@ -1231,7 +1318,7 @@ public class SurfaceScanOCR : GeminiGeneral
                     textMesh.text = line.text;
                     
                     // Use a fixed font size instead of scaling based on dimensions
-                    textMesh.fontSize = 6f * 0.01f; // Fixed font size - adjust this value as needed
+                    textMesh.fontSize = 4f * 0.01f; // Fixed font size - adjust this value as needed
                     
                     // Center the text
                     textMesh.alignment = TextAlignmentOptions.Center;
@@ -1340,8 +1427,13 @@ public class SurfaceScanOCR : GeminiGeneral
             // Format OCR lines for the prompt
             string ocrLinesText = FormatOCRLinesForPrompt(lastOcrLines);
             
-            // Create prompt for semantic lines
-            string prompt = semanticLinePromptTemplate.Replace("{0}", ocrLinesText);
+            // Create prompt for semantic lines with dimensions
+            string prompt = FormatSemanticPromptWithDimensions(
+                semanticLinePromptTemplate,
+                lastCroppedTexture.width,
+                lastCroppedTexture.height,
+                ocrLinesText
+            );
             
             // Convert image to base64
             string base64Image = ConvertTextureToBase64(lastCroppedTexture);
@@ -1455,11 +1547,15 @@ public class SurfaceScanOCR : GeminiGeneral
             Debug.Log("Formatted OCR lines (truncated if long): " + 
                      (ocrLinesText.Length > 200 ? ocrLinesText.Substring(0, 200) + "..." : ocrLinesText));
             
-            // SAFER APPROACH: Instead of using string.Format, just use string concatenation
-            // This avoids issues with curly braces in the template
-            string prompt = semanticLinePromptTemplate.Replace("{0}", ocrLinesText);
+            // Use the new format method to include dimensions of the cropped texture
+            string prompt = FormatSemanticPromptWithDimensions(
+                semanticLinePromptTemplate, 
+                lastCroppedTexture.width, 
+                lastCroppedTexture.height, 
+                ocrLinesText
+            );
             
-            Debug.Log("Successfully created prompt");
+            Debug.Log("Successfully created prompt with image dimensions");
             
             Debug.Log("Sending image and OCR lines to Gemini for semantic processing...");
             
@@ -1790,7 +1886,7 @@ public class SurfaceScanOCR : GeminiGeneral
                 textMesh.text = line.text;
                 
                 // Use a fixed font size
-                textMesh.fontSize = 7f * 0.01f; // Slightly larger than OCR lines
+                textMesh.fontSize = 4f * 0.01f; // Slightly larger than OCR lines
                 
                 // Set a different color for semantic lines
                 textMesh.color = Color.white; // Clear white text 
@@ -1799,6 +1895,12 @@ public class SurfaceScanOCR : GeminiGeneral
                 textMesh.alignment = TextAlignmentOptions.Center;
                 textMesh.transform.localPosition = surfaceNormal * 0.001f;
                 textMesh.transform.localRotation = Quaternion.identity;
+
+                float textWidth = lineWidth * 1.5f;
+                if (textWidth < 0.014f) textWidth = 0.014f;
+                float textHeight = lineHeight;
+
+                textMesh.rectTransform.sizeDelta = new Vector2(textWidth, textHeight);
                 
                 // Scale and position the background to match the bounding box
                 backgroundTransform.localScale = new Vector3(lineWidth, lineHeight, 0.001f);
