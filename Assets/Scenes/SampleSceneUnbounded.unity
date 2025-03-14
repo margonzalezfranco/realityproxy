@@ -8147,8 +8147,9 @@ GameObject:
   - component: {fileID: 1557741981}
   - component: {fileID: 1557741983}
   - component: {fileID: 1557741984}
-  - component: {fileID: 1557741985}
   - component: {fileID: 1557741986}
+  - component: {fileID: 1557741985}
+  - component: {fileID: 1557741987}
   m_Layer: 0
   m_Name: GEMINI
   m_TagString: Untagged
@@ -8270,6 +8271,23 @@ MonoBehaviour:
   onResponseReceived:
     m_PersistentCalls:
       m_Calls: []
+--- !u!114 &1557741987
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1557741980}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8801e137921e94bd79a00777dab773b9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  speechApiKey: AIzaSyBt5kvN77OvM2edI0TPwVpsfUFQjF2Pq7o
+  languageCode: en-US
+  encoding: LINEAR16
+  sampleRateHertz: 16000
+  enableAutomaticPunctuation: 1
 --- !u!1 &1579789970
 GameObject:
   m_ObjectHideFlags: 0
