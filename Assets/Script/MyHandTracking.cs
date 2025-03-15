@@ -20,15 +20,30 @@ public class MyHandTracking : MonoBehaviour
     [SerializeField] float pinchThreshold = 0.005f;
     [Tooltip("Minimum distance between thumb and index finger to register as a pinch release (in meters)")]
     [SerializeField] float pinchReleaseThreshold = 0.01f;
-    
+
+    [Header("Middle Finger Pinch Detection")]
+    [Tooltip("Maximum distance between thumb and middle finger to register as a middle pinch (in meters)")]
+    [SerializeField] float middlePinchThreshold = 0.007f;
+    [Tooltip("Minimum distance between thumb and middle finger to register as a middle pinch release (in meters)")]
+    [SerializeField] float middlePinchReleaseThreshold = 0.02f;
+
     // Events for pinch detection
     public delegate void PinchEventHandler(bool isLeft);
     public static event PinchEventHandler OnPinchStarted;
     public static event PinchEventHandler OnPinchEnded;
+
+    // Events for middle finger pinch detection
+    public delegate void MiddlePinchEventHandler(bool isLeft);
+    public static event MiddlePinchEventHandler OnMiddlePinchStarted;
+    public static event MiddlePinchEventHandler OnMiddlePinchEnded;
     
     // Track pinch state for each hand
     private bool leftHandPinching = false;
     private bool rightHandPinching = false;
+
+    // Track middle finger pinch state for each hand
+    private bool leftHandMiddlePinching = false;
+    private bool rightHandMiddlePinching = false;
 
     [Header("Debug Visualization")]
     public bool visualizeJoints = true;
@@ -151,6 +166,9 @@ public class MyHandTracking : MonoBehaviour
 
             // Check for pinch gesture
             DetectPinchGesture(hand, isLeft);
+            
+            // Check for middle finger pinch gesture
+            DetectMiddlePinchGesture(hand, isLeft);
 
             // Update joint visualizers if enabled
             if (visualizeJoints)
@@ -199,6 +217,48 @@ public class MyHandTracking : MonoBehaviour
                 OnPinchEnded?.Invoke(isLeft);
                 
                 Debug.Log($"{(isLeft ? "Left" : "Right")} hand pinch ended. Distance: {distance:F3}m");
+            }
+        }
+    }
+    private void DetectMiddlePinchGesture(XRHand hand, bool isLeft)
+    {
+        // Get thumb tip and middle tip poses
+        if (hand.GetJoint(XRHandJointID.ThumbTip).TryGetPose(out Pose thumbTipPose) &&
+            hand.GetJoint(XRHandJointID.MiddleTip).TryGetPose(out Pose middleTipPose))
+        {
+            // Calculate distance between thumb tip and middle tip
+            float distance = Vector3.Distance(thumbTipPose.position, middleTipPose.position);
+            
+            // Check if we're currently pinching with middle finger
+            bool isMiddlePinching = isLeft ? leftHandMiddlePinching : rightHandMiddlePinching;
+            
+            // Detect middle finger pinch start (using hysteresis to prevent flickering)
+            if (!isMiddlePinching && distance < middlePinchThreshold)
+            {
+                // Start middle finger pinching
+                if (isLeft)
+                    leftHandMiddlePinching = true;
+                else
+                    rightHandMiddlePinching = true;
+                
+                // Invoke middle finger pinch started event
+                OnMiddlePinchStarted?.Invoke(isLeft);
+                
+                Debug.Log($"{(isLeft ? "Left" : "Right")} hand middle finger pinch started. Distance: {distance:F3}m");
+            }
+            // Detect middle finger pinch end (using a larger threshold for release to prevent flickering)
+            else if (isMiddlePinching && distance > middlePinchReleaseThreshold)
+            {
+                // End middle finger pinching
+                if (isLeft)
+                    leftHandMiddlePinching = false;
+                else
+                    rightHandMiddlePinching = false;
+                
+                // Invoke middle finger pinch ended event
+                OnMiddlePinchEnded?.Invoke(isLeft);
+                
+                Debug.Log($"{(isLeft ? "Left" : "Right")} hand middle finger pinch ended. Distance: {distance:F3}m");
             }
         }
     }
@@ -368,6 +428,73 @@ public class MyHandTracking : MonoBehaviour
         {
             // Calculate midpoint between thumb tip and index tip
             position = Vector3.Lerp(thumbTipPose.position, indexTipPose.position, 0.5f);
+            return true;
+        }
+        
+        return false;
+    }
+
+    /// <summary>
+    /// Returns true if the specified hand is currently performing a middle finger pinch
+    /// </summary>
+    /// <param name="isLeft">True for left hand, false for right hand</param>
+    /// <returns>True if middle finger pinching, false otherwise</returns>
+    public bool IsMiddlePinching(bool isLeft)
+    {
+        return isLeft ? leftHandMiddlePinching : rightHandMiddlePinching;
+    }
+
+    /// <summary>
+    /// Attempts to get the current middle finger pinch position (midpoint between thumb and middle fingertips)
+    /// </summary>
+    /// <param name="isLeft">True for left hand, false for right hand</param>
+    /// <param name="position">Output position of the middle finger pinch point</param>
+    /// <returns>True if position was successfully retrieved, false otherwise</returns>
+    public bool TryGetMiddlePinchPosition(bool isLeft, out Vector3 position)
+    {
+        position = Vector3.zero;
+        
+        if (handSubsystem == null || !handSubsystem.running)
+            return false;
+            
+        var hand = isLeft ? handSubsystem.leftHand : handSubsystem.rightHand;
+        
+        if (!hand.isTracked)
+            return false;
+            
+        if (hand.GetJoint(XRHandJointID.ThumbTip).TryGetPose(out Pose thumbTipPose) &&
+            hand.GetJoint(XRHandJointID.MiddleTip).TryGetPose(out Pose middleTipPose))
+        {
+            // Calculate midpoint between thumb tip and middle tip
+            position = Vector3.Lerp(thumbTipPose.position, middleTipPose.position, 0.5f);
+            return true;
+        }
+        
+        return false;
+    }
+
+    /// <summary>
+    /// Gets the current distance between thumb tip and middle fingertip
+    /// </summary>
+    /// <param name="isLeft">True for left hand, false for right hand</param>
+    /// <param name="distance">Output distance between the thumb and middle fingertip</param>
+    /// <returns>True if distance was successfully calculated, false otherwise</returns>
+    public bool TryGetMiddlePinchDistance(bool isLeft, out float distance)
+    {
+        distance = float.MaxValue;
+        
+        if (handSubsystem == null || !handSubsystem.running)
+            return false;
+            
+        var hand = isLeft ? handSubsystem.leftHand : handSubsystem.rightHand;
+        
+        if (!hand.isTracked)
+            return false;
+            
+        if (hand.GetJoint(XRHandJointID.ThumbTip).TryGetPose(out Pose thumbTipPose) &&
+            hand.GetJoint(XRHandJointID.MiddleTip).TryGetPose(out Pose middleTipPose))
+        {
+            distance = Vector3.Distance(thumbTipPose.position, middleTipPose.position);
             return true;
         }
         
