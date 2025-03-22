@@ -23,8 +23,6 @@ public class SpeechToTextRecorder : GeminiGeneral
     [SerializeField] private bool useMiddlePinchControl = true;
     [Tooltip("Which hand to use for middle finger pinch control")]
     [SerializeField] private bool useLeftHand = true;
-    [Tooltip("Toggle to enable/disable middle pinch gesture control at runtime")]
-    [SerializeField] private bool middlePinchControlEnabled = true;
 
     [Header("Gemini Response")]
     [SerializeField] private GameObject geminiHandSphere;
@@ -85,8 +83,8 @@ public class SpeechToTextRecorder : GeminiGeneral
 
     private void HandleMiddlePinchStarted(bool isLeft)
     {
-        // Only respond to the configured hand's gestures if middle pinch control is enabled
-        if (isLeft == useLeftHand && middlePinchControlEnabled)
+        // Only respond to the configured hand's gestures
+        if (isLeft == useLeftHand)
         {
             Debug.Log($"Middle finger pinch started on {(isLeft ? "left" : "right")} hand - starting recording");
             if (!isRecording)
@@ -99,8 +97,8 @@ public class SpeechToTextRecorder : GeminiGeneral
 
     private void HandleMiddlePinchEnded(bool isLeft)
     {
-        // Only respond to the configured hand's gestures if middle pinch control is enabled
-        if (isLeft == useLeftHand && middlePinchControlEnabled)
+        // Only respond to the configured hand's gestures
+        if (isLeft == useLeftHand)
         {
             Debug.Log($"Middle finger pinch ended on {(isLeft ? "left" : "right")} hand - stopping recording");
             if (isRecording)
@@ -385,25 +383,6 @@ public class SpeechToTextRecorder : GeminiGeneral
             // 6) Invoke event with the response
             onGeminiResponseReceived?.Invoke(geminiResponse);
         }
-    }
-
-    /// <summary>
-    /// Toggle middle pinch control on or off at runtime
-    /// </summary>
-    /// <param name="enabled">Whether middle pinch control should be enabled</param>
-    public void SetMiddlePinchControlEnabled(bool enabled)
-    {
-        middlePinchControlEnabled = enabled;
-        Debug.Log($"Middle pinch control {(enabled ? "enabled" : "disabled")}");
-    }
-
-    /// <summary>
-    /// Get the current state of middle pinch control
-    /// </summary>
-    /// <returns>Whether middle pinch control is currently enabled</returns>
-    public bool IsMiddlePinchControlEnabled()
-    {
-        return middlePinchControlEnabled;
     }
 }
 
