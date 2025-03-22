@@ -90,7 +90,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: -876546973899608171, guid: 0927d29e476ce5843b1f7d2a96943c51, type: 3}
+  - {fileID: 2100000, guid: a4779d01417624da7a7be548b12a9e81, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -241,7 +241,7 @@ MonoBehaviour:
   m_AudioSource: {fileID: 5702397958615809862}
   m_ScaleBackground: 1
   m_SelectedColor: {r: 0.1254, g: 0.5882, b: 0.9529, a: 1}
-  m_UnselectedColor: {r: 0.1764, g: 0.1764, b: 0.1764, a: 1}
+  m_UnselectedColor: {r: 0.764151, g: 0.764151, b: 0.764151, a: 1}
   m_PressStart:
     m_PersistentCalls:
       m_Calls: []
@@ -253,7 +253,7 @@ MonoBehaviour:
       m_Calls:
       - m_Target: {fileID: 0}
         m_TargetAssemblyTypeName: LabelObjToggle, Assembly-CSharp
-        m_MethodName: ToggleLabel
+        m_MethodName: 
         m_Mode: 1
         m_Arguments:
           m_ObjectArgument: {fileID: 0}
@@ -264,7 +264,12 @@ MonoBehaviour:
           m_BoolArgument: 0
         m_CallState: 2
   m_ToggleBackground: {fileID: 180490182277451625}
+  m_Text: {fileID: 0}
+  textOn: 
+  textOn_Useful: 0
   enableInteraction: 1
+  m_SelectedMaterial: {fileID: 0}
+  m_UnselectedMaterial: {fileID: 0}
 --- !u!114 &6723153283777977592
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -283,7 +288,7 @@ MonoBehaviour:
   InfoPanel: {fileID: 0}
   modelName: gemini-2.0-flash
   geminiApiKey: AIzaSyBx5IRXG1FOUN3HdnKFMgsQA5zOcui7Mhc
-  visionApiKey: AIzaSyBt5kvN77OvM2edI0TPwVpsfUFQjF2Pq7o
+  geminiGeneral: {fileID: 0}
   cameraRenderTex: {fileID: 8400000, guid: 78e2b50f1cd8640efa61e2994d5eaec2, type: 2}
   questionsParent: {fileID: 0}
   questionPrefab: {fileID: 8332209716421791987, guid: afb3b284441664fef8669ab537fb8b5f, type: 3}
@@ -296,14 +301,8 @@ MonoBehaviour:
   descriptionPanel: {fileID: 0}
   descriptionText: {fileID: 0}
   inspectionUpdateInterval: 1
-  ocrComponent: {fileID: 0}
-  ocrUpdateInterval: 3
   handTracking: {fileID: 0}
   pointingPlane: {fileID: 0}
-  tmpPointingText: {fileID: 0}
-  pointingPlaneOffset: 0.2
-  ocrLinePrefab: {fileID: 8332209716421791987, guid: d029c8febda544818a79fbf22d180b17, type: 3}
-  ocrLineCanvas: {fileID: 0}
-  highlightedLineMaterial: {fileID: 2100000, guid: 36d23d5fd7ae3452294b63e6599b7635, type: 2}
-  normalLineMaterial: {fileID: 2100000, guid: 2ce25bbe4864f4f5ab457e08addf1a1c, type: 2}
-  ocrCanvasScaleOverride: 0
+  pointingPlaneText: {fileID: 0}
+  planeUpOffset: 0.02
+  recorderToggle: {fileID: 0}

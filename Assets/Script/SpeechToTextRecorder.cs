@@ -19,6 +19,10 @@ public class SpeechToTextRecorder : GeminiGeneral
     [TextArea(3, 10)]
     [SerializeField] private string systemPromptTemplate = "You are a helpful AI assistant responding to the user's request. You can see what the user is currently looking at. Please respond concisely and avoid using markdown formatting. User request: {0}";
 
+    [Tooltip("System prompt template to use with object context. Use {0} for object name and {1} for transcribed text")]
+    [TextArea(3, 10)]
+    [SerializeField] private string objectContextPromptTemplate = "You are a helpful AI assistant responding to the user's request about {0}. You can see what the user is currently looking at, but you don't have to only rely on that. You don't have to wait to see the object to respond. Only respond information about this object. Please respond concisely and avoid using markdown formatting. User request: {1}";
+
     [Header("Gesture Control")]
     [SerializeField] private bool useMiddlePinchControl = true;
     [Tooltip("Which hand to use for middle finger pinch control")]
@@ -28,8 +32,10 @@ public class SpeechToTextRecorder : GeminiGeneral
     [SerializeField] private GameObject geminiHandSphere;
     [SerializeField] private TMPro.TextMeshPro requestText;
     [SerializeField] private TMPro.TextMeshPro responseText;
+    [SerializeField] private TMPro.TextMeshPro responseTextOnObject;
     [SerializeField] private UnityEngine.Events.UnityEvent<string> onGeminiResponseReceived;
     [SerializeField] private GameObject chatbox;
+    [SerializeField] private GameObject chatboxOnObject;
     [Header("Debug")]
     [SerializeField] private AudioClip recordedAudio;
     [SerializeField] private string transcriptionResult;
@@ -40,6 +46,10 @@ public class SpeechToTextRecorder : GeminiGeneral
     private float recordingStartTime;
     private bool wasRecordingLastFrame = false;
     private XRHandSubsystem handSubsystem; // Cache the hand subsystem
+
+    public bool objectLevelRecordingToggle = true;
+    private string currentObjectLabel = null;
+    private GameObject originalRecorderParent = null;
 
     protected override void Awake()
     {
@@ -200,6 +210,44 @@ public class SpeechToTextRecorder : GeminiGeneral
         Debug.Log($"Recording toggled to: {isRecording}");
     }
 
+    // Method to be called from SphereToggleScript to set the current object label
+    public void SetObjectLabel(string label, GameObject sphereToggle)
+    {
+        currentObjectLabel = label;
+        
+        // Save original parent of recorder toggle if this is the first time setting
+        if (originalRecorderParent == null && transform.parent != null)
+        {
+            originalRecorderParent = transform.parent.gameObject;
+        }
+        
+        // Set parent to the sphere toggle
+        if (sphereToggle != null)
+        {
+            transform.SetParent(sphereToggle.transform);
+        }
+        
+        Debug.Log($"Recorder now associated with object: {label}");
+    }
+
+    // Method to reset object label and restore original parent
+    public void ResetObjectLabel()
+    {
+        currentObjectLabel = null;
+        
+        // Restore original parent if it exists
+        if (originalRecorderParent != null)
+        {
+            transform.SetParent(originalRecorderParent.transform);
+        }
+        else
+        {
+            transform.SetParent(null);
+        }
+        
+        Debug.Log("Recorder object association cleared");
+    }
+
     private void StartRecording()
     {
         if (Microphone.devices.Length == 0)
@@ -220,6 +268,8 @@ public class SpeechToTextRecorder : GeminiGeneral
         recordedAudio = Microphone.Start(deviceName, false, maxRecordingLength, recordingFrequency);
         recordingStartTime = Time.time;
         transcriptionResult = "";
+        if (responseTextOnObject != null) responseTextOnObject.text = "";
+        if (chatboxOnObject != null) chatboxOnObject.SetActive(false);
         Debug.Log($"Started recording using {deviceName}");
     }
 
@@ -333,8 +383,21 @@ public class SpeechToTextRecorder : GeminiGeneral
 
     public void TalkToGemini(string prompt)
     {
-        // Format the prompt using the template
-        string formattedPrompt = string.Format(systemPromptTemplate, prompt);
+        string formattedPrompt;
+        
+        // If objectLevelRecordingToggle is true and we have a current object label,
+        // use the object context prompt template
+        if (objectLevelRecordingToggle && !string.IsNullOrEmpty(currentObjectLabel))
+        {
+            formattedPrompt = string.Format(objectContextPromptTemplate, currentObjectLabel, prompt);
+            Debug.Log($"Using object context prompt with label '{currentObjectLabel}'");
+        }
+        else
+        {
+            // Otherwise use the standard prompt template
+            formattedPrompt = string.Format(systemPromptTemplate, prompt);
+        }
+        
         Debug.Log($"Formatted prompt: {formattedPrompt}");
         
         StartCoroutine(GeminiQueryRoutine(formattedPrompt));
@@ -378,6 +441,18 @@ public class SpeechToTextRecorder : GeminiGeneral
             if (responseText != null && !string.IsNullOrEmpty(geminiResponse))
             {
                 responseText.text = geminiResponse;
+            }
+
+            // 5) Update UI if available
+            if (responseTextOnObject != null && !string.IsNullOrEmpty(geminiResponse))
+            {
+                responseTextOnObject.text = geminiResponse;
+            }
+
+            // 6) Update UI if available
+            if (chatboxOnObject != null && !string.IsNullOrEmpty(geminiResponse))
+            {
+                chatboxOnObject.SetActive(true);
             }
             
             // 6) Invoke event with the response

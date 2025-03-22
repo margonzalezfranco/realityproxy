@@ -96,6 +96,8 @@ public class SphereToggleScript : MonoBehaviour
     public delegate void PointingStateChangedHandler(bool isPointing);
     public static event PointingStateChangedHandler OnPointingStateChanged;
 
+    public SpeechToTextRecorder recorder;
+
     private bool currentlyPointing = false;
 
     [Header("Hand Tracking")]
@@ -114,11 +116,23 @@ public class SphereToggleScript : MonoBehaviour
 
     private Vector3 relativePosition; // Store relative position to holding hand
 
+    public GameObject recorderToggle;
+
     private void Start()
     {
         if (geminiClient == null)
         {
             geminiClient = new GeminiAPI(modelName, geminiApiKey);
+        }
+
+        if (recorderToggle == null)
+        {
+            recorderToggle = GameObject.Find("recorderToggle");
+        }
+
+        if (recorder == null)
+        {
+            recorder = FindFirstObjectByType<SpeechToTextRecorder>();
         }
 
         // Ensure we have a reference to a GeminiGeneral component
@@ -208,6 +222,8 @@ public class SphereToggleScript : MonoBehaviour
         {
             InfoPanel.SetActive(true);
 
+            UpdateRecorderToggle(true);
+
             // Update context before generating questions and relationships
             UpdateSceneContext();
 
@@ -223,17 +239,76 @@ public class SphereToggleScript : MonoBehaviour
                 // 2) Also generate relationships with other items (Granularity Lv2)
                 StartCoroutine(GenerateRelationshipsRoutine(labelContent));
             }
+
+            var lazyFollow = this.GetComponentInChildren<LazyFollow>();
+            if (lazyFollow != null)
+            {
+                // enable lazyFollow
+                lazyFollow.enabled = true;
+            }
         }
         else
         {
             // Turn OFF
             InfoPanel.SetActive(false);
             answerPanel.SetActive(false);
+            UpdateRecorderToggle(false);
 
             // Clear any existing relationship lines
             if (relationLineManager != null)
             {
                 relationLineManager.ClearAllLines();
+            }
+
+            var lazyFollow = this.GetComponentInChildren<LazyFollow>();
+            if (lazyFollow != null)
+            {
+                // disable lazyFollow
+                lazyFollow.enabled = false;
+            }
+        }
+    }
+
+    private void UpdateRecorderToggle(bool isOn)
+    {
+        if (recorderToggle != null)
+        {
+            if (isOn)
+            {
+                // Position recorderToggle at the toggle position plus a small offset above
+                Vector3 togglePosition = transform.position;
+                Vector3 offsetPosition = togglePosition + new Vector3(0f, 0.07f, 0f); // Adjust the Y offset as needed
+                recorderToggle.transform.position = offsetPosition;
+                
+                if (recorder != null && labelUnderSphere != null)
+                {
+                    recorder.SetObjectLabel(labelUnderSphere.text, this.gameObject);
+                    Debug.Log($"Set recorder object label to: {labelUnderSphere.text}");
+                }
+                else if (recorder == null)
+                {
+                    Debug.LogWarning("SpeechToTextRecorder component not found on recorderToggle or its parent");
+                }
+            }
+            else
+            {
+                // Reset recorderToggle position to origin
+                recorderToggle.transform.position = Vector3.zero;
+                
+                // Reset the object label on the SpeechToTextRecorder
+                SpeechToTextRecorder recorder = recorderToggle.GetComponent<SpeechToTextRecorder>();
+                
+                // If not found on the GameObject, try to find it in the parent
+                if (recorder == null && recorderToggle.transform.parent != null)
+                {
+                    recorder = recorderToggle.transform.parent.GetComponent<SpeechToTextRecorder>();
+                }
+                
+                if (recorder != null)
+                {
+                    recorder.ResetObjectLabel();
+                    Debug.Log("Reset recorder object label");
+                }
             }
         }
     }
