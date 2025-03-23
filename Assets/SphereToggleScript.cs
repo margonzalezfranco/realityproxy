@@ -82,6 +82,8 @@ public class SphereToggleScript : MonoBehaviour
     [Header("Menu Positioning")]
     [Tooltip("Offset position of the menu canvas relative to the anchor when grabbed")]
     public Vector3 menuOffset = new Vector3(-6f, 1.2f, -2.5f); // Default slightly above the anchor
+    
+    public Vector3 menuOffsetForStatic = new Vector3(0f, 1f, 0f);
 
     private bool isOn = false;
 
@@ -127,6 +129,8 @@ public class SphereToggleScript : MonoBehaviour
 
     [SerializeField]
     Vector3 recorderToggleOffset = new Vector3(0f, 0.1f, 0f);
+
+    private Vector3 originalInfoPanelPosition;
 
     private void Start()
     {
@@ -1041,6 +1045,24 @@ public class SphereToggleScript : MonoBehaviour
 
             UpdateRecorderToggle(true);
 
+            Transform menuCanvas = InfoPanel.transform.parent;
+            if (menuCanvas != null && menuCanvas.name == "Menu")
+            {
+                LazyFollow lazyFollow = menuCanvas.GetComponent<LazyFollow>();
+                if (lazyFollow != null)   lazyFollow.positionFollowMode = LazyFollow.PositionFollowMode.None;
+
+                if (menuCanvas.childCount >= 2)
+                {
+                    menuCanvas.GetChild(0).gameObject.SetActive(false);
+                    menuCanvas.GetChild(1).gameObject.SetActive(false);
+                }
+
+                menuCanvas.SetParent(transform);
+                // store the original position
+                originalInfoPanelPosition = InfoPanel.transform.localPosition;
+                InfoPanel.transform.localPosition = menuOffsetForStatic;
+            }
+
             // Update context before generating questions and relationships
             UpdateSceneContext();
 
@@ -1057,11 +1079,11 @@ public class SphereToggleScript : MonoBehaviour
                 StartCoroutine(GenerateRelationshipsRoutine(labelContent));
             }
 
-            var lazyFollow = this.GetComponentInChildren<LazyFollow>();
-            if (lazyFollow != null)
+            var childLazyFollow = this.GetComponentInChildren<LazyFollow>();
+            if (childLazyFollow != null)
             {
                 // enable lazyFollow
-                lazyFollow.enabled = true;
+                childLazyFollow.enabled = true;
             }
         }
         else
@@ -1071,17 +1093,34 @@ public class SphereToggleScript : MonoBehaviour
             answerPanel.SetActive(false);
             UpdateRecorderToggle(false);
 
+            Transform menuCanvas = InfoPanel.transform.parent;
+            if (menuCanvas != null && menuCanvas.name == "Menu")
+            {
+                menuCanvas.SetParent(null);
+
+                LazyFollow lazyFollow = menuCanvas.GetComponent<LazyFollow>();
+                if (lazyFollow != null) lazyFollow.positionFollowMode = LazyFollow.PositionFollowMode.Follow;
+
+                if (menuCanvas.childCount >= 2)
+                {
+                    menuCanvas.GetChild(0).gameObject.SetActive(true);
+                    menuCanvas.GetChild(1).gameObject.SetActive(true);
+                }
+
+                InfoPanel.transform.localPosition = originalInfoPanelPosition;
+            }
+
             // Clear any existing relationship lines
             if (relationLineManager != null)
             {
                 relationLineManager.ClearAllLines();
             }
 
-            var lazyFollow = this.GetComponentInChildren<LazyFollow>();
-            if (lazyFollow != null)
+            var childLazyFollow = this.GetComponentInChildren<LazyFollow>(); // the lazyFollow on the label object
+            if (childLazyFollow != null)
             {
                 // disable lazyFollow
-                lazyFollow.enabled = false;
+                childLazyFollow.enabled = false;
             }
         }
     }
