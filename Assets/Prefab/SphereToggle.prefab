@@ -301,8 +301,10 @@ MonoBehaviour:
   descriptionPanel: {fileID: 0}
   descriptionText: {fileID: 0}
   inspectionUpdateInterval: 1
+  recorder: {fileID: 0}
   handTracking: {fileID: 0}
   pointingPlane: {fileID: 0}
   pointingPlaneText: {fileID: 0}
   planeUpOffset: 0.02
   recorderToggle: {fileID: 0}
+  recorderToggleOffset: {x: 0, y: 0.1, z: 0}

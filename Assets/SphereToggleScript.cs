@@ -118,6 +118,9 @@ public class SphereToggleScript : MonoBehaviour
 
     public GameObject recorderToggle;
 
+    [SerializeField]
+    Vector3 recorderToggleOffset = new Vector3(0f, 0.1f, 0f);
+
     private void Start()
     {
         if (geminiClient == null)
@@ -127,7 +130,7 @@ public class SphereToggleScript : MonoBehaviour
 
         if (recorderToggle == null)
         {
-            recorderToggle = GameObject.Find("recorderToggle");
+            recorderToggle = GameObject.Find("RecorderToggle");
         }
 
         if (recorder == null)
@@ -277,7 +280,7 @@ public class SphereToggleScript : MonoBehaviour
             {
                 // Position recorderToggle at the toggle position plus a small offset above
                 Vector3 togglePosition = transform.position;
-                Vector3 offsetPosition = togglePosition + new Vector3(0f, 0.07f, 0f); // Adjust the Y offset as needed
+                Vector3 offsetPosition = togglePosition + recorderToggleOffset;
                 recorderToggle.transform.position = offsetPosition;
                 
                 if (recorder != null && labelUnderSphere != null)

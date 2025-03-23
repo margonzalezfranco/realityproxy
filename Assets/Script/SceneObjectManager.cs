@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using TMPro;
+using PolySpatial.Template;
 
 /// <summary>
 /// Singleton manager that tracks all recognized objects in the scene,
@@ -20,9 +21,6 @@ public class SceneObjectManager : MonoBehaviour
     public GameObject labelPrefab;
     public float sphereSize = 0.04f;
     public float labelOffset = 1.2f;
-    [Tooltip("Scale multiplier for the label prefab")]
-    public float labelScale = 0.1f;
-
     public Camera xrCamera; // Used to set the LookAtCamera for labels
 
     // (Optional) Additional references (InfoPanel, questionAnswerer, etc.)
@@ -203,7 +201,8 @@ public class SceneObjectManager : MonoBehaviour
             var lblObj = Instantiate(labelPrefab, sphereObj.transform);
             lblObj.name = $"Label_{label}";
             lblObj.transform.localPosition = new Vector3(0f, labelOffset, 0f);
-            lblObj.transform.localScale = Vector3.one * labelScale;
+            lblObj.transform.localScale = labelPrefab.transform.localScale / sphereObj.transform.localScale.x;
+            lblObj.GetComponent<SpatialUI>().UpdateReferenceScale();
             
             // Add a LookAt component to make the label face the camera
             var lookAt = lblObj.AddComponent<LookAtCamera>();

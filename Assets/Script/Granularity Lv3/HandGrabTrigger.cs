@@ -60,6 +60,8 @@ public class HandGrabTrigger : MonoBehaviour
 
     private float _releaseTime = 0f;
 
+    private GameObject labelObj;
+
     private void Start()
     {
         // Auto-detect which hand this is based on the GameObject name if not set
@@ -247,18 +249,9 @@ public class HandGrabTrigger : MonoBehaviour
             // Set the offset
             lazyFollow.targetOffset = grabOffset;
 
-            // Reset the label's rotation (find the child named "Label_*")
-            Transform labelTransform = _grabbedAnchor.sphereObj.transform.GetComponentInChildren<LookAtCamera>()?.transform;
-            if (labelTransform != null)
-            {
-                labelTransform.localRotation = Quaternion.identity;
-                // Disable the mesh renderer
-                labelMeshRenderer = labelTransform.gameObject.GetComponent<MeshRenderer>();
-                if (labelMeshRenderer != null)
-                {
-                    labelMeshRenderer.enabled = false;
-                }
-            }
+            // Initialize labelObj when we grab an anchor
+            labelObj = _grabbedAnchor.sphereObj.transform.GetComponentInChildren<LookAtCamera>()?.gameObject;
+            if (labelObj != null)   labelObj.SetActive(false);
 
             sphereMeshRenderer = _grabbedAnchor.sphereObj.GetComponent<MeshRenderer>();
             if (sphereMeshRenderer != null)
@@ -653,6 +646,8 @@ public class HandGrabTrigger : MonoBehaviour
             Destroy(lazyFollow);
         }
 
+        _grabbedAnchor.sphereObj.transform.localRotation = Quaternion.identity;
+
         // Invoke the release event before changing references
         OnAnchorReleased?.Invoke(_grabbedAnchor);
 
@@ -662,15 +657,16 @@ public class HandGrabTrigger : MonoBehaviour
             sphereMeshRenderer.enabled = true;
         }
 
-        // also the label
-        Transform labelTransform = _grabbedAnchor.sphereObj.transform.GetComponentInChildren<LookAtCamera>()?.transform;
-        if (labelTransform != null)
+        // Find and enable the label if we haven't stored a reference to it
+        if (labelObj == null && _grabbedAnchor != null && _grabbedAnchor.sphereObj != null)
         {
-            labelMeshRenderer = labelTransform.gameObject.GetComponent<MeshRenderer>();
-            if (labelMeshRenderer != null)
-            {
-                labelMeshRenderer.enabled = true;
-            }
+            labelObj = _grabbedAnchor.sphereObj.transform.GetComponentInChildren<LookAtCamera>()?.gameObject;
+        }
+        
+        // Enable the label
+        if (labelObj != null)
+        {
+            labelObj.SetActive(true);
         }
 
         // Store the last released anchor and mark as just released
@@ -690,6 +686,7 @@ public class HandGrabTrigger : MonoBehaviour
         
         // Reset state
         _grabbedAnchor = null;
+        labelObj = null;
     }
 
     /// <summary>

@@ -11,7 +11,7 @@ public class SpeechToTextRecorder : GeminiGeneral
     [Header("Recording Settings")]
     [SerializeField] private bool isRecording = false;
     [SerializeField] private int recordingFrequency = 16000;
-    [SerializeField] private int maxRecordingLength = 10; // in seconds
+    [SerializeField] private int maxRecordingLength = 100; // in seconds
     [SerializeField] private string deviceName = null; // null = default microphone
 
     [Header("Prompt Settings")]

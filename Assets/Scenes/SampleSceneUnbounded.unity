@@ -3577,14 +3577,14 @@ PrefabInstance:
     - target: {fileID: -7511558181221131132, guid: 9184914e7058e408db2f8b8c35bf442c, type: 3}
       propertyPath: 'm_Materials.Array.data[0]'
       value: 
-      objectReference: {fileID: 2100000, guid: 5c98191bb84dd4026ba4956e3d254101, type: 2}
+      objectReference: {fileID: 2100000, guid: a4779d01417624da7a7be548b12a9e81, type: 2}
     - target: {fileID: -5754084199372789682, guid: 9184914e7058e408db2f8b8c35bf442c, type: 3}
       propertyPath: m_Mesh
       value: 
       objectReference: {fileID: 2791997455014361271, guid: fb7ff9ecc61174afc9eb235b3ed4c547, type: 3}
     - target: {fileID: 919132149155446097, guid: 9184914e7058e408db2f8b8c35bf442c, type: 3}
       propertyPath: m_Name
-      value: recorderToggle
+      value: RecorderToggle
       objectReference: {fileID: 0}
     - target: {fileID: 919132149155446097, guid: 9184914e7058e408db2f8b8c35bf442c, type: 3}
       propertyPath: m_IsActive
@@ -6938,7 +6938,7 @@ MonoBehaviour:
   geminiModelName: gemini-2.0-flash-lite
   geminiApiKey: AIzaSyBx5IRXG1FOUN3HdnKFMgsQA5zOcui7Mhc
   cameraRenderTex: {fileID: 8400000, guid: 78e2b50f1cd8640efa61e2994d5eaec2, type: 2}
-  detectionPeriod: 3
+  detectionPeriod: 1
   isDetecting: 1
   enableDebugLogging: 0
   sceneManager: {fileID: 1242229081}
@@ -6963,10 +6963,9 @@ MonoBehaviour:
   matchingRadius: 0.06
   spherePrefab: {fileID: 331860115575953182, guid: 652d8b363c26044ad94d60358fe88244, type: 3}
   sphereMaterial: {fileID: 0}
-  labelPrefab: {fileID: 6763369549751811372, guid: 087648f9929d146718b933af6db0728f, type: 3}
+  labelPrefab: {fileID: 1336632255144453280, guid: 8fd5549d26911444d90c63d31e3be290, type: 3}
   sphereSize: 0.04
   labelOffset: 1.2
-  labelScale: 0.05
   xrCamera: {fileID: 5030769454512039463}
   InfoPanel: {fileID: 90799424}
   answerPanel: {fileID: 1093593259}
@@ -9101,7 +9100,7 @@ MonoBehaviour:
   cameraRenderTex: {fileID: 8400000, guid: 78e2b50f1cd8640efa61e2994d5eaec2, type: 2}
   isRecording: 0
   recordingFrequency: 16000
-  maxRecordingLength: 10
+  maxRecordingLength: 100
   deviceName: 
   systemPromptTemplate: 'You are a helpful AI assistant responding to the user''s
     request. You can see what the user is currently looking at. Please respond concisely
