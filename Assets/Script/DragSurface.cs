@@ -45,6 +45,9 @@ public class DragSurface : MonoBehaviour
     [Tooltip("Layer to place created surfaces on")]
     public string targetLayer = "Default";
     
+    [Tooltip("Minimum distance required in meters for the first drag to be considered valid")]
+    public float minimumDragDistance = 0.03f;
+    
     [Header("Debug")]
     [Tooltip("Whether to show debug visualizers for the control points")]
     public bool showDebugPoints = true;
@@ -148,9 +151,18 @@ public class DragSurface : MonoBehaviour
             {
                 Debug.Log($"Double-pinch window expired. Please use your {(lastPinchWasLeft ? "left" : "right")} hand to pinch again to retry, or wait for auto-reset.");
                 hasLoggedTimeoutWarning = true;
+                
+                // Immediately reset to None state if we were in AwaitingSecondPinch
+                // This prevents the bug where the system can proceed to height drawing after a failed double-pinch
+                if (currentState == SurfaceCreationState.AwaitingSecondPinch)
+                {
+                    currentState = SurfaceCreationState.None;
+                    isAwaitingSecondPinch = false;
+                    Debug.Log("Reset to None state after double-pinch timeout.");
+                }
             }
             
-            // Complete reset after long timeout
+            // Complete reset after long timeout (for any remaining cases)
             if (timeSinceLastPinch >= longTimeoutThreshold)
             {
                 isAwaitingSecondPinch = false;
@@ -231,8 +243,11 @@ public class DragSurface : MonoBehaviour
     
     private void HandlePinchEnded(bool isLeft)
     {
-        // Only process events for the drawing hand
-        if (isLeft != isLeftHandDrawing && currentState != SurfaceCreationState.None)
+        // Only process pinch end for the drawing hand when in drawing states
+        // Critically, check for valid drawing states to prevent proceeding from a failed initial sequence
+        if ((isLeft != isLeftHandDrawing && currentState != SurfaceCreationState.None) ||
+            (currentState != SurfaceCreationState.DrawingLength && 
+             currentState != SurfaceCreationState.DrawingHeight))
             return;
             
         switch (currentState)
@@ -267,12 +282,18 @@ public class DragSurface : MonoBehaviour
             // Initialize point2 to the same position (it will be updated during dragging)
             point2 = pinchPosition;
             
-            // Create the surface
+            // Create the surface (initially hidden)
             CreateSurface();
+            
+            // Initially hide the surface until drag threshold is reached
+            if (currentSurface != null)
+            {
+                currentSurface.SetActive(false);
+            }
             
             Debug.Log($"Started drawing surface at position: {point1}");
             
-            // Update debug visualizers
+            // Update debug visualizers - they will be hidden initially since drag distance is 0
             UpdateDebugVisualizers();
         }
     }
@@ -281,6 +302,23 @@ public class DragSurface : MonoBehaviour
     {
         if (handTracking.TryGetPinchPosition(isLeftHandDrawing, out Vector3 pinchPosition))
         {
+            // Calculate the drag distance
+            float dragDistance = Vector3.Distance(point1, pinchPosition);
+            
+            // Check if the drag distance is too small
+            if (dragDistance < minimumDragDistance)
+            {
+                Debug.Log($"Drag distance too small ({dragDistance:F3}m). Minimum required: {minimumDragDistance:F3}m. Canceling this drawing attempt.");
+                
+                // Reset to None state
+                ClearCurrentSurface();
+                currentState = SurfaceCreationState.None;
+                isAwaitingSecondPinch = false;
+                hasLoggedTimeoutWarning = false;
+                
+                return;
+            }
+            
             // Set point2 at the pinch end position
             point2 = pinchPosition;
             
@@ -288,18 +326,24 @@ public class DragSurface : MonoBehaviour
             // This creates a default small height perpendicular to length
             point3 = CalculatePerpendicularPoint(point1, point2, surfaceThickness * 2);
             
+            // Make sure the surface is visible
+            if (currentSurface != null)
+            {
+                currentSurface.SetActive(true);
+            }
+            
             // Update the surface to reflect the final length
             UpdateSurface();
             
             // Change to height drawing state
             currentState = SurfaceCreationState.DrawingHeight;
             
-            Debug.Log($"Finished drawing length. Point2: {point2}");
+            Debug.Log($"Finished drawing length. Point2: {point2}, Drag distance: {dragDistance:F3}m");
             
             // Trigger the event for surface length completion
             OnSurfaceLengthCompleted?.Invoke(point1, point2);
             
-            // Update debug visualizers
+            // Now that we're proceeding to height drawing, update debug visualizers
             UpdateDebugVisualizers();
         }
     }
@@ -573,18 +617,29 @@ public class DragSurface : MonoBehaviour
                 break;
                 
             case SurfaceCreationState.DrawingLength:
-                point1Visualizer.SetActive(true);
-                point1Visualizer.transform.position = point1;
+                // Check if we should show debug points based on drag distance
+                float dragDistance = Vector3.Distance(point1, point2);
+                bool exceedsThreshold = dragDistance >= minimumDragDistance;
                 
-                point2Visualizer.SetActive(true);
-                point2Visualizer.transform.position = point2;
+                // Only show points if drag distance is sufficient
+                point1Visualizer.SetActive(exceedsThreshold);
+                point2Visualizer.SetActive(exceedsThreshold);
                 
+                // Always hide points 3 and 4 during length drawing
                 point3Visualizer.SetActive(false);
                 point4Visualizer.SetActive(false);
+                
+                // If showing, update positions
+                if (exceedsThreshold)
+                {
+                    point1Visualizer.transform.position = point1;
+                    point2Visualizer.transform.position = point2;
+                }
                 break;
                 
             case SurfaceCreationState.DrawingHeight:
             case SurfaceCreationState.Completed:
+                // Always show all points in these states
                 point1Visualizer.SetActive(true);
                 point1Visualizer.transform.position = point1;
                 
@@ -616,8 +671,22 @@ public class DragSurface : MonoBehaviour
             // Update point2 to the current pinch position
             point2 = pinchPosition;
             
-            // Update the surface to show the current length
-            UpdateSurface();
+            // Calculate drag distance for threshold checking
+            float dragDistance = Vector3.Distance(point1, pinchPosition);
+            
+            // Only show the surface if drag distance exceeds minimum
+            if (currentSurface != null)
+            {
+                bool shouldShowSurface = dragDistance >= minimumDragDistance;
+                currentSurface.SetActive(shouldShowSurface);
+                
+                // Only update the surface if it's visible
+                if (shouldShowSurface)
+                {
+                    // Update the surface to show the current length
+                    UpdateSurface();
+                }
+            }
             
             // Update debug visualizers
             UpdateDebugVisualizers();
