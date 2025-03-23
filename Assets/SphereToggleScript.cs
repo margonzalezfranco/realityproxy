@@ -21,6 +21,10 @@ public class SphereToggleScript : MonoBehaviour
     [SerializeField]
     private SpatialUIToggle spatialUIToggle;
 
+    [Tooltip("The Toggle component on the child label object.")]
+    [SerializeField]
+    private SpatialUIToggle labelToggle;
+
     [Tooltip("TextMeshPro label that holds the sphere's 'name' or 'content'.")]
     public TextMeshPro labelUnderSphere;
 
@@ -28,6 +32,9 @@ public class SphereToggleScript : MonoBehaviour
     public MenuScript menuScript;
 
     public GameObject InfoPanel;
+
+    // Flag to prevent toggle loops
+    private bool isHandlingToggle = false;
 
     // -----------------------------
     // New Fields for Gemini Re-Call
@@ -150,6 +157,27 @@ public class SphereToggleScript : MonoBehaviour
             }
         }
 
+        // Find the label toggle if not assigned
+        if (labelToggle == null)
+        {
+            // Look for any child that has a SpatialUIToggle component
+            foreach (Transform child in transform)
+            {
+                SpatialUIToggle childToggle = child.GetComponent<SpatialUIToggle>();
+                if (childToggle != null && childToggle != spatialUIToggle)
+                {
+                    labelToggle = childToggle;
+                    Debug.Log($"Found label toggle on child: {child.name}");
+                    break;
+                }
+            }
+
+            if (labelToggle == null)
+            {
+                Debug.LogWarning("No label toggle found among children. Bidirectional toggle functionality will be disabled.");
+            }
+        }
+
         // Subscribe to the toggle's onValueChanged event
         SubscribeToToggleEvents();
 
@@ -219,57 +247,58 @@ public class SphereToggleScript : MonoBehaviour
 
     private void OnSphereToggled(bool toggledOn)
     {
+        // If we're already handling a toggle event, ignore this one to prevent loops
+        if (isHandlingToggle) return;
+        
+        isHandlingToggle = true;
+        
+        // Update our internal state first
         isOn = toggledOn;
-
-        if (isOn)
+        
+        // Update the label toggle to match this toggle's state
+        if (labelToggle != null && labelToggle.enableInteraction)
         {
-            InfoPanel.SetActive(true);
-
-            UpdateRecorderToggle(true);
-
-            // Update context before generating questions and relationships
-            UpdateSceneContext();
-
-            // We just toggled ON this sphere: tell the menu to update the title
-            if (labelUnderSphere != null)
-            {
-                string labelContent = labelUnderSphere.text;
-                menuScript.SetMenuTitle(labelContent);
-
-                // 1) Generate possible user questions for this object (Granularity Lv1-style)
-                StartCoroutine(GenerateQuestionsRoutine(labelContent));
-
-                // 2) Also generate relationships with other items (Granularity Lv2)
-                StartCoroutine(GenerateRelationshipsRoutine(labelContent));
-            }
-
-            var lazyFollow = this.GetComponentInChildren<LazyFollow>();
-            if (lazyFollow != null)
-            {
-                // enable lazyFollow
-                lazyFollow.enabled = true;
-            }
+            // Since we can't access m_Active directly (it's private), simulate a press if needed
+            SimulateToggleIfNeeded(labelToggle, toggledOn);
         }
-        else
+
+        // Handle the toggle effects
+        HandleToggleEffects(isOn);
+        
+        isHandlingToggle = false;
+    }
+
+    // Handler for when the label toggle is toggled
+    private void OnLabelToggled(bool toggledOn)
+    {
+        // If we're already handling a toggle event, ignore this one to prevent loops
+        if (isHandlingToggle) return;
+        
+        isHandlingToggle = true;
+
+        // Update our internal state first
+        isOn = toggledOn;
+        
+        // Update the sphere toggle to match the label toggle's state
+        if (spatialUIToggle != null && spatialUIToggle.enableInteraction)
         {
-            // Turn OFF
-            InfoPanel.SetActive(false);
-            answerPanel.SetActive(false);
-            UpdateRecorderToggle(false);
-
-            // Clear any existing relationship lines
-            if (relationLineManager != null)
-            {
-                relationLineManager.ClearAllLines();
-            }
-
-            var lazyFollow = this.GetComponentInChildren<LazyFollow>();
-            if (lazyFollow != null)
-            {
-                // disable lazyFollow
-                lazyFollow.enabled = false;
-            }
+            // Since we can't access m_Active directly (it's private), simulate a press if needed
+            SimulateToggleIfNeeded(spatialUIToggle, toggledOn);
         }
+        
+        // Handle the toggle effects
+        HandleToggleEffects(isOn);
+        
+        isHandlingToggle = false;
+    }
+    
+    // Helper method to simulate a toggle press if current state doesn't match desired state
+    private void SimulateToggleIfNeeded(SpatialUIToggle toggle, bool desiredState)
+    {
+        // Always toggle as the states are already different (this method is called
+        // when we need to sync the toggles)
+        toggle.PressStart();
+        toggle.PressEnd();
     }
 
     private void UpdateRecorderToggle(bool isOn)
@@ -282,6 +311,7 @@ public class SphereToggleScript : MonoBehaviour
                 Vector3 togglePosition = transform.position;
                 Vector3 offsetPosition = togglePosition + recorderToggleOffset;
                 recorderToggle.transform.position = offsetPosition;
+                recorderToggle.GetComponent<LazyFollow>().enabled = true;
                 
                 if (recorder != null && labelUnderSphere != null)
                 {
@@ -297,6 +327,7 @@ public class SphereToggleScript : MonoBehaviour
             {
                 // Reset recorderToggle position to origin
                 recorderToggle.transform.position = Vector3.zero;
+                recorderToggle.GetComponent<LazyFollow>().enabled = false;
                 
                 // Reset the object label on the SpeechToTextRecorder
                 SpeechToTextRecorder recorder = recorderToggle.GetComponent<SpeechToTextRecorder>();
@@ -849,6 +880,11 @@ public class SphereToggleScript : MonoBehaviour
         {
             spatialUIToggle.m_ToggleChanged.AddListener(OnSphereToggled);
         }
+        
+        if (labelToggle != null)
+        {
+            labelToggle.m_ToggleChanged.AddListener(OnLabelToggled);
+        }
     }
 
     private void UnsubscribeFromToggleEvents()
@@ -856,6 +892,11 @@ public class SphereToggleScript : MonoBehaviour
         if (spatialUIToggle != null)
         {
             spatialUIToggle.m_ToggleChanged.RemoveListener(OnSphereToggled);
+        }
+        
+        if (labelToggle != null)
+        {
+            labelToggle.m_ToggleChanged.RemoveListener(OnLabelToggled);
         }
     }
 
@@ -878,6 +919,7 @@ public class SphereToggleScript : MonoBehaviour
                 // Unsubscribe from toggle events instead of disabling the component
                 UnsubscribeFromToggleEvents();
                 spatialUIToggle.enableInteraction = false;
+                if (labelToggle != null) labelToggle.enableInteraction = false;
 
                 // Deactivate first two children
                 if (menuCanvas.childCount >= 2)
@@ -906,8 +948,9 @@ public class SphereToggleScript : MonoBehaviour
                 // Apply all rotations with the Z-compensation
                 menuCanvas.localRotation = Quaternion.Euler(verticalAngle, horizontalAngle, zCompensation);
 
-                // Trigger the toggle ON functionality
-                OnSphereToggled(true);
+                // Update state and trigger effects
+                isOn = true;
+                HandleToggleEffects(true);
 
                 // Start object inspection
                 OnObjectInspected(true);
@@ -937,6 +980,7 @@ public class SphereToggleScript : MonoBehaviour
                 // Resubscribe to toggle events
                 SubscribeToToggleEvents();
                 spatialUIToggle.enableInteraction = true;
+                if (labelToggle != null) labelToggle.enableInteraction = true;
 
                 // Reactivate first two children
                 if (menuCanvas.childCount >= 2)
@@ -945,8 +989,9 @@ public class SphereToggleScript : MonoBehaviour
                     menuCanvas.GetChild(1).gameObject.SetActive(true);
                 }
 
-                // Trigger the toggle OFF functionality
-                OnSphereToggled(false);
+                // Update state and trigger effects
+                isOn = false;
+                HandleToggleEffects(false);
 
                 // Stop object inspection
                 OnObjectInspected(false);
@@ -985,5 +1030,59 @@ public class SphereToggleScript : MonoBehaviour
     {
         public string part;
         public string description;
+    }
+
+    // Shared method to handle toggle effects for both toggles
+    private void HandleToggleEffects(bool isActive)
+    {
+        if (isActive)
+        {
+            InfoPanel.SetActive(true);
+
+            UpdateRecorderToggle(true);
+
+            // Update context before generating questions and relationships
+            UpdateSceneContext();
+
+            // We just toggled ON this sphere: tell the menu to update the title
+            if (labelUnderSphere != null)
+            {
+                string labelContent = labelUnderSphere.text;
+                menuScript.SetMenuTitle(labelContent);
+
+                // 1) Generate possible user questions for this object (Granularity Lv1-style)
+                StartCoroutine(GenerateQuestionsRoutine(labelContent));
+
+                // 2) Also generate relationships with other items (Granularity Lv2)
+                StartCoroutine(GenerateRelationshipsRoutine(labelContent));
+            }
+
+            var lazyFollow = this.GetComponentInChildren<LazyFollow>();
+            if (lazyFollow != null)
+            {
+                // enable lazyFollow
+                lazyFollow.enabled = true;
+            }
+        }
+        else
+        {
+            // Turn OFF
+            InfoPanel.SetActive(false);
+            answerPanel.SetActive(false);
+            UpdateRecorderToggle(false);
+
+            // Clear any existing relationship lines
+            if (relationLineManager != null)
+            {
+                relationLineManager.ClearAllLines();
+            }
+
+            var lazyFollow = this.GetComponentInChildren<LazyFollow>();
+            if (lazyFollow != null)
+            {
+                // disable lazyFollow
+                lazyFollow.enabled = false;
+            }
+        }
     }
 }
