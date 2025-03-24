@@ -107,6 +107,8 @@ public class SphereToggleScript : MonoBehaviour
 
     public SpeechToTextRecorder recorder;
 
+    public BaselineModeController baselineModeController;
+
     private bool currentlyPointing = false;
 
     [Header("Hand Tracking")]
@@ -151,6 +153,11 @@ public class SphereToggleScript : MonoBehaviour
         if (recorder == null)
         {
             recorder = FindFirstObjectByType<SpeechToTextRecorder>();
+        }
+
+        if (baselineModeController == null)
+        {
+            baselineModeController = FindFirstObjectByType<BaselineModeController>();
         }
 
         // Ensure we have a reference to a GeminiGeneral component
@@ -659,6 +666,9 @@ public class SphereToggleScript : MonoBehaviour
                     string questionText = q; // closure
                     button.WasPressed += (buttonText, renderer, index) =>
                     {
+                        // clear the previous answer in the answer panel: set the text to "Generating..."
+                        answerPanel.GetComponentInChildren<TextMeshPro>().text = "Generating...";
+
                         if (questionAnswerer != null)
                         {
                             questionAnswerer.RequestAnswer(questionText);
@@ -1045,63 +1055,66 @@ public class SphereToggleScript : MonoBehaviour
     {
         if (isActive)
         {
-            InfoPanel.SetActive(true);
+            if (!baselineModeController.baselineMode) InfoPanel.SetActive(true);
 
             UpdateRecorderToggle(true);
 
-            Transform menuCanvas = InfoPanel.transform.parent;
-            if (menuCanvas != null && menuCanvas.name == "Menu")
-            {
-                LazyFollow lazyFollow = menuCanvas.GetComponent<LazyFollow>();
-                if (lazyFollow != null)   lazyFollow.positionFollowMode = LazyFollow.PositionFollowMode.None;
+            if (!baselineModeController.baselineMode) {
 
-                if (menuCanvas.childCount >= 2)
+                Transform menuCanvas = InfoPanel.transform.parent;
+                if (menuCanvas != null && menuCanvas.name == "Menu")
                 {
-                    menuCanvas.GetChild(0).gameObject.SetActive(false);
-                    menuCanvas.GetChild(1).gameObject.SetActive(false);
-                }
+                    LazyFollow lazyFollow = menuCanvas.GetComponent<LazyFollow>();
+                    if (lazyFollow != null)   lazyFollow.positionFollowMode = LazyFollow.PositionFollowMode.None;
 
-                menuCanvas.SetParent(transform);
-                menuCanvas.localPosition = Vector3.zero;
-                
-                // Store the original anchoredPosition of the RectTransform (not localPosition)
-                RectTransform infoPanelRect = InfoPanel.GetComponent<RectTransform>();
-                originalInfoPanelPosition = infoPanelRect.anchoredPosition;
-                
-                // Check for AnimateWindow component and modify its End Position
-                AnimateWindow animateWindow = InfoPanel.GetComponent<AnimateWindow>();
-                if (animateWindow != null)
-                {
-                    // Store current values
-                    Debug.Log($"AnimateWindow found. Storing original and setting new positions");
-                    originalStartPosition = animateWindow.m_StartPosition;
-                    originalEndPosition = animateWindow.m_EndPosition;
+                    if (menuCanvas.childCount >= 2)
+                    {
+                        menuCanvas.GetChild(0).gameObject.SetActive(false);
+                        menuCanvas.GetChild(1).gameObject.SetActive(false);
+                    }
+
+                    menuCanvas.SetParent(transform);
+                    menuCanvas.localPosition = Vector3.zero;
                     
-                    // Calculate the delta vector between original start and end positions
-                    Vector3 originalDelta = originalEndPosition - originalStartPosition;
+                    // Store the original anchoredPosition of the RectTransform (not localPosition)
+                    RectTransform infoPanelRect = InfoPanel.GetComponent<RectTransform>();
+                    originalInfoPanelPosition = infoPanelRect.anchoredPosition;
                     
-                    // Calculate a new start position by applying the same delta from our target position
-                    Vector3 newStartPosition = menuOffsetForStatic - originalDelta;
+                    // Check for AnimateWindow component and modify its End Position
+                    AnimateWindow animateWindow = InfoPanel.GetComponent<AnimateWindow>();
+                    if (animateWindow != null)
+                    {
+                        // Store current values
+                        Debug.Log($"AnimateWindow found. Storing original and setting new positions");
+                        originalStartPosition = animateWindow.m_StartPosition;
+                        originalEndPosition = animateWindow.m_EndPosition;
+                        
+                        // Calculate the delta vector between original start and end positions
+                        Vector3 originalDelta = originalEndPosition - originalStartPosition;
+                        
+                        // Calculate a new start position by applying the same delta from our target position
+                        Vector3 newStartPosition = menuOffsetForStatic - originalDelta;
+                        
+                        // Set both start and end positions for the animation
+                        animateWindow.m_StartPosition = newStartPosition;
+                        animateWindow.m_EndPosition = menuOffsetForStatic;
+                        
+                        Debug.Log($"Setting animation positions: Start={newStartPosition}, End={menuOffsetForStatic}");
+                        Debug.Log($"Original delta was {originalDelta}, preserving animation movement style");
+                        
+                        // Force refresh the animation
+                        animateWindow.enabled = false;
+                        animateWindow.enabled = true;
+                    }
+                    else
+                    {
+                        // Fallback to setting anchoredPosition directly if no animation component
+                        infoPanelRect.anchoredPosition = menuOffsetForStatic;
+                        Debug.Log($"No AnimateWindow found. Directly setting anchoredPosition to {menuOffsetForStatic}");
+                    }
                     
-                    // Set both start and end positions for the animation
-                    animateWindow.m_StartPosition = newStartPosition;
-                    animateWindow.m_EndPosition = menuOffsetForStatic;
-                    
-                    Debug.Log($"Setting animation positions: Start={newStartPosition}, End={menuOffsetForStatic}");
-                    Debug.Log($"Original delta was {originalDelta}, preserving animation movement style");
-                    
-                    // Force refresh the animation
-                    animateWindow.enabled = false;
-                    animateWindow.enabled = true;
+                    Debug.Log($"Original position was {originalInfoPanelPosition}");
                 }
-                else
-                {
-                    // Fallback to setting anchoredPosition directly if no animation component
-                    infoPanelRect.anchoredPosition = menuOffsetForStatic;
-                    Debug.Log($"No AnimateWindow found. Directly setting anchoredPosition to {menuOffsetForStatic}");
-                }
-                
-                Debug.Log($"Original position was {originalInfoPanelPosition}");
             }
 
             // Update context before generating questions and relationships
@@ -1130,44 +1143,47 @@ public class SphereToggleScript : MonoBehaviour
         else
         {
             // Turn OFF
-            InfoPanel.SetActive(false);
+            if (!baselineModeController.baselineMode) InfoPanel.SetActive(false);
             answerPanel.SetActive(false);
             UpdateRecorderToggle(false);
 
-            Transform menuCanvas = InfoPanel.transform.parent;
-            if (menuCanvas != null && menuCanvas.name == "Menu")
-            {
-                menuCanvas.SetParent(null);
+            if (!baselineModeController.baselineMode) {
 
-                LazyFollow lazyFollow = menuCanvas.GetComponent<LazyFollow>();
-                if (lazyFollow != null) lazyFollow.positionFollowMode = LazyFollow.PositionFollowMode.Follow;
+                Transform menuCanvas = InfoPanel.transform.parent;
+                if (menuCanvas != null && menuCanvas.name == "Menu")
+                {
+                    menuCanvas.SetParent(null);
 
-                if (menuCanvas.childCount >= 2)
-                {
-                    menuCanvas.GetChild(0).gameObject.SetActive(true);
-                    menuCanvas.GetChild(1).gameObject.SetActive(true);
-                }
+                    LazyFollow lazyFollow = menuCanvas.GetComponent<LazyFollow>();
+                    if (lazyFollow != null) lazyFollow.positionFollowMode = LazyFollow.PositionFollowMode.Follow;
 
-                // Restore the AnimateWindow end position if it exists
-                AnimateWindow animateWindow = InfoPanel.GetComponent<AnimateWindow>();
-                if (animateWindow != null)
-                {
-                    Debug.Log($"Restoring original AnimateWindow positions: Start={originalStartPosition}, End={originalEndPosition}");
-                    
-                    // Restore the original start and end positions
-                    animateWindow.m_StartPosition = originalStartPosition;
-                    animateWindow.m_EndPosition = originalEndPosition;
-                    
-                    // Force refresh the animation
-                    animateWindow.enabled = false;
-                    animateWindow.enabled = true;
-                }
-                else
-                {
-                    // Fallback to setting anchoredPosition directly
-                    RectTransform infoPanelRect = InfoPanel.GetComponent<RectTransform>();
-                    infoPanelRect.anchoredPosition = originalInfoPanelPosition;
-                    Debug.Log($"Restoring InfoPanel anchoredPosition to {originalInfoPanelPosition}");
+                    if (menuCanvas.childCount >= 2)
+                    {
+                        menuCanvas.GetChild(0).gameObject.SetActive(true);
+                        menuCanvas.GetChild(1).gameObject.SetActive(true);
+                    }
+
+                    // Restore the AnimateWindow end position if it exists
+                    AnimateWindow animateWindow = InfoPanel.GetComponent<AnimateWindow>();
+                    if (animateWindow != null)
+                    {
+                        Debug.Log($"Restoring original AnimateWindow positions: Start={originalStartPosition}, End={originalEndPosition}");
+                        
+                        // Restore the original start and end positions
+                        animateWindow.m_StartPosition = originalStartPosition;
+                        animateWindow.m_EndPosition = originalEndPosition;
+                        
+                        // Force refresh the animation
+                        animateWindow.enabled = false;
+                        animateWindow.enabled = true;
+                    }
+                    else
+                    {
+                        // Fallback to setting anchoredPosition directly
+                        RectTransform infoPanelRect = InfoPanel.GetComponent<RectTransform>();
+                        infoPanelRect.anchoredPosition = originalInfoPanelPosition;
+                        Debug.Log($"Restoring InfoPanel anchoredPosition to {originalInfoPanelPosition}");
+                    }
                 }
             }
 
