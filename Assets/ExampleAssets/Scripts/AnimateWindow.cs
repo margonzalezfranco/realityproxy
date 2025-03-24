@@ -9,10 +9,10 @@ namespace PolySpatial.Template
     public class AnimateWindow : MonoBehaviour
     {
         [SerializeField]
-        Vector3 m_StartPosition;
+        public Vector3 m_StartPosition;
 
         [SerializeField]
-        Vector3 m_EndPosition;
+        public Vector3 m_EndPosition;
 
         [SerializeField]
         RectTransform m_Rect;

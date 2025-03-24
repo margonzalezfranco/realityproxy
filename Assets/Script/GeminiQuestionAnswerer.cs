@@ -16,6 +16,8 @@ public class GeminiQuestionAnswerer : GeminiGeneral
     [Tooltip("Optional - Event to be called when answer is received")]
     public UnityEngine.Events.UnityEvent<string> onAnswerReceived;
 
+    [SerializeField] private string systemPromptTemplate = "You are a helpful AI assistant responding to the user's question. You can see what the user is currently looking at, but you don't have to only rely on that. You don't have to wait to see the object to respond. Only respond information about this object. Please respond concisely and avoid using markdown formatting. User question: {0}";
+
     /// <summary>
     /// Request an answer from Gemini for a specific question about the current camera frame
     /// </summary>
@@ -33,17 +35,19 @@ public class GeminiQuestionAnswerer : GeminiGeneral
         // 2) Convert to base64 (PNG)
         string base64Image = ConvertTextureToBase64(frameTex);
 
+        string formattedPrompt = string.Format(systemPromptTemplate, questionContent);
+
         // 3) Call Gemini with the question
         // This now uses the new RequestStatus system which supports concurrent API calls
         // from multiple components without interfering with each other
-        var request = MakeGeminiRequest(questionContent, base64Image);
+        var request = MakeGeminiRequest(formattedPrompt, base64Image);
         while (!request.IsCompleted)
         {
             yield return null;
         }
         string response = request.Result;
 
-        Debug.Log($"Question: {questionContent}\nResponse: {response}");
+        Debug.Log($"Question: {formattedPrompt}\nResponse: {response}");
 
         // 4) Parse the response
         string answer = ParseQuestionResponse(response);

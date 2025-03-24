@@ -132,6 +132,10 @@ public class SphereToggleScript : MonoBehaviour
 
     private Vector3 originalInfoPanelPosition;
 
+    // Add this variable to store original AnimateWindow settings
+    private Vector3 originalStartPosition;
+    private Vector3 originalEndPosition;
+
     private void Start()
     {
         if (geminiClient == null)
@@ -1058,9 +1062,46 @@ public class SphereToggleScript : MonoBehaviour
                 }
 
                 menuCanvas.SetParent(transform);
-                // store the original position
-                originalInfoPanelPosition = InfoPanel.transform.localPosition;
-                InfoPanel.transform.localPosition = menuOffsetForStatic;
+                menuCanvas.localPosition = Vector3.zero;
+                
+                // Store the original anchoredPosition of the RectTransform (not localPosition)
+                RectTransform infoPanelRect = InfoPanel.GetComponent<RectTransform>();
+                originalInfoPanelPosition = infoPanelRect.anchoredPosition;
+                
+                // Check for AnimateWindow component and modify its End Position
+                AnimateWindow animateWindow = InfoPanel.GetComponent<AnimateWindow>();
+                if (animateWindow != null)
+                {
+                    // Store current values
+                    Debug.Log($"AnimateWindow found. Storing original and setting new positions");
+                    originalStartPosition = animateWindow.m_StartPosition;
+                    originalEndPosition = animateWindow.m_EndPosition;
+                    
+                    // Calculate the delta vector between original start and end positions
+                    Vector3 originalDelta = originalEndPosition - originalStartPosition;
+                    
+                    // Calculate a new start position by applying the same delta from our target position
+                    Vector3 newStartPosition = menuOffsetForStatic - originalDelta;
+                    
+                    // Set both start and end positions for the animation
+                    animateWindow.m_StartPosition = newStartPosition;
+                    animateWindow.m_EndPosition = menuOffsetForStatic;
+                    
+                    Debug.Log($"Setting animation positions: Start={newStartPosition}, End={menuOffsetForStatic}");
+                    Debug.Log($"Original delta was {originalDelta}, preserving animation movement style");
+                    
+                    // Force refresh the animation
+                    animateWindow.enabled = false;
+                    animateWindow.enabled = true;
+                }
+                else
+                {
+                    // Fallback to setting anchoredPosition directly if no animation component
+                    infoPanelRect.anchoredPosition = menuOffsetForStatic;
+                    Debug.Log($"No AnimateWindow found. Directly setting anchoredPosition to {menuOffsetForStatic}");
+                }
+                
+                Debug.Log($"Original position was {originalInfoPanelPosition}");
             }
 
             // Update context before generating questions and relationships
@@ -1107,7 +1148,27 @@ public class SphereToggleScript : MonoBehaviour
                     menuCanvas.GetChild(1).gameObject.SetActive(true);
                 }
 
-                InfoPanel.transform.localPosition = originalInfoPanelPosition;
+                // Restore the AnimateWindow end position if it exists
+                AnimateWindow animateWindow = InfoPanel.GetComponent<AnimateWindow>();
+                if (animateWindow != null)
+                {
+                    Debug.Log($"Restoring original AnimateWindow positions: Start={originalStartPosition}, End={originalEndPosition}");
+                    
+                    // Restore the original start and end positions
+                    animateWindow.m_StartPosition = originalStartPosition;
+                    animateWindow.m_EndPosition = originalEndPosition;
+                    
+                    // Force refresh the animation
+                    animateWindow.enabled = false;
+                    animateWindow.enabled = true;
+                }
+                else
+                {
+                    // Fallback to setting anchoredPosition directly
+                    RectTransform infoPanelRect = InfoPanel.GetComponent<RectTransform>();
+                    infoPanelRect.anchoredPosition = originalInfoPanelPosition;
+                    Debug.Log($"Restoring InfoPanel anchoredPosition to {originalInfoPanelPosition}");
+                }
             }
 
             // Clear any existing relationship lines

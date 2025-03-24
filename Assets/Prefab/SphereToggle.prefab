@@ -240,7 +240,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   m_AudioSource: {fileID: 5702397958615809862}
   m_ScaleBackground: 1
-  m_SelectedColor: {r: 0.1254, g: 0.5882, b: 0.9529, a: 1}
+  m_SelectedColor: {r: 0.1882353, g: 0.5372549, b: 0.8117647, a: 1}
   m_UnselectedColor: {r: 0.764151, g: 0.764151, b: 0.764151, a: 1}
   m_PressStart:
     m_PersistentCalls:
@@ -283,6 +283,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   spatialUIToggle: {fileID: 3910136234158516406}
+  labelToggle: {fileID: 0}
   labelUnderSphere: {fileID: 0}
   menuScript: {fileID: 0}
   InfoPanel: {fileID: 0}
@@ -298,6 +299,7 @@ MonoBehaviour:
   sceneObjManager: {fileID: 0}
   sceneContextManager: {fileID: 0}
   menuOffset: {x: -6.5, y: 1, z: -1.5}
+  menuOffsetForStatic: {x: 0, y: 300, z: -128}
   descriptionPanel: {fileID: 0}
   descriptionText: {fileID: 0}
   inspectionUpdateInterval: 1
