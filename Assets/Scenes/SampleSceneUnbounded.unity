@@ -7045,6 +7045,7 @@ MonoBehaviour:
   detectionPeriod: 3
   isDetecting: 1
   enableDebugLogging: 0
+  onlyAllowLeftHandGrab: 1
   sceneManager: {fileID: 1242229081}
   leftHandObject: {fileID: 0}
   rightHandObject: {fileID: 0}

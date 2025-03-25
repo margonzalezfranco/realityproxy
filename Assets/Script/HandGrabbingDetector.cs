@@ -18,6 +18,9 @@ public class HandGrabbingDetector : GeminiGeneral
     [Tooltip("Enable detailed debug logging")]
     public bool enableDebugLogging = true;
 
+    [Tooltip("Force all grabbing to be done with the left hand, regardless of detection results")]
+    public bool onlyAllowLeftHandGrab = false;
+
     [Header("Optional References")]
     [Tooltip("SceneObjectManager to get current objects in scene")]
     public SceneObjectManager sceneManager;
@@ -310,32 +313,51 @@ public class HandGrabbingDetector : GeminiGeneral
                     }
                 }
                 
-                // Normalize hand name
-                if (!string.IsNullOrEmpty(grabbingInfo.grabbingHand))
+                // Override hand detection if onlyAllowLeftHandGrab is enabled
+                if (onlyAllowLeftHandGrab)
                 {
-                    // Normalize to lowercase
-                    grabbingInfo.grabbingHand = grabbingInfo.grabbingHand.ToLower();
-                    
-                    // Make sure it's either "left" or "right"
-                    if (grabbingInfo.grabbingHand != "left" && grabbingInfo.grabbingHand != "right")
+                    // Force left hand if the toggle is on
+                    if (grabbingInfo.grabbingHand != "left")
                     {
-                        // Default to right if unclear
-                        grabbingInfo.grabbingHand = "right";
+                        string originalHand = grabbingInfo.grabbingHand;
+                        grabbingInfo.grabbingHand = "left";
                         
                         if (enableDebugLogging)
                         {
-                            Debug.Log($"[HandGrabbingDetector] Normalized invalid hand '{grabbingInfo.grabbingHand}' to 'right'");
+                            Debug.Log($"[HandGrabbingDetector] Overriding detected hand from '{originalHand}' to 'left' (onlyAllowLeftHandGrab is enabled)");
                         }
                     }
                 }
                 else
                 {
-                    // Default to right if not specified
-                    grabbingInfo.grabbingHand = "right";
-                    
-                    if (enableDebugLogging)
+                    // Normal hand normalization logic when toggle is off
+                    // Normalize hand name
+                    if (!string.IsNullOrEmpty(grabbingInfo.grabbingHand))
                     {
-                        Debug.Log("[HandGrabbingDetector] No hand specified, defaulting to 'right'");
+                        // Normalize to lowercase
+                        grabbingInfo.grabbingHand = grabbingInfo.grabbingHand.ToLower();
+                        
+                        // Make sure it's either "left" or "right"
+                        if (grabbingInfo.grabbingHand != "left" && grabbingInfo.grabbingHand != "right")
+                        {
+                            // Default to right if unclear
+                            grabbingInfo.grabbingHand = "right";
+                            
+                            if (enableDebugLogging)
+                            {
+                                Debug.Log($"[HandGrabbingDetector] Normalized invalid hand '{grabbingInfo.grabbingHand}' to 'right'");
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // Default to right if not specified
+                        grabbingInfo.grabbingHand = "right";
+                        
+                        if (enableDebugLogging)
+                        {
+                            Debug.Log("[HandGrabbingDetector] No hand specified, defaulting to 'right'");
+                        }
                     }
                 }
             }

@@ -176,7 +176,21 @@ public class HandGrabTrigger : MonoBehaviour
     private void OnGeminiGrabbingDetected(GrabbingInfo grabbingInfo)
     {
         // Only process if this is the correct hand
-        if (grabbingInfo.grabbingHand != handType)
+        bool isCorrectHand = grabbingInfo.grabbingHand == handType;
+        
+        // If onlyAllowLeftHandGrab is enabled, only the left hand can grab
+        if (grabbingDetector != null && grabbingDetector.onlyAllowLeftHandGrab)
+        {
+            isCorrectHand = (handType == "left");
+            
+            if (handType == "right" && enableDebugLogging())
+            {
+                Debug.Log($"HandGrabTrigger: Right hand is ignoring explicit grab event because onlyAllowLeftHandGrab is enabled");
+                return;
+            }
+        }
+        
+        if (!isCorrectHand)
         {
             if (enableDebugLogging())
             {
@@ -302,7 +316,21 @@ public class HandGrabTrigger : MonoBehaviour
     private void OnGeminiGrabbingUpdated(GrabbingInfo grabbingInfo)
     {
         // Only process if this is the correct hand
-        if (grabbingInfo.grabbingHand != handType)
+        bool isCorrectHand = grabbingInfo.grabbingHand == handType;
+        
+        // If onlyAllowLeftHandGrab is enabled, only the left hand can grab
+        if (grabbingDetector != null && grabbingDetector.onlyAllowLeftHandGrab)
+        {
+            isCorrectHand = (handType == "left");
+            
+            if (handType == "right" && enableDebugLogging())
+            {
+                Debug.Log($"HandGrabTrigger: Right hand is ignoring grab update because onlyAllowLeftHandGrab is enabled");
+                return;
+            }
+        }
+        
+        if (!isCorrectHand)
         {
             return;
         }
@@ -424,53 +452,71 @@ public class HandGrabTrigger : MonoBehaviour
             }
         }
         // If we're not holding an anchor but Gemini thinks we should be grabbing
-        else if (currentGrabInfo != null && currentGrabInfo.isGrabbing && currentGrabInfo.grabbingHand == handType)
+        else if (currentGrabInfo != null && currentGrabInfo.isGrabbing)
         {
-            // Try to find and grab the anchor if we're not in the cooldown period
-            if (!_justReleased || Time.time - _releaseTime > 0.5f)
+            // Check if this is the correct hand (accounting for onlyAllowLeftHandGrab setting)
+            bool isCorrectHand = currentGrabInfo.grabbingHand == handType;
+            
+            // If onlyAllowLeftHandGrab is enabled, only the left hand can grab
+            if (grabbingDetector != null && grabbingDetector.onlyAllowLeftHandGrab)
             {
-                _justReleased = false;
+                isCorrectHand = (handType == "left");
                 
-                // MODIFIED: Use the current active anchor instead of finding by label
-                SceneObjectAnchor anchorToGrab = _currentActiveAnchor;
-                
-                if (anchorToGrab != null)
+                if (handType == "right" && enableDebugLogging())
                 {
-                    // Check if this anchor is already being grabbed by another hand
-                    if (!_allGrabbedAnchors.ContainsKey(anchorToGrab))
+                    Debug.Log($"HandGrabTrigger: Right hand is ignoring grab command because onlyAllowLeftHandGrab is enabled");
+                }
+            }
+            
+            // Only proceed if this is the correct hand
+            if (isCorrectHand)
+            {
+                // Try to find and grab the anchor if we're not in the cooldown period
+                if (!_justReleased || Time.time - _releaseTime > 0.5f)
+                {
+                    _justReleased = false;
+                    
+                    // MODIFIED: Use the current active anchor instead of finding by label
+                    SceneObjectAnchor anchorToGrab = _currentActiveAnchor;
+                    
+                    if (anchorToGrab != null)
                     {
-                        // Grab the anchor
-                        _grabbedAnchor = anchorToGrab;
-                        _allGrabbedAnchors[anchorToGrab] = this;
-                        
-                        // Add a lazy follow component to make the anchor follow the hand
-                        DualTargetLazyFollow lazyFollow = _grabbedAnchor.sphereObj.AddComponent<DualTargetLazyFollow>();
-                        lazyFollow.positionTarget = transform;
-                        lazyFollow.rotationTarget = Camera.main.transform;
-                        
-                        // Configure following parameters
-                        lazyFollow.movementSpeed = 12f; // Adjust this value as needed
-                        lazyFollow.movementSpeedVariancePercentage = 0.25f;
-                        lazyFollow.minDistanceAllowed = 0.02f;
-                        lazyFollow.maxDistanceAllowed = 0.1f;
-                        lazyFollow.timeUntilThresholdReachesMaxDistance = 0.5f;
-                        
-                        // Configure rotation parameters
-                        lazyFollow.minAngleAllowed = 2f;
-                        lazyFollow.maxAngleAllowed = 10f;
-                        lazyFollow.timeUntilThresholdReachesMaxAngle = 0.5f;
-                        
-                        // Set the follow modes
-                        lazyFollow.positionFollowMode = LazyFollow.PositionFollowMode.Follow;
-                        lazyFollow.rotationFollowMode = LazyFollow.RotationFollowMode.LookAt;
-                        
-                        // Set the offset
-                        lazyFollow.targetOffset = grabOffset;
-                        
-                        // Invoke the grab event
-                        OnAnchorGrabbed?.Invoke(_grabbedAnchor);
-                        
-                        Debug.Log($"HandGrabTrigger: {handType} hand grabbed active anchor '{anchorToGrab.label}' based on Gemini detection");
+                        // Check if this anchor is already being grabbed by another hand
+                        if (!_allGrabbedAnchors.ContainsKey(anchorToGrab))
+                        {
+                            // Grab the anchor
+                            _grabbedAnchor = anchorToGrab;
+                            _allGrabbedAnchors[anchorToGrab] = this;
+                            
+                            // Add a lazy follow component to make the anchor follow the hand
+                            DualTargetLazyFollow lazyFollow = _grabbedAnchor.sphereObj.AddComponent<DualTargetLazyFollow>();
+                            lazyFollow.positionTarget = transform;
+                            lazyFollow.rotationTarget = Camera.main.transform;
+                            
+                            // Configure following parameters
+                            lazyFollow.movementSpeed = 12f; // Adjust this value as needed
+                            lazyFollow.movementSpeedVariancePercentage = 0.25f;
+                            lazyFollow.minDistanceAllowed = 0.02f;
+                            lazyFollow.maxDistanceAllowed = 0.1f;
+                            lazyFollow.timeUntilThresholdReachesMaxDistance = 0.5f;
+                            
+                            // Configure rotation parameters
+                            lazyFollow.minAngleAllowed = 2f;
+                            lazyFollow.maxAngleAllowed = 10f;
+                            lazyFollow.timeUntilThresholdReachesMaxAngle = 0.5f;
+                            
+                            // Set the follow modes
+                            lazyFollow.positionFollowMode = LazyFollow.PositionFollowMode.Follow;
+                            lazyFollow.rotationFollowMode = LazyFollow.RotationFollowMode.LookAt;
+                            
+                            // Set the offset
+                            lazyFollow.targetOffset = grabOffset;
+                            
+                            // Invoke the grab event
+                            OnAnchorGrabbed?.Invoke(_grabbedAnchor);
+                            
+                            Debug.Log($"HandGrabTrigger: {handType} hand grabbed active anchor '{anchorToGrab.label}' based on Gemini detection");
+                        }
                     }
                 }
             }
