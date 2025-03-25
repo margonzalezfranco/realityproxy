@@ -147,7 +147,10 @@ public class HandGrabbingDetector : GeminiGeneral
     {
         while (true)
         {
-            if (isDetecting)
+            // Check if there's an active anchor before running detection
+            bool hasActiveAnchor = HandGrabTrigger.HasActiveAnchor();
+            
+            if (isDetecting && hasActiveAnchor)
             {
                 // Start a new detection if we're not already detecting or if the previous one is taking too long
                 float currentTime = Time.time;
@@ -164,6 +167,10 @@ public class HandGrabbingDetector : GeminiGeneral
                     lastDetectionStartTime = currentTime;
                     StartCoroutine(DetectHandGrabbingRoutineWithTracking());
                 }
+            }
+            else if (enableDebugLogging && !hasActiveAnchor && isDetecting)
+            {
+                Debug.Log("[HandGrabbingDetector] Skipping detection - no active anchor currently toggled");
             }
             
             // Always wait for the detection period before checking again
@@ -387,6 +394,18 @@ public class HandGrabbingDetector : GeminiGeneral
     /// </summary>
     public void TriggerDetection()
     {
+        // Check if there's an active anchor before running detection
+        bool hasActiveAnchor = HandGrabTrigger.HasActiveAnchor();
+        
+        if (!hasActiveAnchor)
+        {
+            if (enableDebugLogging)
+            {
+                Debug.Log("[HandGrabbingDetector] Cannot trigger detection - no active anchor currently toggled");
+            }
+            return;
+        }
+        
         // Only start a new detection if one isn't already in progress or if the current one is taking too long
         if (!isDetectionInProgress || (Time.time - lastDetectionStartTime > detectionPeriod * 2))
         {

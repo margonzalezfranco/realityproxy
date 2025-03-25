@@ -62,6 +62,22 @@ public class HandGrabTrigger : MonoBehaviour
 
     private GameObject labelObj;
 
+    // Add a new field to reference the currently active (toggled on) anchor
+    private static SceneObjectAnchor _currentActiveAnchor = null;
+    
+    // Add a method to set the currently active anchor when a toggle is turned on
+    public static void SetCurrentActiveAnchor(SceneObjectAnchor anchor)
+    {
+        _currentActiveAnchor = anchor;
+        Debug.Log($"Set current active anchor to: {(anchor != null ? anchor.label : "null")}");
+    }
+    
+    // Add a method to check if there's an active anchor
+    public static bool HasActiveAnchor()
+    {
+        return _currentActiveAnchor != null;
+    }
+
     private void Start()
     {
         // Auto-detect which hand this is based on the GameObject name if not set
@@ -156,7 +172,7 @@ public class HandGrabTrigger : MonoBehaviour
         }
     }
 
-    // New method to handle Gemini grabbing detection
+    // Modify OnGeminiGrabbingDetected method to only work with the current active anchor
     private void OnGeminiGrabbingDetected(GrabbingInfo grabbingInfo)
     {
         // Only process if this is the correct hand
@@ -204,8 +220,8 @@ public class HandGrabTrigger : MonoBehaviour
             _justReleased = false;
         }
 
-        // Find the anchor with the matching label
-        SceneObjectAnchor anchorToGrab = FindAnchorByLabel(grabbingInfo.grabbedObject);
+        // MODIFIED: Only work with the current active anchor, don't find by label
+        SceneObjectAnchor anchorToGrab = _currentActiveAnchor;
         
         if (anchorToGrab != null)
         {
@@ -273,26 +289,12 @@ public class HandGrabTrigger : MonoBehaviour
             // Invoke the grab event
             OnAnchorGrabbed?.Invoke(_grabbedAnchor);
 
-            Debug.Log($"HandGrabTrigger: {handType} hand grabbed anchor '{anchorToGrab.label}' using Gemini detection");
+            Debug.Log($"HandGrabTrigger: {handType} hand grabbed active anchor '{anchorToGrab.label}' using Gemini detection");
         }
         else
         {
-            Debug.LogWarning($"Could not find anchor with label: {grabbingInfo.grabbedObject}");
-            
-            // Debug all available anchors
-            SceneObjectManager manager = FindAnyObjectByType<SceneObjectManager>();
-            if (manager != null)
-            {
-                var anchors = manager.GetAllAnchors();
-                if (anchors != null && anchors.Count > 0)
-                {
-                    Debug.Log($"Available anchors: {string.Join(", ", anchors.ConvertAll(a => a.label))}");
-                }
-                else
-                {
-                    Debug.Log("No anchors available in the scene.");
-                }
-            }
+            // No active anchor to grab
+            Debug.Log("No current active anchor to grab. Make sure a toggle is in ON state.");
         }
     }
 
@@ -385,127 +387,6 @@ public class HandGrabTrigger : MonoBehaviour
     }
 
     /// <summary>
-    /// Called when the hand's trigger collider intersects another collider.
-    /// We check if it's an anchor's sphere, and if so, attempt to grab it
-    /// if it's currently on-plane.
-    /// </summary>
-    /* Original OnTriggerEnter logic - commented out but preserved
-    private void OnTriggerEnter(Collider other)
-    {
-        // Check if the collider has the SphereToggleScript component
-        if (other.gameObject.GetComponent<SphereToggleScript>() == null)
-        {
-            return;  // Not a sphere with the required component, ignore
-        }
-
-        Debug.Log("OnTriggerEnter - Start");
-
-        // If we already grabbed something, ignore
-        if (_grabbedAnchor != null)
-        {
-            Debug.Log("OnTriggerEnter - Already holding an anchor, ignoring");
-            return;
-        }
-
-        // If we just released an anchor and haven't fully exited that anchor's collider,
-        // we skip re-grabbing the same anchor
-        if (_justReleased)
-        {
-            var tmpAnchor = SceneObjectManager.Instance.GetAnchorByGameObject(other.gameObject);
-            if (tmpAnchor != null && tmpAnchor == _lastReleasedAnchor)
-            {
-                Debug.Log("OnTriggerEnter - We just released this anchor, ignoring until OnTriggerExit");
-                return;
-            }
-        }
-
-        // Is the other collider part of an anchor's sphere?
-        var anchor = SceneObjectManager.Instance.GetAnchorByGameObject(other.gameObject);
-        if (anchor == null)
-        {
-            Debug.Log("OnTriggerEnter - Not an anchor's sphere, ignoring");
-            return;
-        }
-
-        // Check if the anchor is "on-plane" (within threshold)
-        if (IsOnPlane(anchor, out float dist) && dist < planeDistanceThreshold)
-        {
-            Debug.Log($"OnTriggerEnter - Found valid anchor on plane. Distance: {dist}");
-            // Grab this anchor
-            _grabbedAnchor = anchor;
-            
-            // Make the anchor a sibling of the hand instead of a child
-            _grabbedAnchor.sphereObj.transform.SetParent(transform.parent);
-            
-            // Add and configure the DualTargetLazyFollow
-            var lazyFollow = _grabbedAnchor.sphereObj.AddComponent<DualTargetLazyFollow>();
-            
-            // Configure following parameters
-            lazyFollow.movementSpeed = 12f; // Adjust this value as needed
-            lazyFollow.movementSpeedVariancePercentage = 0.25f;
-            lazyFollow.minDistanceAllowed = 0.02f;
-            lazyFollow.maxDistanceAllowed = 0.1f;
-            lazyFollow.timeUntilThresholdReachesMaxDistance = 0.5f;
-            
-            // Configure rotation parameters
-            lazyFollow.minAngleAllowed = 2f;
-            lazyFollow.maxAngleAllowed = 10f;
-            lazyFollow.timeUntilThresholdReachesMaxAngle = 0.5f;
-            
-            // Set the follow modes
-            lazyFollow.positionFollowMode = LazyFollow.PositionFollowMode.Follow;
-            lazyFollow.rotationFollowMode = LazyFollow.RotationFollowMode.LookAt;
-            
-            // Set the targets separately
-            lazyFollow.positionTarget = transform; // Hand is the position target
-            lazyFollow.rotationTarget = Camera.main.transform; // Main camera is the rotation target
-            
-            // Set the offset
-            lazyFollow.targetOffset = grabOffset;
-
-            // Reset the label's rotation (find the child named "Label_*")
-            Transform labelTransform = _grabbedAnchor.sphereObj.transform.GetComponentInChildren<LookAtCamera>()?.transform;
-            if (labelTransform != null)
-            {
-                labelTransform.localRotation = Quaternion.identity;
-                // Disable the mesh renderer
-                labelMeshRenderer = labelTransform.gameObject.GetComponent<MeshRenderer>();
-                if (labelMeshRenderer != null)
-                {
-                    labelMeshRenderer.enabled = false;
-                }
-            }
-
-            sphereMeshRenderer = _grabbedAnchor.sphereObj.GetComponent<MeshRenderer>();
-            if (sphereMeshRenderer != null)
-            {
-                sphereMeshRenderer.enabled = false;
-            }
-
-
-            // Generate twin object
-            if (objectMeshGenerator != null)
-            {
-                StartCoroutine(objectMeshGenerator.EstimateAndGenerateObject(null, (generatedObj) => {
-                    _twinObject = generatedObj;
-                    _twinObject.transform.SetParent(transform.parent);
-                    UpdateTwinPosition();
-                }));
-            }
-
-            // Invoke the grab event
-            OnAnchorGrabbed?.Invoke(_grabbedAnchor);
-
-            Debug.Log($"HandGrabTrigger: Grabbed anchor '{anchor.label}'");
-        }
-        else
-        {
-            Debug.Log($"OnTriggerEnter - Anchor not on plane or too far. Distance: {dist}");
-        }
-    }
-    */
-
-    /// <summary>
     /// Continuously checks if Gemini still thinks we're grabbing the object.
     /// </summary>
     private void Update()
@@ -514,6 +395,12 @@ public class HandGrabTrigger : MonoBehaviour
         if (!eventsSubscribed)
         {
             InitializeGrabbingDetector();
+        }
+
+        // MODIFIED: Only proceed with grabbing logic if there's an active anchor
+        if (_currentActiveAnchor == null)
+        {
+            return;
         }
 
         // Get current grabbing info
@@ -544,8 +431,8 @@ public class HandGrabTrigger : MonoBehaviour
             {
                 _justReleased = false;
                 
-                // Find the anchor with the matching label
-                SceneObjectAnchor anchorToGrab = FindAnchorByLabel(currentGrabInfo.grabbedObject);
+                // MODIFIED: Use the current active anchor instead of finding by label
+                SceneObjectAnchor anchorToGrab = _currentActiveAnchor;
                 
                 if (anchorToGrab != null)
                 {
@@ -583,7 +470,7 @@ public class HandGrabTrigger : MonoBehaviour
                         // Invoke the grab event
                         OnAnchorGrabbed?.Invoke(_grabbedAnchor);
                         
-                        Debug.Log($"HandGrabTrigger: {handType} hand grabbed anchor '{anchorToGrab.label}' based on Gemini detection");
+                        Debug.Log($"HandGrabTrigger: {handType} hand grabbed active anchor '{anchorToGrab.label}' based on Gemini detection");
                     }
                 }
             }

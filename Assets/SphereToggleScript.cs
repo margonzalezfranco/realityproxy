@@ -1059,6 +1059,13 @@ public class SphereToggleScript : MonoBehaviour
 
             UpdateRecorderToggle(true);
 
+            // Set the current active anchor for the HandGrabTrigger system
+            SceneObjectAnchor thisAnchor = SceneObjectManager.Instance.GetAnchorByGameObject(this.gameObject);
+            if (thisAnchor != null)
+            {
+                HandGrabTrigger.SetCurrentActiveAnchor(thisAnchor);
+            }
+
             if (!baselineModeController.baselineMode) {
 
                 Transform menuCanvas = InfoPanel.transform.parent;
@@ -1146,6 +1153,9 @@ public class SphereToggleScript : MonoBehaviour
             if (!baselineModeController.baselineMode) InfoPanel.SetActive(false);
             answerPanel.SetActive(false);
             UpdateRecorderToggle(false);
+
+            // Clear the current active anchor when toggle is turned off
+            HandGrabTrigger.SetCurrentActiveAnchor(null);
 
             if (!baselineModeController.baselineMode) {
 
