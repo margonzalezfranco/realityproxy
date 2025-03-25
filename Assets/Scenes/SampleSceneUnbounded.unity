@@ -8532,6 +8532,7 @@ MonoBehaviour:
   surfaceThickness: 0.001
   targetLayer: Default
   minimumDragDistance: 0.04
+  allowLeftHand: 0
   showDebugPoints: 1
   debugPointMaterial: {fileID: 2100000, guid: 179df120846b3424eb4f472dae795646, type: 2}
 --- !u!114 &1483904744

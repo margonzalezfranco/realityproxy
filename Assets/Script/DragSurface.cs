@@ -48,6 +48,10 @@ public class DragSurface : MonoBehaviour
     [Tooltip("Minimum distance required in meters for the first drag to be considered valid")]
     public float minimumDragDistance = 0.04f;
     
+    [Header("Hand Settings")]
+    [Tooltip("Whether to allow the left hand to draw surfaces")]
+    public bool allowLeftHand = true;
+    
     [Header("Debug")]
     [Tooltip("Whether to show debug visualizers for the control points")]
     public bool showDebugPoints = true;
@@ -121,17 +125,29 @@ public class DragSurface : MonoBehaviour
         // Only update point3 during DrawingHeight phase
         if (currentState == SurfaceCreationState.DrawingHeight)
         {
+            // Skip if using left hand and it's not allowed
+            if (isLeftHandDrawing && !allowLeftHand)
+                return;
+                
             UpdateHeightDrawing();
         }
         // Add continuous update for point2 during DrawingLength phase
         else if (currentState == SurfaceCreationState.DrawingLength)
         {
+            // Skip if using left hand and it's not allowed
+            if (isLeftHandDrawing && !allowLeftHand)
+                return;
+                
             UpdateLengthDrawing();
         }
     }
     
     private void HandlePinchStarted(bool isLeft)
     {
+        // Skip left hand pinches if not allowed
+        if (isLeft && !allowLeftHand)
+            return;
+            
         switch (currentState)
         {
             case SurfaceCreationState.None:
@@ -152,6 +168,10 @@ public class DragSurface : MonoBehaviour
     
     private void HandlePinchEnded(bool isLeft)
     {
+        // Skip left hand pinches if not allowed
+        if (isLeft && !allowLeftHand)
+            return;
+            
         // Only process pinch end for the drawing hand when in drawing states
         if (isLeft != isLeftHandDrawing || 
             (currentState != SurfaceCreationState.DrawingLength && 
@@ -176,6 +196,10 @@ public class DragSurface : MonoBehaviour
     {
         // First ensure any previous surface is cleared
         ClearAllSurfaces();
+        
+        // Prevent left hand drawing if not allowed
+        if (isLeft && !allowLeftHand)
+            return;
         
         // Set the initial point
         if (handTracking.TryGetPinchPosition(isLeft, out Vector3 pinchPosition))
