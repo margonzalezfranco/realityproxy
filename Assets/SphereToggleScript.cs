@@ -138,8 +138,6 @@ public class SphereToggleScript : MonoBehaviour
     private Vector3 originalStartPosition;
     private Vector3 originalEndPosition;
 
-    private bool wasGrabbedLastFrame = false;
-
     private void Start()
     {
         if (geminiClient == null)
@@ -324,44 +322,11 @@ public class SphereToggleScript : MonoBehaviour
         {
             if (isOn)
             {
-                // Check if we're currently grabbed by a hand
-                bool isGrabbed = transform.parent != null && transform.parent.GetComponent<HandGrabTrigger>() != null;
-                
-                if (isGrabbed)
-                {
-                    // When grabbed, make the recorderToggle a child of this object
-                    recorderToggle.transform.SetParent(transform);
-                    recorderToggle.transform.localPosition = recorderToggleOffset;
-                    
-                    // Disable LazyFollow since parenting will handle movement
-                    var lazyFollow = recorderToggle.GetComponent<LazyFollow>();
-                    if (lazyFollow != null)
-                    {
-                        lazyFollow.enabled = false;
-                    }
-                    
-                    Debug.Log("RecorderToggle parented to grabbed anchor");
-                }
-                else
-                {
-                    // Not grabbed - original behavior
-                    recorderToggle.transform.SetParent(null);  // Ensure it's not parented
-                    Vector3 togglePosition = transform.position;
-                    Vector3 offsetPosition = togglePosition + recorderToggleOffset;
-                    recorderToggle.transform.position = offsetPosition;
-                    
-                    // Enable the LazyFollow to make it follow the anchor
-                    var lazyFollow = recorderToggle.GetComponent<LazyFollow>();
-                    if (lazyFollow != null)
-                    {
-                        lazyFollow.enabled = true;
-                        
-                        // Set target to this transform so it follows the anchor
-                        lazyFollow.target = transform;
-                    }
-                    
-                    Debug.Log("RecorderToggle using LazyFollow to track anchor");
-                }
+                // Position recorderToggle at the toggle position plus a small offset above
+                Vector3 togglePosition = transform.position;
+                Vector3 offsetPosition = togglePosition + recorderToggleOffset;
+                recorderToggle.transform.position = offsetPosition;
+                recorderToggle.GetComponent<LazyFollow>().enabled = true;
                 
                 if (recorder != null && labelUnderSphere != null)
                 {
@@ -375,17 +340,9 @@ public class SphereToggleScript : MonoBehaviour
             }
             else
             {
-                // Reset recorderToggle position and parent
-                recorderToggle.transform.SetParent(null);
+                // Reset recorderToggle position to origin
                 recorderToggle.transform.position = Vector3.zero;
-                
-                // Disable LazyFollow
-                var lazyFollow = recorderToggle.GetComponent<LazyFollow>();
-                if (lazyFollow != null)
-                {
-                    lazyFollow.enabled = false;
-                    lazyFollow.target = null; // Clear target reference
-                }
+                recorderToggle.GetComponent<LazyFollow>().enabled = false;
                 
                 // Reset the object label on the SpeechToTextRecorder
                 SpeechToTextRecorder recorder = recorderToggle.GetComponent<SpeechToTextRecorder>();
@@ -401,12 +358,7 @@ public class SphereToggleScript : MonoBehaviour
                     recorder.ResetObjectLabel();
                     Debug.Log("Reset recorder object label");
                 }
-                
-                Debug.Log("RecorderToggle disabled");
             }
-            
-            // Update wasGrabbedLastFrame to reflect the current state
-            wasGrabbedLastFrame = transform.parent != null && transform.parent.GetComponent<HandGrabTrigger>() != null;
         }
     }
 
@@ -976,11 +928,11 @@ public class SphereToggleScript : MonoBehaviour
             if (menuCanvas != null && menuCanvas.name == "Menu")
             {
                 // Disable LazyFollow component if it exists
-                // LazyFollow lazyFollow = menuCanvas.GetComponent<LazyFollow>();
-                // if (lazyFollow != null)
-                // {
-                //     lazyFollow.enabled = false;
-                // }
+                LazyFollow lazyFollow = menuCanvas.GetComponent<LazyFollow>();
+                if (lazyFollow != null)
+                {
+                    lazyFollow.enabled = false;
+                }
 
                 // Unsubscribe from toggle events instead of disabling the component
                 UnsubscribeFromToggleEvents();
@@ -998,29 +950,26 @@ public class SphereToggleScript : MonoBehaviour
                 menuCanvas.SetParent(transform);
                 menuCanvas.localPosition = menuOffset;
 
-                // // Calculate rotation adjustments with dampening
-                // float dampeningFactor = 0.3f;
-                // float dampeningFactor2 = 0.1f;
+                // Calculate rotation adjustments with dampening
+                float dampeningFactor = 0.3f;
+                float dampeningFactor2 = 0.1f;
                 
-                // // First apply yaw (Y-axis rotation)
-                // float horizontalAngle = Mathf.Atan2(menuOffset.x, -menuOffset.z) * Mathf.Rad2Deg * dampeningFactor;
+                // First apply yaw (Y-axis rotation)
+                float horizontalAngle = Mathf.Atan2(menuOffset.x, -menuOffset.z) * Mathf.Rad2Deg * dampeningFactor;
                 
-                // // Calculate vertical tilt
-                // float verticalAngle = -Mathf.Atan2(menuOffset.y, Mathf.Sqrt(menuOffset.x * menuOffset.x + menuOffset.z * menuOffset.z)) * Mathf.Rad2Deg * dampeningFactor;
+                // Calculate vertical tilt
+                float verticalAngle = -Mathf.Atan2(menuOffset.y, Mathf.Sqrt(menuOffset.x * menuOffset.x + menuOffset.z * menuOffset.z)) * Mathf.Rad2Deg * dampeningFactor;
 
-                // // Calculate compensating Z-rotation based on the offset position
-                // float zCompensation = -Mathf.Atan2(menuOffset.x, menuOffset.y) * Mathf.Rad2Deg * dampeningFactor2;
+                // Calculate compensating Z-rotation based on the offset position
+                float zCompensation = -Mathf.Atan2(menuOffset.x, menuOffset.y) * Mathf.Rad2Deg * dampeningFactor2;
 
-                // // Apply all rotations with the Z-compensation
-                // menuCanvas.localRotation = Quaternion.Euler(verticalAngle, horizontalAngle, zCompensation);
+                // Apply all rotations with the Z-compensation
+                menuCanvas.localRotation = Quaternion.Euler(verticalAngle, horizontalAngle, zCompensation);
 
                 // Update state and trigger effects
                 isOn = true;
                 HandleToggleEffects(true);
 
-                // Make sure the recorder toggle follows the anchor when grabbed
-                UpdateRecorderToggle(true);
-                
                 // Start object inspection
                 OnObjectInspected(true);
             }
@@ -1040,11 +989,11 @@ public class SphereToggleScript : MonoBehaviour
                 menuCanvas.SetParent(null);
 
                 // Re-enable LazyFollow component if it exists
-                // LazyFollow lazyFollow = menuCanvas.GetComponent<LazyFollow>();
-                // if (lazyFollow != null)
-                // {
-                //     lazyFollow.enabled = true;
-                // }
+                LazyFollow lazyFollow = menuCanvas.GetComponent<LazyFollow>();
+                if (lazyFollow != null)
+                {
+                    lazyFollow.enabled = true;
+                }
 
                 // Resubscribe to toggle events
                 SubscribeToToggleEvents();
@@ -1062,9 +1011,6 @@ public class SphereToggleScript : MonoBehaviour
                 isOn = false;
                 HandleToggleEffects(false);
 
-                // Make sure the recorder toggle correctly follows the anchor when released
-                UpdateRecorderToggle(isOn);
-                
                 // Stop object inspection
                 OnObjectInspected(false);
             }
@@ -1263,19 +1209,6 @@ public class SphereToggleScript : MonoBehaviour
                 // disable lazyFollow
                 childLazyFollow.enabled = false;
             }
-        }
-    }
-
-    private void Update()
-    {
-        // Check if grab state has changed
-        bool isCurrentlyGrabbed = transform.parent != null && transform.parent.GetComponent<HandGrabTrigger>() != null;
-        
-        if (isCurrentlyGrabbed != wasGrabbedLastFrame && isOn)
-        {
-            // Grab state changed while toggle is on - update recorder position
-            UpdateRecorderToggle(true);
-            wasGrabbedLastFrame = isCurrentlyGrabbed;
         }
     }
 }
