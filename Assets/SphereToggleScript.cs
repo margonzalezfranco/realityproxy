@@ -1186,7 +1186,10 @@ public class SphereToggleScript : MonoBehaviour
                 StartCoroutine(GenerateQuestionsRoutine(labelContent));
 
                 // 2) Also generate relationships with other items (Granularity Lv2)
-                StartCoroutine(GenerateRelationshipsRoutine(labelContent));
+                if (!baselineModeController.baselineMode)
+                {
+                    StartCoroutine(GenerateRelationshipsRoutine(labelContent));
+                }
             }
 
             var childLazyFollow = this.GetComponentInChildren<LazyFollow>();
@@ -1271,6 +1274,12 @@ public class SphereToggleScript : MonoBehaviour
         if (string.IsNullOrEmpty(nearbyObjectLabel) || labelUnderSphere == null)
         {
             Debug.LogWarning("Cannot generate proximity relationship: Missing label information");
+            return;
+        }
+
+        // Don't generate relationships in baseline mode
+        if (baselineModeController.baselineMode)
+        {
             return;
         }
 
