@@ -136,6 +136,9 @@ public class SphereToggleScript : MonoBehaviour
     [SerializeField]
     Vector3 objectTrackingToggleOffset = new Vector3(0f, 0.06f, -0.05f);
 
+    [SerializeField]
+    Vector3 Offset = new Vector3(0f, 0.06f, -0.05f);
+
     private Vector3 originalInfoPanelPosition;
 
     // Add this variable to store original AnimateWindow settings
@@ -1257,5 +1260,136 @@ public class SphereToggleScript : MonoBehaviour
                 childLazyFollow.enabled = false;
             }
         }
+    }
+
+    /// <summary>
+    /// Generates relationship between this object and another nearby object.
+    /// Called when two objects come within proximity threshold of each other.
+    /// </summary>
+    public void GenerateProximityRelationship(string nearbyObjectLabel)
+    {
+        if (string.IsNullOrEmpty(nearbyObjectLabel) || labelUnderSphere == null)
+        {
+            Debug.LogWarning("Cannot generate proximity relationship: Missing label information");
+            return;
+        }
+
+        string thisObjectLabel = labelUnderSphere.text;
+        
+        Debug.Log($"Generating proximity relationship between '{thisObjectLabel}' and '{nearbyObjectLabel}'");
+        
+        // Start the coroutine to generate relationship specifically between these two objects
+        StartCoroutine(GenerateSpecificRelationshipRoutine(thisObjectLabel, nearbyObjectLabel));
+    }
+
+    /// <summary>
+    /// Coroutine that calls Gemini to find the relationship between two specific objects,
+    /// and draws a line between them with the relationship description.
+    /// </summary>
+    private IEnumerator GenerateSpecificRelationshipRoutine(string objectA, string objectB)
+    {
+        // Update scene context to ensure we have the latest context
+        UpdateSceneContext();
+        
+        // Build prompt specifically for these two objects
+        string prompt = $@"
+        Given this scene context: {currentSceneContext},
+        the potential tasks: {currentTaskContext},
+        
+        Find the specific relationship between these two objects that have been brought close together:
+        1. {objectA}
+        2. {objectB}
+
+        Consider:
+        1. How these objects might be used together in the current context
+        2. Functional relationships between them
+        3. Causal relationships (one affects the other)
+        4. Hierarchical relationships (one is part of the other)
+        5. Common usage patterns
+
+        Output a single JSON object with ONE key-value pair where:
+        - Key is ""{objectB}"" (the exact string)
+        - Value is a brief relationship description (5-7 words maximum)
+
+        Example format:
+        {{
+          ""{objectB}"": ""can be used to clean {objectA}""
+        }}
+
+        If there is no meaningful relationship, use this format:
+        {{
+          ""{objectB}"": ""no clear relationship found""
+        }}
+        ";
+
+        // Call Gemini using the MakeGeminiRequest method from GeminiGeneral for concurrent API calls
+        var request = geminiGeneral != null 
+            ? geminiGeneral.MakeGeminiRequest(prompt, null)
+            : new GeminiGeneral.RequestStatus(geminiClient.GenerateContent(prompt, null));
+        
+        while (!request.IsCompleted)
+            yield return null;
+
+        string rawResponse = request.Result;
+        
+        // Extract JSON portion
+        string extractedJson = TryExtractJson(rawResponse);
+        Debug.Log("Proximity Relationship - Extracted JSON:\n" + extractedJson);
+
+        if (string.IsNullOrEmpty(extractedJson))
+        {
+            Debug.LogWarning("No valid JSON found in proximity relationship response.");
+            yield break;
+        }
+
+        // Parse to dictionary
+        Dictionary<string, string> relationshipDict = null;
+        try
+        {
+            relationshipDict = JsonConvert.DeserializeObject<Dictionary<string, string>>(extractedJson);
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning("Failed to parse relationship JSON: " + e);
+            yield break;
+        }
+
+        // Handle empty or null relationships
+        if (relationshipDict == null || relationshipDict.Count == 0)
+        {
+            Debug.Log($"No relationship found between '{objectA}' and '{objectB}'");
+            yield break;
+        }
+
+        // Clear any existing relationship lines to focus on this new relationship
+        if (relationLineManager != null)
+        {
+            relationLineManager.ClearAllLines();
+        }
+
+        // Find the anchor for this object
+        var myAnchor = sceneObjManager.GetAnchorByGameObject(this.gameObject);
+        if (myAnchor == null)
+        {
+            Debug.LogWarning($"No anchor found for this sphere GameObject!");
+            yield break;
+        }
+
+        // Find the anchor for the nearby object
+        var otherAnchor = sceneObjManager.GetAnchorByLabel(objectB);
+        if (otherAnchor == null)
+        {
+            Debug.LogWarning($"No anchor found for nearby object '{objectB}'!");
+            yield break;
+        }
+
+        // Create a list for the anchors array parameter
+        var allAnchors = sceneObjManager.GetAllAnchors();
+        
+        // Show just this specific relationship
+        relationLineManager.ShowRelationships(myAnchor, relationshipDict, allAnchors);
+        
+        // Play feedback sound or haptic feedback to notify user of discovery
+        // This could be implemented later if needed
     }
 }

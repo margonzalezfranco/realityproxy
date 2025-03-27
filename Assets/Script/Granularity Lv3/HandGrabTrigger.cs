@@ -1,5 +1,6 @@
 using UnityEngine;
 using System.Collections;
+using System.Collections.Generic;  // Add this for HashSet<>
 using UnityEngine.XR.Hands;  // Add this for XRHand
 using Unity.XR.CoreUtils;    // Add this if needed for other XR utilities
 using UnityEngine.XR.Interaction.Toolkit.UI;
@@ -98,6 +99,32 @@ public class HandGrabTrigger : MonoBehaviour
         return _currentActiveAnchor != null;
     }
 
+    [Header("Proximity Relationship Detection")]
+    [Tooltip("Distance threshold for detecting proximity to other anchors")]
+    public float proximityThreshold = 0.15f; // 15cm default
+
+    [Tooltip("Minimum time between proximity relationship checks")]
+    public float proximityCheckInterval = 1.0f; // 1 second default
+
+    [Tooltip("Material to use for proximity highlight effect")]
+    public Material proximityHighlightMaterial;
+
+    [Tooltip("Duration of the highlight effect in seconds")]
+    public float highlightDuration = 0.5f;
+
+    [Tooltip("Sound to play when objects come into proximity")]
+    public AudioClip proximitySound;
+
+    [Tooltip("Volume of the proximity sound")]
+    [Range(0f, 1f)]
+    public float proximitySoundVolume = 0.5f;
+
+    private float lastProximityCheckTime = 0f;
+    private SceneObjectManager sceneObjectManager;
+    private SphereToggleScript sphereToggleScript;
+    private HashSet<SceneObjectAnchor> recentlyHighlighted = new HashSet<SceneObjectAnchor>();
+    private AudioSource audioSource;
+
     private void Start()
     {
         // Auto-detect which hand this is based on the GameObject name if not set
@@ -112,6 +139,16 @@ public class HandGrabTrigger : MonoBehaviour
         {
             Debug.LogWarning("No ObjectMeshGenerator found in scene!");
         }
+
+        // Find the SceneObjectManager
+        sceneObjectManager = FindAnyObjectByType<SceneObjectManager>();
+        if (sceneObjectManager == null)
+        {
+            Debug.LogWarning("No SceneObjectManager found in scene!");
+        }
+
+        // Setup audio source if needed
+        SetupAudioSource();
 
         // Initialize the HandGrabbingDetector reference and subscribe to events
         InitializeGrabbingDetector();
@@ -139,6 +176,22 @@ public class HandGrabTrigger : MonoBehaviour
             // Default to right if we can't determine
             handType = "right";
             Debug.LogWarning($"Could not determine hand type from name '{gameObject.name}', defaulting to 'right'");
+        }
+    }
+
+    private void SetupAudioSource()
+    {
+        // Check if we already have an AudioSource
+        audioSource = GetComponent<AudioSource>();
+        
+        // If not, add one
+        if (audioSource == null)
+        {
+            audioSource = gameObject.AddComponent<AudioSource>();
+            audioSource.playOnAwake = false;
+            audioSource.spatialBlend = 1.0f; // Full 3D sound
+            audioSource.minDistance = 0.1f;
+            audioSource.maxDistance = 10.0f;
         }
     }
 
@@ -557,6 +610,9 @@ public class HandGrabTrigger : MonoBehaviour
                 UpdateTwinPosition();
             }
 
+            // Check for proximity to other anchors
+            CheckProximityToOtherAnchors();
+
             // ONLY release if Gemini explicitly detects we're not grabbing anymore
             // BUT ignore Gemini's detection if this is a manual grab
             if (!_isManualGrab && currentGrabInfo != null && !currentGrabInfo.isGrabbing)
@@ -786,5 +842,148 @@ public class HandGrabTrigger : MonoBehaviour
     private bool enableDebugLogging()
     {
         return grabbingDetector != null && grabbingDetector.enableDebugLogging;
+    }
+
+    /// <summary>
+    /// Checks if the grabbed anchor is near any other anchors in the scene
+    /// and generates relationship information if they are close enough.
+    /// </summary>
+    private void CheckProximityToOtherAnchors()
+    {
+        // Only check at the specified interval to avoid performance issues
+        if (Time.time - lastProximityCheckTime < proximityCheckInterval || sceneObjectManager == null || _grabbedAnchor == null)
+        {
+            return;
+        }
+
+        lastProximityCheckTime = Time.time;
+        
+        // Get all anchors from SceneObjectManager
+        var allAnchors = sceneObjectManager.GetAllAnchors();
+        if (allAnchors == null || allAnchors.Count <= 1)
+        {
+            return;
+        }
+        
+        // Get the position of our grabbed anchor
+        Vector3 grabbedAnchorPos = _grabbedAnchor.sphereObj.transform.position;
+        string grabbedLabel = _grabbedAnchor.label;
+        
+        // Check distance to each other anchor
+        foreach (var otherAnchor in allAnchors)
+        {
+            // Skip if it's the same anchor we're grabbing
+            if (otherAnchor == _grabbedAnchor)
+            {
+                continue;
+            }
+            
+            // Calculate distance
+            float distance = Vector3.Distance(grabbedAnchorPos, otherAnchor.sphereObj.transform.position);
+            
+            // If within threshold, generate relationship
+            if (distance <= proximityThreshold)
+            {
+                // Skip if we recently highlighted this anchor
+                if (recentlyHighlighted.Contains(otherAnchor))
+                {
+                    continue;
+                }
+                
+                // Add to recently highlighted set
+                recentlyHighlighted.Add(otherAnchor);
+                
+                Debug.Log($"Proximity detected between '{grabbedLabel}' and '{otherAnchor.label}' (distance: {distance}m)");
+                
+                // Highlight the nearby object
+                StartCoroutine(HighlightAnchorBriefly(otherAnchor));
+                
+                // Play proximity sound
+                PlayProximitySound();
+                
+                // Get SphereToggleScript if we don't have it yet
+                if (sphereToggleScript == null)
+                {
+                    sphereToggleScript = _grabbedAnchor.sphereObj.GetComponent<SphereToggleScript>();
+                    if (sphereToggleScript == null)
+                    {
+                        Debug.LogWarning("No SphereToggleScript found on grabbed anchor!");
+                        return;
+                    }
+                }
+                
+                // Generate relationship between the two objects
+                sphereToggleScript.GenerateProximityRelationship(otherAnchor.label);
+                
+                // Only generate one relationship at a time to avoid overwhelming the user
+                // and to prevent multiple concurrent API calls
+                break;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Highlights an anchor briefly to indicate proximity interaction
+    /// </summary>
+    private IEnumerator HighlightAnchorBriefly(SceneObjectAnchor anchor)
+    {
+        // Store original materials
+        var renderer = anchor.sphereObj.GetComponent<MeshRenderer>();
+        if (renderer == null)
+        {
+            yield break;
+        }
+        
+        Material[] originalMaterials = renderer.materials;
+        
+        // Apply highlight material if available
+        if (proximityHighlightMaterial != null)
+        {
+            Material[] highlightMaterials = new Material[originalMaterials.Length];
+            for (int i = 0; i < highlightMaterials.Length; i++)
+            {
+                highlightMaterials[i] = proximityHighlightMaterial;
+            }
+            renderer.materials = highlightMaterials;
+        }
+        else
+        {
+            // If no highlight material provided, modify the existing material's color
+            foreach (Material mat in renderer.materials)
+            {
+                if (mat.HasProperty("_Color"))
+                {
+                    mat.SetColor("_Color", Color.yellow);
+                }
+            }
+        }
+        
+        // Wait for the highlight duration
+        yield return new WaitForSeconds(highlightDuration);
+        
+        // Restore original materials
+        renderer.materials = originalMaterials;
+        
+        // Remove from recently highlighted after a cooldown
+        yield return new WaitForSeconds(proximityCheckInterval * 2);
+        recentlyHighlighted.Remove(anchor);
+    }
+
+    /// <summary>
+    /// Plays a sound effect when objects come into proximity
+    /// </summary>
+    private void PlayProximitySound()
+    {
+        if (audioSource == null || proximitySound == null)
+        {
+            return;
+        }
+        
+        // Set the clip and volume
+        audioSource.clip = proximitySound;
+        audioSource.volume = proximitySoundVolume;
+        
+        // Play the sound
+        audioSource.Play();
     }
 }
