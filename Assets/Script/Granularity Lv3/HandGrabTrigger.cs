@@ -128,6 +128,8 @@ public class HandGrabTrigger : MonoBehaviour
     private HashSet<SceneObjectAnchor> recentlyHighlighted = new HashSet<SceneObjectAnchor>();
     private AudioSource audioSource;
 
+    private float lastDetectionStartTime = 0f;
+
     private void Start()
     {
         // Auto-detect which hand this is based on the GameObject name if not set
@@ -616,14 +618,31 @@ public class HandGrabTrigger : MonoBehaviour
             // Check for proximity to other anchors
             CheckProximityToOtherAnchors();
 
-            // ONLY release if Gemini explicitly detects we're not grabbing anymore
-            // BUT ignore Gemini's detection if this is a manual grab
-            if (!_isManualGrab && currentGrabInfo != null && !currentGrabInfo.isGrabbing)
+            // Add recovery mechanism for tracking loss
+            if (!_isManualGrab && currentGrabInfo != null)
             {
-                // Gemini explicitly detected we're not grabbing anymore => release
-                Debug.Log($"HandGrabTrigger: {handType} hand releasing anchor '{_grabbedAnchor.label}' because Gemini detected hand is no longer grabbing");
-                ReleaseAnchor(true); // Use manual release for explicit Gemini release detection
-                _justReleased = true;
+                // If we detect a temporary tracking loss, try to recover
+                if (!currentGrabInfo.isGrabbing && Time.time - lastDetectionStartTime < 1.0f)
+                {
+                    // Try to recover the grab state
+                    if (enableDebugLogging())
+                    {
+                        Debug.Log($"HandGrabTrigger: {handType} hand detected temporary tracking loss, attempting recovery");
+                    }
+                    
+                    // Force a new detection
+                    grabbingDetector?.TriggerDetection();
+                    return;
+                }
+                
+                // Only release if we're sure we're not grabbing anymore
+                if (!currentGrabInfo.isGrabbing && Time.time - lastDetectionStartTime >= 1.0f)
+                {
+                    // Gemini explicitly detected we're not grabbing anymore => release
+                    Debug.Log($"HandGrabTrigger: {handType} hand releasing anchor '{_grabbedAnchor.label}' because Gemini detected hand is no longer grabbing");
+                    ReleaseAnchor(true); // Use manual release for explicit Gemini release detection
+                    _justReleased = true;
+                }
             }
         }
         // If we're not holding an anchor but Gemini thinks we should be grabbing
@@ -669,17 +688,17 @@ public class HandGrabTrigger : MonoBehaviour
                             lazyFollow.positionTarget = transform;
                             lazyFollow.rotationTarget = Camera.main.transform;
                             
-                            // Configure following parameters
-                            lazyFollow.movementSpeed = 12f; // Adjust this value as needed
-                            lazyFollow.movementSpeedVariancePercentage = 0.25f;
-                            lazyFollow.minDistanceAllowed = 0.02f;
-                            lazyFollow.maxDistanceAllowed = 0.1f;
-                            lazyFollow.timeUntilThresholdReachesMaxDistance = 0.5f;
+                            // Configure following parameters with more lenient settings
+                            lazyFollow.movementSpeed = 8f; // Reduced from 12f for smoother movement
+                            lazyFollow.movementSpeedVariancePercentage = 0.15f; // Reduced from 0.25f for more stability
+                            lazyFollow.minDistanceAllowed = 0.03f; // Increased from 0.02f for more tolerance
+                            lazyFollow.maxDistanceAllowed = 0.15f; // Increased from 0.1f for more range
+                            lazyFollow.timeUntilThresholdReachesMaxDistance = 0.7f; // Increased from 0.5f for smoother transitions
                             
-                            // Configure rotation parameters
-                            lazyFollow.minAngleAllowed = 2f;
-                            lazyFollow.maxAngleAllowed = 10f;
-                            lazyFollow.timeUntilThresholdReachesMaxAngle = 0.5f;
+                            // Configure rotation parameters with more lenient settings
+                            lazyFollow.minAngleAllowed = 3f; // Increased from 2f for more tolerance
+                            lazyFollow.maxAngleAllowed = 15f; // Increased from 10f for more range
+                            lazyFollow.timeUntilThresholdReachesMaxAngle = 0.7f; // Increased from 0.5f for smoother transitions
                             
                             // Set the follow modes
                             lazyFollow.positionFollowMode = LazyFollow.PositionFollowMode.Follow;

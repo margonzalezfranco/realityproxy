@@ -314,7 +314,8 @@ MonoBehaviour:
   recorderToggle: {fileID: 0}
   objectTrackingToggle: {fileID: 0}
   recorderToggleOffset: {x: 0, y: 0.5, z: -1.26}
-  objectTrackingToggleOffset: {x: 0, y: 0.12, z: -1.26}
+  objectTrackingToggleOffset: {x: 0, y: 0, z: -1.26}
+  Offset: {x: 0, y: 0.06, z: -0.05}
 --- !u!114 &-4739414126409212889
 MonoBehaviour:
   m_ObjectHideFlags: 0

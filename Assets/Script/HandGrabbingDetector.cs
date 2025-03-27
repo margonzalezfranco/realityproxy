@@ -444,7 +444,17 @@ public class HandGrabbingDetector : GeminiGeneral
     {
         if (grabbingInfo == null)
         {
-            // Reset if analysis failed
+            // Instead of immediately resetting, try to maintain previous state
+            if (isHandGrabbing && currentGrabbingInfo != null)
+            {
+                if (enableDebugLogging)
+                {
+                    Debug.Log("[HandGrabbingDetector] Detection failed but maintaining previous grab state");
+                }
+                return;
+            }
+            
+            // Only reset if we weren't grabbing before
             currentGrabbingInfo = null;
             isHandGrabbing = false;
             grabbedObjectName = "Detection failed";
@@ -465,16 +475,20 @@ public class HandGrabbingDetector : GeminiGeneral
             consecutiveGrabbingDetections = 0;
         }
 
-        // Apply consistency logic to grabbing state
-        // Only change from grabbing to not grabbing after multiple consecutive non-grabbing detections
-        if (isHandGrabbing && !grabbingInfo.isGrabbing && consecutiveNonGrabbingDetections < requiredConsecutiveDetections)
+        // Apply more lenient consistency logic
+        // Only change from grabbing to not grabbing after more consecutive non-grabbing detections
+        if (isHandGrabbing && !grabbingInfo.isGrabbing)
         {
-            // Ignore this detection - we need more consecutive non-grabbing detections to confirm
-            if (enableDebugLogging)
+            // Increase required consecutive detections for release
+            if (consecutiveNonGrabbingDetections < requiredConsecutiveDetections * 2)
             {
-                Debug.Log($"[HandGrabbingDetector] Ignoring potential false negative (still grabbing). Need {requiredConsecutiveDetections - consecutiveNonGrabbingDetections} more.");
+                // Ignore this detection - we need more consecutive non-grabbing detections to confirm
+                if (enableDebugLogging)
+                {
+                    Debug.Log($"[HandGrabbingDetector] Ignoring potential false negative (still grabbing). Need {requiredConsecutiveDetections * 2 - consecutiveNonGrabbingDetections} more.");
+                }
+                return;
             }
-            return;
         }
         
         // Only change from not grabbing to grabbing after multiple consecutive grabbing detections
@@ -486,6 +500,20 @@ public class HandGrabbingDetector : GeminiGeneral
                 Debug.Log($"[HandGrabbingDetector] Ignoring potential false positive (not grabbing yet). Need {requiredConsecutiveDetections - consecutiveGrabbingDetections} more.");
             }
             return;
+        }
+
+        // Add confidence threshold check
+        if (grabbingInfo.isGrabbing && grabbingInfo.confidence < 0.5f)
+        {
+            // If confidence is low but we were previously grabbing, maintain the grab state
+            if (isHandGrabbing)
+            {
+                if (enableDebugLogging)
+                {
+                    Debug.Log($"[HandGrabbingDetector] Low confidence detection ({grabbingInfo.confidence:P0}) but maintaining previous grab state");
+                }
+                return;
+            }
         }
 
         // Update detection counts for consistency tracking
@@ -523,9 +551,12 @@ public class HandGrabbingDetector : GeminiGeneral
         }
         else if (!grabbingInfo.isGrabbing)
         {
-            // Reset detection counts when not grabbing
-            detectionCounts.Clear();
-            mostLikelyObject = null;
+            // Only reset detection counts if we're sure we're not grabbing
+            if (consecutiveNonGrabbingDetections >= requiredConsecutiveDetections * 2)
+            {
+                detectionCounts.Clear();
+                mostLikelyObject = null;
+            }
         }
 
         // Store previous state for comparison
@@ -546,7 +577,7 @@ public class HandGrabbingDetector : GeminiGeneral
             Debug.Log($"[HandGrabbingDetector] RESULT: {grabbingHand} hand grabbing {grabbedObjectName} (Confidence: {grabbingInfo.confidence:P0})");
         }
         
-        // Handle state transitions
+        // Handle state transitions with additional checks
         if (grabbingInfo.isGrabbing)
         {
             if (!wasGrabbingLastFrame)
@@ -580,14 +611,26 @@ public class HandGrabbingDetector : GeminiGeneral
         }
         else if (!grabbingInfo.isGrabbing && wasGrabbingLastFrame)
         {
-            // Stopped grabbing
-            if (enableDebugLogging)
+            // Only trigger release if we're sure we're not grabbing
+            if (consecutiveNonGrabbingDetections >= requiredConsecutiveDetections * 2)
             {
-                Debug.Log("[HandGrabbingDetector] Hand released object");
+                // Stopped grabbing
+                if (enableDebugLogging)
+                {
+                    Debug.Log("[HandGrabbingDetector] Hand released object");
+                }
+                OnGrabbingReleased?.Invoke();
+                wasGrabbingLastFrame = false;
+                lastGrabbedObjectName = "";
             }
-            OnGrabbingReleased?.Invoke();
-            wasGrabbingLastFrame = false;
-            lastGrabbedObjectName = "";
+            else
+            {
+                // Ignore temporary tracking loss
+                if (enableDebugLogging)
+                {
+                    Debug.Log($"[HandGrabbingDetector] Ignoring temporary tracking loss. Need {requiredConsecutiveDetections * 2 - consecutiveNonGrabbingDetections} more non-grabbing detections to confirm release.");
+                }
+            }
         }
     }
 
