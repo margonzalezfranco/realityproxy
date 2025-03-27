@@ -532,12 +532,16 @@ public class SphereToggleScript : MonoBehaviour
         
         var handSubsystem = handSubsystems[0];
         
+        // Initialize pose variables
+        Pose leftPose = new Pose();
+        Pose rightPose = new Pose();
+        
         // Get positions of both hands
         bool leftHandTracked = handSubsystem.leftHand.isTracked && 
-                               handSubsystem.leftHand.GetJoint(XRHandJointID.Wrist).TryGetPose(out Pose leftPose);
+                               handSubsystem.leftHand.GetJoint(XRHandJointID.Wrist).TryGetPose(out leftPose);
         
         bool rightHandTracked = handSubsystem.rightHand.isTracked && 
-                                handSubsystem.rightHand.GetJoint(XRHandJointID.Wrist).TryGetPose(out Pose rightPose);
+                                handSubsystem.rightHand.GetJoint(XRHandJointID.Wrist).TryGetPose(out rightPose);
         
         // Both hands must be tracked
         if (!leftHandTracked || !rightHandTracked) return false;
