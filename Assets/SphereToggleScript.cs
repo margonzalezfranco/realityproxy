@@ -1291,6 +1291,38 @@ public class SphereToggleScript : MonoBehaviour
         // Update scene context to ensure we have the latest context
         UpdateSceneContext();
         
+        // Find the anchor for this object
+        var myAnchor = sceneObjManager.GetAnchorByGameObject(this.gameObject);
+        if (myAnchor == null)
+        {
+            Debug.LogWarning($"No anchor found for this sphere GameObject!");
+            yield break;
+        }
+
+        // Find the anchor for the nearby object
+        var otherAnchor = sceneObjManager.GetAnchorByLabel(objectB);
+        if (otherAnchor == null)
+        {
+            Debug.LogWarning($"No anchor found for nearby object '{objectB}'!");
+            yield break;
+        }
+
+        // Clear any existing relationship lines to focus on this new relationship
+        if (relationLineManager != null)
+        {
+            relationLineManager.ClearAllLines();
+        }
+
+        // Create a temporary relationship dictionary with "Loading..." text
+        Dictionary<string, string> loadingDict = new Dictionary<string, string>
+        {
+            { objectB, "Loading..." }
+        };
+        
+        // Show initial connection line with loading text
+        var allAnchors = sceneObjManager.GetAllAnchors();
+        relationLineManager.ShowRelationships(myAnchor, loadingDict, allAnchors);
+        
         // Build prompt specifically for these two objects
         string prompt = $@"
         Given this scene context: {currentSceneContext},
@@ -1339,6 +1371,13 @@ public class SphereToggleScript : MonoBehaviour
         if (string.IsNullOrEmpty(extractedJson))
         {
             Debug.LogWarning("No valid JSON found in proximity relationship response.");
+            
+            // Update with a fallback message
+            Dictionary<string, string> fallbackDict = new Dictionary<string, string>
+            {
+                { objectB, "Relationship undefined" }
+            };
+            relationLineManager.ShowRelationships(myAnchor, fallbackDict, allAnchors);
             yield break;
         }
 
@@ -1351,6 +1390,13 @@ public class SphereToggleScript : MonoBehaviour
         catch (Exception e)
         {
             Debug.LogWarning("Failed to parse relationship JSON: " + e);
+            
+            // Update with error message
+            Dictionary<string, string> errorDict = new Dictionary<string, string>
+            {
+                { objectB, "Error identifying relationship" }
+            };
+            relationLineManager.ShowRelationships(myAnchor, errorDict, allAnchors);
             yield break;
         }
 
@@ -1358,38 +1404,17 @@ public class SphereToggleScript : MonoBehaviour
         if (relationshipDict == null || relationshipDict.Count == 0)
         {
             Debug.Log($"No relationship found between '{objectA}' and '{objectB}'");
+            
+            // Update with no relationship message
+            Dictionary<string, string> noRelationDict = new Dictionary<string, string>
+            {
+                { objectB, "No relationship found" }
+            };
+            relationLineManager.ShowRelationships(myAnchor, noRelationDict, allAnchors);
             yield break;
         }
 
-        // Clear any existing relationship lines to focus on this new relationship
-        if (relationLineManager != null)
-        {
-            relationLineManager.ClearAllLines();
-        }
-
-        // Find the anchor for this object
-        var myAnchor = sceneObjManager.GetAnchorByGameObject(this.gameObject);
-        if (myAnchor == null)
-        {
-            Debug.LogWarning($"No anchor found for this sphere GameObject!");
-            yield break;
-        }
-
-        // Find the anchor for the nearby object
-        var otherAnchor = sceneObjManager.GetAnchorByLabel(objectB);
-        if (otherAnchor == null)
-        {
-            Debug.LogWarning($"No anchor found for nearby object '{objectB}'!");
-            yield break;
-        }
-
-        // Create a list for the anchors array parameter
-        var allAnchors = sceneObjManager.GetAllAnchors();
-        
-        // Show just this specific relationship
+        // Show the final relationship with proper text
         relationLineManager.ShowRelationships(myAnchor, relationshipDict, allAnchors);
-        
-        // Play feedback sound or haptic feedback to notify user of discovery
-        // This could be implemented later if needed
     }
 }
