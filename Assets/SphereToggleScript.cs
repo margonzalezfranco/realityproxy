@@ -81,7 +81,7 @@ public class SphereToggleScript : MonoBehaviour
 
     [Header("Menu Positioning")]
     [Tooltip("Offset position of the menu canvas relative to the anchor when grabbed")]
-    public Vector3 menuOffset = new Vector3(-6f, 1.2f, -2.5f); // Default slightly above the anchor
+    public Vector3 menuOffset = new Vector3(0f, 1f, 0f); // Default slightly above the anchor
     
     public Vector3 menuOffsetForStatic = new Vector3(0f, 1f, 0f);
 
@@ -128,9 +128,13 @@ public class SphereToggleScript : MonoBehaviour
     private Vector3 relativePosition; // Store relative position to holding hand
 
     public GameObject recorderToggle;
+    public GameObject objectTrackingToggle;
 
     [SerializeField]
-    Vector3 recorderToggleOffset = new Vector3(0f, 0.1f, 0f);
+    Vector3 recorderToggleOffset = new Vector3(0f, 0.1f, -0.05f);
+
+    [SerializeField]
+    Vector3 objectTrackingToggleOffset = new Vector3(0f, 0.06f, -0.05f);
 
     private Vector3 originalInfoPanelPosition;
 
@@ -148,6 +152,11 @@ public class SphereToggleScript : MonoBehaviour
         if (recorderToggle == null)
         {
             recorderToggle = GameObject.Find("RecorderToggle");
+        }
+
+        if (objectTrackingToggle == null)
+        {
+            objectTrackingToggle = GameObject.Find("ObjectTrackingToggle");
         }
 
         if (recorder == null)
@@ -316,50 +325,45 @@ public class SphereToggleScript : MonoBehaviour
         toggle.PressEnd();
     }
 
-    private void UpdateRecorderToggle(bool isOn)
+    private void UpdateTogglePosition(GameObject toggle, Vector3 offset, bool isOn, string toggleType)
     {
-        if (recorderToggle != null)
+        if (toggle != null)
         {
             if (isOn)
             {
-                // Position recorderToggle at the toggle position plus a small offset above
-                Vector3 togglePosition = transform.position;
-                Vector3 offsetPosition = togglePosition + recorderToggleOffset;
-                recorderToggle.transform.position = offsetPosition;
-                recorderToggle.GetComponent<LazyFollow>().enabled = true;
-                
-                if (recorder != null && labelUnderSphere != null)
-                {
-                    recorder.SetObjectLabel(labelUnderSphere.text, this.gameObject);
-                    Debug.Log($"Set recorder object label to: {labelUnderSphere.text}");
-                }
-                else if (recorder == null)
-                {
-                    Debug.LogWarning("SpeechToTextRecorder component not found on recorderToggle or its parent");
-                }
+                toggle.transform.SetParent(transform);
+                if (!toggle.transform.hasChanged)  toggle.transform.localScale = toggle.transform.localScale / transform.localScale.x;
+                toggle.GetComponent<SpatialUI>().UpdateReferenceScale();
+                toggle.transform.localPosition = offset;
+                toggle.transform.localRotation = Quaternion.identity;
+                // toggle.GetComponent<LazyFollow>().enabled = false;
+
+                if (toggleType == "recorder" && recorder != null && labelUnderSphere != null) recorder.SetObjectLabel(labelUnderSphere.text, this.gameObject);
             }
             else
             {
-                // Reset recorderToggle position to origin
-                recorderToggle.transform.position = Vector3.zero;
-                recorderToggle.GetComponent<LazyFollow>().enabled = false;
-                
-                // Reset the object label on the SpeechToTextRecorder
-                SpeechToTextRecorder recorder = recorderToggle.GetComponent<SpeechToTextRecorder>();
-                
-                // If not found on the GameObject, try to find it in the parent
-                if (recorder == null && recorderToggle.transform.parent != null)
+                toggle.transform.SetParent(null);
+                toggle.transform.localPosition = Vector3.zero;
+                toggle.transform.localRotation = Quaternion.identity;
+                // toggle.GetComponent<LazyFollow>().enabled = true;
+                if (toggleType == "recorder")
                 {
-                    recorder = recorderToggle.transform.parent.GetComponent<SpeechToTextRecorder>();
-                }
-                
-                if (recorder != null)
-                {
-                    recorder.ResetObjectLabel();
-                    Debug.Log("Reset recorder object label");
+                    SpeechToTextRecorder recorder = toggle.GetComponent<SpeechToTextRecorder>();
+                    if (recorder == null && toggle.transform.parent != null) recorder = toggle.transform.parent.GetComponent<SpeechToTextRecorder>();
+                    if (recorder != null)   recorder.ResetObjectLabel();
                 }
             }
         }
+    }
+
+    private void UpdateRecorderToggle(bool isOn)
+    {
+        UpdateTogglePosition(recorderToggle, recorderToggleOffset, isOn, "recorder");
+    }
+
+    private void UpdateObjectTrackingToggle(bool isOn)
+    {
+        UpdateTogglePosition(objectTrackingToggle, objectTrackingToggleOffset, isOn, "objectTracking");
     }
 
     private void OnObjectInspected(bool inspected)
@@ -918,6 +922,58 @@ public class SphereToggleScript : MonoBehaviour
         }
     }
 
+    // Helper method to configure DualTargetLazyFollow parameters
+    private void ConfigureDualTargetLazyFollow(DualTargetLazyFollow lazyFollow)
+    {
+        lazyFollow.movementSpeed = 20f;
+        lazyFollow.movementSpeedVariancePercentage = 0.25f;
+        lazyFollow.minDistanceAllowed = 0.02f;
+        lazyFollow.maxDistanceAllowed = 0.05f;
+        lazyFollow.timeUntilThresholdReachesMaxDistance = 0.3f;
+        
+        lazyFollow.minAngleAllowed = 3f;
+        lazyFollow.maxAngleAllowed = 15f;
+        lazyFollow.timeUntilThresholdReachesMaxAngle = 0.3f;
+        
+        lazyFollow.positionFollowMode = LazyFollow.PositionFollowMode.Follow;
+        lazyFollow.rotationFollowMode = LazyFollow.RotationFollowMode.LookAt;
+    }
+
+    // Helper method to setup DualTargetLazyFollow on a GameObject
+    private void SetupDualTargetLazyFollow(GameObject target, Vector3 offset)
+    {
+        // Disable existing LazyFollow if any
+        var existingLazyFollow = target.GetComponent<LazyFollow>();
+        if (existingLazyFollow != null)
+        {
+            existingLazyFollow.enabled = false;
+        }
+
+        // Add or get DualTargetLazyFollow component
+        var dualTargetLazyFollow = target.GetComponent<DualTargetLazyFollow>();
+        if (dualTargetLazyFollow == null)
+        {
+            dualTargetLazyFollow = target.AddComponent<DualTargetLazyFollow>();
+            ConfigureDualTargetLazyFollow(dualTargetLazyFollow);
+        }
+
+        // Set the targets
+        dualTargetLazyFollow.positionTarget = transform; // follow the sphere
+        dualTargetLazyFollow.rotationTarget = Camera.main.transform; // look at the camera
+        dualTargetLazyFollow.targetOffset = offset; // apply the offset
+        dualTargetLazyFollow.enabled = true;
+    }
+
+    // Helper method to cleanup DualTargetLazyFollow on a GameObject
+    private void CleanupDualTargetLazyFollow(GameObject target)
+    {
+        var existingLazyFollow = target.GetComponent<LazyFollow>();
+        if (existingLazyFollow != null) existingLazyFollow.enabled = true;
+
+        var dualTargetLazyFollow = target.GetComponent<DualTargetLazyFollow>();
+        if (dualTargetLazyFollow != null) Destroy(dualTargetLazyFollow);
+    }
+
     private void HandleAnchorGrabbed(SceneObjectAnchor anchor)
     {
         // Check if this is our anchor
@@ -927,17 +983,23 @@ public class SphereToggleScript : MonoBehaviour
             Transform menuCanvas = InfoPanel.transform.parent;
             if (menuCanvas != null && menuCanvas.name == "Menu")
             {
-                // Disable LazyFollow component if it exists
-                LazyFollow lazyFollow = menuCanvas.GetComponent<LazyFollow>();
-                if (lazyFollow != null)
-                {
-                    lazyFollow.enabled = false;
-                }
+                // // Setup DualTargetLazyFollow for menuCanvas
+                // SetupDualTargetLazyFollow(menuCanvas.gameObject, menuOffset);
+
+                // // Setup DualTargetLazyFollow for recorderToggle
+                // if (recorderToggle != null) SetupDualTargetLazyFollow(recorderToggle, recorderToggleOffset);
+
+                // // Setup DualTargetLazyFollow for objectTrackingToggle
+                // if (objectTrackingToggle != null) SetupDualTargetLazyFollow(objectTrackingToggle, objectTrackingToggleOffset);
 
                 // Unsubscribe from toggle events instead of disabling the component
                 UnsubscribeFromToggleEvents();
                 spatialUIToggle.enableInteraction = false;
-                if (labelToggle != null) labelToggle.enableInteraction = false;
+                if (labelToggle != null) 
+                {
+                    labelToggle.enableInteraction = false;
+                    labelToggle.gameObject.SetActive(false);
+                }
 
                 // Deactivate first two children
                 if (menuCanvas.childCount >= 2)
@@ -945,26 +1007,6 @@ public class SphereToggleScript : MonoBehaviour
                     menuCanvas.GetChild(0).gameObject.SetActive(false);
                     menuCanvas.GetChild(1).gameObject.SetActive(false);
                 }
-
-                // Set the Menu canvas as a child of our sphere
-                menuCanvas.SetParent(transform);
-                menuCanvas.localPosition = menuOffset;
-
-                // Calculate rotation adjustments with dampening
-                float dampeningFactor = 0.3f;
-                float dampeningFactor2 = 0.1f;
-                
-                // First apply yaw (Y-axis rotation)
-                float horizontalAngle = Mathf.Atan2(menuOffset.x, -menuOffset.z) * Mathf.Rad2Deg * dampeningFactor;
-                
-                // Calculate vertical tilt
-                float verticalAngle = -Mathf.Atan2(menuOffset.y, Mathf.Sqrt(menuOffset.x * menuOffset.x + menuOffset.z * menuOffset.z)) * Mathf.Rad2Deg * dampeningFactor;
-
-                // Calculate compensating Z-rotation based on the offset position
-                float zCompensation = -Mathf.Atan2(menuOffset.x, menuOffset.y) * Mathf.Rad2Deg * dampeningFactor2;
-
-                // Apply all rotations with the Z-compensation
-                menuCanvas.localRotation = Quaternion.Euler(verticalAngle, horizontalAngle, zCompensation);
 
                 // Update state and trigger effects
                 isOn = true;
@@ -985,20 +1027,23 @@ public class SphereToggleScript : MonoBehaviour
             Transform menuCanvas = InfoPanel.transform.parent;
             if (menuCanvas != null && menuCanvas.name == "Menu")
             {
-                // Reset the Menu canvas parent to its original parent
-                menuCanvas.SetParent(null);
+                // // Cleanup DualTargetLazyFollow for menuCanvas
+                // CleanupDualTargetLazyFollow(menuCanvas.gameObject);
 
-                // Re-enable LazyFollow component if it exists
-                LazyFollow lazyFollow = menuCanvas.GetComponent<LazyFollow>();
-                if (lazyFollow != null)
-                {
-                    lazyFollow.enabled = true;
-                }
+                // // Cleanup DualTargetLazyFollow for recorderToggle
+                // if (recorderToggle != null) CleanupDualTargetLazyFollow(recorderToggle);
+
+                // // Cleanup DualTargetLazyFollow for objectTrackingToggle
+                // if (objectTrackingToggle != null) CleanupDualTargetLazyFollow(objectTrackingToggle);
 
                 // Resubscribe to toggle events
                 SubscribeToToggleEvents();
                 spatialUIToggle.enableInteraction = true;
-                if (labelToggle != null) labelToggle.enableInteraction = true;
+                if (labelToggle != null) 
+                {
+                    labelToggle.enableInteraction = true;
+                    labelToggle.gameObject.SetActive(true);
+                }
 
                 // Reactivate first two children
                 if (menuCanvas.childCount >= 2)
@@ -1058,6 +1103,7 @@ public class SphereToggleScript : MonoBehaviour
             if (!baselineModeController.baselineMode) InfoPanel.SetActive(true);
 
             UpdateRecorderToggle(true);
+            UpdateObjectTrackingToggle(true);
 
             // Set the current active anchor for the HandGrabTrigger system
             SceneObjectAnchor thisAnchor = SceneObjectManager.Instance.GetAnchorByGameObject(this.gameObject);
@@ -1081,7 +1127,7 @@ public class SphereToggleScript : MonoBehaviour
                     }
 
                     menuCanvas.SetParent(transform);
-                    menuCanvas.localPosition = Vector3.zero;
+                    menuCanvas.localPosition = menuOffset;
                     
                     // Store the original anchoredPosition of the RectTransform (not localPosition)
                     RectTransform infoPanelRect = InfoPanel.GetComponent<RectTransform>();
@@ -1153,6 +1199,7 @@ public class SphereToggleScript : MonoBehaviour
             if (!baselineModeController.baselineMode) InfoPanel.SetActive(false);
             answerPanel.SetActive(false);
             UpdateRecorderToggle(false);
+            UpdateObjectTrackingToggle(false);
 
             // Clear the current active anchor when toggle is turned off
             HandGrabTrigger.SetCurrentActiveAnchor(null);

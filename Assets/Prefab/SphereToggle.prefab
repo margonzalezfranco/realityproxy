@@ -16,6 +16,7 @@ GameObject:
   - component: {fileID: 5702397958615809862}
   - component: {fileID: 3910136234158516406}
   - component: {fileID: 6723153283777977592}
+  - component: {fileID: -4739414126409212889}
   m_Layer: 0
   m_Name: SphereToggle
   m_TagString: Untagged
@@ -298,15 +299,45 @@ MonoBehaviour:
   relationLineManager: {fileID: 0}
   sceneObjManager: {fileID: 0}
   sceneContextManager: {fileID: 0}
-  menuOffset: {x: -6.5, y: 1, z: -1.5}
-  menuOffsetForStatic: {x: 0, y: 300, z: -128}
+  menuOffset: {x: 0, y: 1, z: 0}
+  menuOffsetForStatic: {x: 0, y: 300, z: 0}
   descriptionPanel: {fileID: 0}
   descriptionText: {fileID: 0}
   inspectionUpdateInterval: 1
   recorder: {fileID: 0}
+  baselineModeController: {fileID: 0}
   handTracking: {fileID: 0}
   pointingPlane: {fileID: 0}
   pointingPlaneText: {fileID: 0}
   planeUpOffset: 0.02
   recorderToggle: {fileID: 0}
-  recorderToggleOffset: {x: 0, y: 0.1, z: 0}
+  objectTrackingToggle: {fileID: 0}
+  recorderToggleOffset: {x: 0, y: 0.5, z: -1.26}
+  objectTrackingToggleOffset: {x: 0, y: 0.12, z: -0.52}
+--- !u!114 &-4739414126409212889
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 331860115575953182}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1a2d7d89889b4d94fa1f8d6fe49788e8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  m_Target: {fileID: 0}
+  m_TargetOffset: {x: 0, y: 0, z: 0.5}
+  m_FollowInLocalSpace: 0
+  m_ApplyTargetInLocalSpace: 0
+  m_MovementSpeed: 6
+  m_MovementSpeedVariancePercentage: 0.25
+  m_SnapOnEnable: 1
+  m_PositionFollowMode: 0
+  m_MinDistanceAllowed: 0.01
+  m_MaxDistanceAllowed: 0.3
+  m_TimeUntilThresholdReachesMaxDistance: 3
+  m_RotationFollowMode: 1
+  m_MinAngleAllowed: 0.1
+  m_MaxAngleAllowed: 5
+  m_TimeUntilThresholdReachesMaxAngle: 3

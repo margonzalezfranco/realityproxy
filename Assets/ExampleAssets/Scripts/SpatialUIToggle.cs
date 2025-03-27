@@ -19,7 +19,7 @@ namespace PolySpatial.Template
         public string textOn;
 
         private string m_DefaultText;
-        bool m_Active;
+        public bool m_Active;
 
         [SerializeField]
         bool textOn_Useful = false;
@@ -60,7 +60,29 @@ namespace PolySpatial.Template
             base.PressEnd();
             m_Active = !m_Active;
             m_ToggleChanged.Invoke(m_Active);
+            ChangeToggleAppearance();
+        }
 
+        public void PassiveToggleWithoutInvoke()
+        {
+            m_Active = !m_Active;
+            ChangeToggleAppearance();
+        }
+
+        public void PassiveToggleWithoutInvokeOn()
+        {
+            m_Active = true;
+            ChangeToggleAppearance();
+        }
+
+        public void PassiveToggleWithoutInvokeOff()
+        {
+            m_Active = false;
+            ChangeToggleAppearance();
+        }        
+
+        private void ChangeToggleAppearance()
+        {
             if (m_SelectedMaterial != null && m_UnselectedMaterial != null)
             {
                 m_ToggleBackground.material = m_Active ? m_SelectedMaterial : m_UnselectedMaterial;
@@ -74,7 +96,7 @@ namespace PolySpatial.Template
             if (m_Text != null && textOn_Useful)
             {
                 m_Text.text = m_Active ? textOn : m_DefaultText;
-            }
+            }        
         }
     }
 }

@@ -3,6 +3,7 @@ using System.Collections;
 using UnityEngine.XR.Hands;  // Add this for XRHand
 using Unity.XR.CoreUtils;    // Add this if needed for other XR utilities
 using UnityEngine.XR.Interaction.Toolkit.UI;
+using PolySpatial.Template;
 
 /// <summary>
 /// Put this script on each spawned hand (Left/Right).
@@ -64,6 +65,18 @@ public class HandGrabTrigger : MonoBehaviour
 
     // Add a new field to reference the currently active (toggled on) anchor
     private static SceneObjectAnchor _currentActiveAnchor = null;
+
+    [SerializeField]
+    private GameObject objectTrackingToggle;
+
+    [SerializeField]
+    private SpatialUIToggle objectTrackingUIToggle;
+    
+    // Add flag to track if the current grab is manual
+    private bool _isManualGrab = false;
+    
+    // Add flag to prevent auto-grabbing after manual release
+    private bool _preventAutoGrabAfterManualRelease = false;
     
     // Add a method to set the currently active anchor when a toggle is turned on
     public static void SetCurrentActiveAnchor(SceneObjectAnchor anchor)
@@ -72,6 +85,13 @@ public class HandGrabTrigger : MonoBehaviour
         Debug.Log($"Set current active anchor to: {(anchor != null ? anchor.label : "null")}");
     }
     
+    // Add method to allow toggle to reset the prevent auto grab flag
+    public void AllowAutoGrab()
+    {
+        _preventAutoGrabAfterManualRelease = false;
+        Debug.Log($"HandGrabTrigger: {handType} hand allowing auto grab again");
+    }
+
     // Add a method to check if there's an active anchor
     public static bool HasActiveAnchor()
     {
@@ -97,6 +117,9 @@ public class HandGrabTrigger : MonoBehaviour
         InitializeGrabbingDetector();
         
         Debug.Log($"HandGrabTrigger initialized on {handType} hand: {gameObject.name}");
+
+        if (objectTrackingToggle == null) objectTrackingToggle = GameObject.Find("ObjectTrackingToggle");
+        if (objectTrackingUIToggle == null) objectTrackingUIToggle = objectTrackingToggle.GetComponent<SpatialUIToggle>();
     }
     
     private void AutoDetectHandType()
@@ -159,7 +182,7 @@ public class HandGrabTrigger : MonoBehaviour
         // Release any grabbed anchor when destroyed
         if (_grabbedAnchor != null)
         {
-            ReleaseAnchor();
+            ReleaseAnchor(true); // Use manual release when destroying component
         }
         
         // Unsubscribe from events when destroyed
@@ -210,7 +233,7 @@ public class HandGrabTrigger : MonoBehaviour
             else
             {
                 // Release the current anchor before grabbing a new one
-                ReleaseAnchor();
+                ReleaseAnchor(false); // Normal release for automatic Gemini detection
             }
         }
         
@@ -254,30 +277,10 @@ public class HandGrabTrigger : MonoBehaviour
             // Grab the anchor
             _grabbedAnchor = anchorToGrab;
             _allGrabbedAnchors[anchorToGrab] = this;
-            
-            // Add a lazy follow component to make the anchor follow the hand
+
+            _grabbedAnchor.sphereObj.GetComponent<LazyFollow>().enabled = false;
             DualTargetLazyFollow lazyFollow = _grabbedAnchor.sphereObj.AddComponent<DualTargetLazyFollow>();
-            lazyFollow.positionTarget = transform;
-            lazyFollow.rotationTarget = Camera.main.transform;
-            
-            // Configure following parameters
-            lazyFollow.movementSpeed = 12f; // Adjust this value as needed
-            lazyFollow.movementSpeedVariancePercentage = 0.25f;
-            lazyFollow.minDistanceAllowed = 0.02f;
-            lazyFollow.maxDistanceAllowed = 0.1f;
-            lazyFollow.timeUntilThresholdReachesMaxDistance = 0.5f;
-            
-            // Configure rotation parameters
-            lazyFollow.minAngleAllowed = 2f;
-            lazyFollow.maxAngleAllowed = 10f;
-            lazyFollow.timeUntilThresholdReachesMaxAngle = 0.5f;
-            
-            // Set the follow modes
-            lazyFollow.positionFollowMode = LazyFollow.PositionFollowMode.Follow;
-            lazyFollow.rotationFollowMode = LazyFollow.RotationFollowMode.LookAt;
-            
-            // Set the offset
-            lazyFollow.targetOffset = grabOffset;
+            ConfigureDualTargetLazyFollow(lazyFollow);
 
             // Initialize labelObj when we grab an anchor
             labelObj = _grabbedAnchor.sphereObj.transform.GetComponentInChildren<LookAtCamera>()?.gameObject;
@@ -303,6 +306,8 @@ public class HandGrabTrigger : MonoBehaviour
             // Invoke the grab event
             OnAnchorGrabbed?.Invoke(_grabbedAnchor);
 
+            if (objectTrackingUIToggle != null) objectTrackingUIToggle.PassiveToggleWithoutInvokeOn();
+
             Debug.Log($"HandGrabTrigger: {handType} hand grabbed active anchor '{anchorToGrab.label}' using Gemini detection");
         }
         else
@@ -310,6 +315,116 @@ public class HandGrabTrigger : MonoBehaviour
             // No active anchor to grab
             Debug.Log("No current active anchor to grab. Make sure a toggle is in ON state.");
         }
+    }
+
+    public void ManualGrabAnchor()
+    {
+        // Check if there's an active anchor to grab
+        if (_currentActiveAnchor == null)
+        {
+            Debug.Log("No current active anchor to grab. Make sure a toggle is in ON state.");
+            return;
+        }
+
+        // Reset the auto-grab prevention flag since this is an explicit manual grab
+        _preventAutoGrabAfterManualRelease = false;
+
+        // Check if we're already holding something
+        if (_grabbedAnchor != null)
+        {
+            if (_grabbedAnchor == _currentActiveAnchor)
+            {
+                // Already holding the correct anchor, nothing to do
+                return;
+            }
+            else
+            {
+                // Release the current anchor before grabbing a new one
+                // Use manual release to bypass Gemini checks
+                ReleaseAnchor(true);
+            }
+        }
+
+        // Check if onlyAllowLeftHandGrab is enabled
+        if (grabbingDetector != null && grabbingDetector.onlyAllowLeftHandGrab && handType != "left")
+        {
+            Debug.Log($"HandGrabTrigger: Right hand cannot manually grab because onlyAllowLeftHandGrab is enabled");
+            return;
+        }
+
+        // Check if this anchor is already being grabbed by another hand
+        if (_allGrabbedAnchors.TryGetValue(_currentActiveAnchor, out HandGrabTrigger otherHand))
+        {
+            if (otherHand != this)
+            {
+                Debug.Log($"HandGrabTrigger: {handType} hand cannot grab anchor '{_currentActiveAnchor.label}' because it's already grabbed by {otherHand.handType} hand");
+                return;
+            }
+            // If it's already grabbed by this hand, nothing to do
+            return;
+        }
+
+        // Grab the anchor
+        _grabbedAnchor = _currentActiveAnchor;
+        _allGrabbedAnchors[_currentActiveAnchor] = this;
+        
+        // Set the manual grab flag to true
+        _isManualGrab = true;
+
+        // Disable the original lazy follow and add our dual target lazy follow
+        _grabbedAnchor.sphereObj.GetComponent<LazyFollow>().enabled = false;
+        DualTargetLazyFollow lazyFollow = _grabbedAnchor.sphereObj.AddComponent<DualTargetLazyFollow>();
+        ConfigureDualTargetLazyFollow(lazyFollow);
+
+        // Hide the label and sphere mesh
+        labelObj = _grabbedAnchor.sphereObj.transform.GetComponentInChildren<LookAtCamera>()?.gameObject;
+        if (labelObj != null) labelObj.SetActive(false);
+
+        sphereMeshRenderer = _grabbedAnchor.sphereObj.GetComponent<MeshRenderer>();
+        if (sphereMeshRenderer != null)
+        {
+            sphereMeshRenderer.enabled = false;
+        }
+
+        // Generate twin object
+        if (objectMeshGenerator != null)
+        {
+            StartCoroutine(objectMeshGenerator.EstimateAndGenerateObject(null, (generatedObj) => {
+                _twinObject = generatedObj;
+                _twinObject.transform.SetParent(transform.parent);
+                UpdateTwinPosition();
+            }));
+        }
+
+        // Invoke the grab event
+        OnAnchorGrabbed?.Invoke(_grabbedAnchor);
+
+        Debug.Log($"HandGrabTrigger: {handType} hand manually grabbed active anchor '{_currentActiveAnchor.label}'");
+    }
+
+    private void ConfigureDualTargetLazyFollow(DualTargetLazyFollow lazyFollow)
+    {
+        lazyFollow.positionTarget = transform;
+        lazyFollow.rotationTarget = Camera.main.transform;
+        
+        // Configure following parameters
+        lazyFollow.movementSpeed = 12f; // Adjust this value as needed
+        lazyFollow.movementSpeedVariancePercentage = 0.25f;
+        lazyFollow.minDistanceAllowed = 0.02f;
+        lazyFollow.maxDistanceAllowed = 0.1f;
+        lazyFollow.timeUntilThresholdReachesMaxDistance = 0.5f;
+        
+        // Configure rotation parameters
+        lazyFollow.minAngleAllowed = 2f;
+        lazyFollow.maxAngleAllowed = 10f;
+        lazyFollow.timeUntilThresholdReachesMaxAngle = 0.5f;
+        
+        // Set the follow modes
+        lazyFollow.positionFollowMode = LazyFollow.PositionFollowMode.Follow;
+        lazyFollow.rotationFollowMode = LazyFollow.RotationFollowMode.LookAt;
+        
+        // Set the offset
+        lazyFollow.targetOffset = grabOffset;
     }
 
     // New method to handle Gemini grabbing updates (when the label changes)
@@ -346,7 +461,7 @@ public class HandGrabTrigger : MonoBehaviour
                 Debug.Log($"Gemini updated {handType} hand grabbing from '{_grabbedAnchor.label}' to '{newAnchor.label}'");
                 
                 // Release the current anchor
-                ReleaseAnchor();
+                ReleaseAnchor(false); // Normal release for automatic Gemini detection
                 
                 // Grab the new anchor
                 OnGeminiGrabbingDetected(grabbingInfo);
@@ -361,7 +476,7 @@ public class HandGrabTrigger : MonoBehaviour
         if (_grabbedAnchor != null)
         {
             Debug.Log($"HandGrabTrigger: {handType} hand releasing anchor '{_grabbedAnchor.label}' because Gemini explicitly detected release event");
-            ReleaseAnchor();
+            ReleaseAnchor(true); // Use manual release for explicit Gemini release detection
         }
     }
 
@@ -443,16 +558,18 @@ public class HandGrabTrigger : MonoBehaviour
             }
 
             // ONLY release if Gemini explicitly detects we're not grabbing anymore
-            if (currentGrabInfo != null && !currentGrabInfo.isGrabbing)
+            // BUT ignore Gemini's detection if this is a manual grab
+            if (!_isManualGrab && currentGrabInfo != null && !currentGrabInfo.isGrabbing)
             {
                 // Gemini explicitly detected we're not grabbing anymore => release
                 Debug.Log($"HandGrabTrigger: {handType} hand releasing anchor '{_grabbedAnchor.label}' because Gemini detected hand is no longer grabbing");
-                ReleaseAnchor();
+                ReleaseAnchor(true); // Use manual release for explicit Gemini release detection
                 _justReleased = true;
             }
         }
         // If we're not holding an anchor but Gemini thinks we should be grabbing
-        else if (currentGrabInfo != null && currentGrabInfo.isGrabbing)
+        // AND we haven't prevented auto-grabbing due to a manual release
+        else if (currentGrabInfo != null && currentGrabInfo.isGrabbing && !_preventAutoGrabAfterManualRelease)
         {
             // Check if this is the correct hand (accounting for onlyAllowLeftHandGrab setting)
             bool isCorrectHand = currentGrabInfo.grabbingHand == handType;
@@ -514,7 +631,10 @@ public class HandGrabTrigger : MonoBehaviour
                             
                             // Invoke the grab event
                             OnAnchorGrabbed?.Invoke(_grabbedAnchor);
-                            
+
+                            // Set the toggle to active
+                            if (objectTrackingUIToggle != null) objectTrackingUIToggle.PassiveToggleWithoutInvokeOn();
+                                                
                             Debug.Log($"HandGrabTrigger: {handType} hand grabbed active anchor '{anchorToGrab.label}' based on Gemini detection");
                         }
                     }
@@ -551,20 +671,28 @@ public class HandGrabTrigger : MonoBehaviour
     /// <summary>
     /// Releases the currently held anchor, stopping it from following the hand.
     /// </summary>
-    private void ReleaseAnchor()
+    public void ReleaseAnchor(bool isManualRelease = false)
     {
         if (_grabbedAnchor == null)
             return;
 
         // Safety check: Don't release if Gemini still thinks we're grabbing
+        // Skip this check if it's a manual release from the toggle
         GrabbingInfo currentGrabInfo = grabbingDetector?.GetCurrentGrabbingInfo();
-        if (currentGrabInfo != null && currentGrabInfo.isGrabbing && currentGrabInfo.grabbingHand == handType)
+        if (!isManualRelease && currentGrabInfo != null && currentGrabInfo.isGrabbing && currentGrabInfo.grabbingHand == handType)
         {
             Debug.Log($"HandGrabTrigger: Prevented release of anchor '{_grabbedAnchor.label}' because Gemini still thinks {handType} hand is grabbing");
             return;
         }
 
-        Debug.Log($"HandGrabTrigger: {handType} hand released anchor '{_grabbedAnchor.label}'");
+        Debug.Log($"HandGrabTrigger: {handType} hand released anchor '{_grabbedAnchor.label}'{(isManualRelease ? " (manual release)" : "")}");
+
+        // If this is a manual release, prevent auto grabbing until explicitly allowed
+        if (isManualRelease)
+        {
+            _preventAutoGrabAfterManualRelease = true;
+            Debug.Log($"HandGrabTrigger: Preventing auto-grab after manual release");
+        }
 
         // Remove from the static dictionary of grabbed anchors
         if (_allGrabbedAnchors.ContainsKey(_grabbedAnchor))
@@ -583,6 +711,9 @@ public class HandGrabTrigger : MonoBehaviour
 
         // Invoke the release event before changing references
         OnAnchorReleased?.Invoke(_grabbedAnchor);
+
+        // Set the toggle to inactive
+        if (objectTrackingUIToggle != null) objectTrackingUIToggle.PassiveToggleWithoutInvokeOff();
 
         // Enable the mesh renderer
         if (sphereMeshRenderer != null)
@@ -616,6 +747,9 @@ public class HandGrabTrigger : MonoBehaviour
             Destroy(_twinObject);
             _twinObject = null;
         }
+        
+        // Reset the manual grab flag
+        _isManualGrab = false;
         
         // Reset state
         _grabbedAnchor = null;

@@ -204,9 +204,9 @@ public class SceneObjectManager : MonoBehaviour
             lblObj.transform.localScale = labelPrefab.transform.localScale / sphereObj.transform.localScale.x;
             lblObj.GetComponent<SpatialUI>().UpdateReferenceScale();
             
-            // Add a LookAt component to make the label face the camera
-            var lookAt = lblObj.AddComponent<LookAtCamera>();
-            lookAt.targetCamera = xrCamera;
+            // // Add a LookAt component to make the label face the camera
+            // var lookAt = lblObj.AddComponent<LookAtCamera>();
+            // lookAt.targetCamera = xrCamera;
             
             geminiRaycast.spawnedObjects.Add(lblObj);
 
