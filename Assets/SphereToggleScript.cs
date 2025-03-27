@@ -1256,6 +1256,13 @@ public class SphereToggleScript : MonoBehaviour
                 relationLineManager.ClearAllLines();
             }
 
+            // Ensure the anchor's lazy follow is enabled when tracking is turned off
+            var anchorLazyFollow = this.GetComponent<LazyFollow>();
+            if (anchorLazyFollow != null)
+            {
+                anchorLazyFollow.enabled = true;
+            }
+
             var childLazyFollow = this.GetComponentInChildren<LazyFollow>(); // the lazyFollow on the label object
             if (childLazyFollow != null)
             {
