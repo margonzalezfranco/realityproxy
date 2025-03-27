@@ -1492,4 +1492,38 @@ public class SphereToggleScript : MonoBehaviour
         // Show the final relationship with proper text
         relationLineManager.ShowRelationships(myAnchor, relationshipDict, allAnchors);
     }
+
+    /// <summary>
+    /// Clears relationship lines specifically with the object of the given label.
+    /// Called when objects move far apart and the relationship should be removed.
+    /// </summary>
+    public void ClearSpecificRelationship(string targetObjectLabel)
+    {
+        if (relationLineManager == null)
+        {
+            Debug.LogWarning("Cannot clear relationship: No relationLineManager reference");
+            return;
+        }
+        
+        // Get anchor for this sphere
+        var myAnchor = sceneObjManager.GetAnchorByGameObject(this.gameObject);
+        if (myAnchor == null)
+        {
+            Debug.LogWarning($"Cannot clear relationship: No anchor found for this sphere");
+            return;
+        }
+        
+        // Get anchor for the target object
+        var targetAnchor = sceneObjManager.GetAnchorByLabel(targetObjectLabel);
+        if (targetAnchor == null)
+        {
+            Debug.LogWarning($"Cannot clear relationship: No anchor found for '{targetObjectLabel}'");
+            return;
+        }
+        
+        // Clear just the line between these two anchors
+        relationLineManager.ClearSpecificLine(myAnchor, targetAnchor);
+        
+        Debug.Log($"Cleared relationship line between '{labelUnderSphere.text}' and '{targetObjectLabel}'");
+    }
 }

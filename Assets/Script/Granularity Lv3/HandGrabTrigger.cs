@@ -101,7 +101,10 @@ public class HandGrabTrigger : MonoBehaviour
 
     [Header("Proximity Relationship Detection")]
     [Tooltip("Distance threshold for detecting proximity to other anchors")]
-    public float proximityThreshold = 0.15f; // 15cm default
+    public float proximityThreshold = 0.3f; // 30cm default
+
+    [Tooltip("Distance threshold for explicitly removing relationship lines (should be larger than proximityThreshold)")]
+    public float deselectThreshold = 0.5f; // 50cm default
 
     [Tooltip("Minimum time between proximity relationship checks")]
     public float proximityCheckInterval = 1.0f; // 1 second default
@@ -893,6 +896,7 @@ public class HandGrabTrigger : MonoBehaviour
         
         // Make a copy of the recently highlighted list to avoid modification during iteration
         HashSet<SceneObjectAnchor> stillHighlighted = new HashSet<SceneObjectAnchor>();
+        HashSet<SceneObjectAnchor> toDeselect = new HashSet<SceneObjectAnchor>(recentlyHighlighted);
         
         // Check distance to each other anchor
         foreach (var otherAnchor in allAnchors)
@@ -914,12 +918,14 @@ public class HandGrabTrigger : MonoBehaviour
                 {
                     // Keep track that this anchor is still within range
                     stillHighlighted.Add(otherAnchor);
+                    toDeselect.Remove(otherAnchor);
                     continue;
                 }
                 
                 // Add to recently highlighted set
                 recentlyHighlighted.Add(otherAnchor);
                 stillHighlighted.Add(otherAnchor);
+                toDeselect.Remove(otherAnchor);
                 
                 Debug.Log($"Proximity detected between '{grabbedLabel}' and '{otherAnchor.label}' (distance: {distance}m)");
                 
@@ -947,12 +953,43 @@ public class HandGrabTrigger : MonoBehaviour
                 // and to prevent multiple concurrent API calls
                 break;
             }
-            else if (recentlyHighlighted.Contains(otherAnchor))
+            else if (distance > deselectThreshold && recentlyHighlighted.Contains(otherAnchor))
             {
-                // This anchor was previously highlighted but is now out of range
+                // This anchor was previously highlighted but is now well outside the range
                 // Reset its appearance immediately
                 ResetAnchorHighlight(otherAnchor);
-                Debug.Log($"Anchor '{otherAnchor.label}' moved out of proximity range, resetting highlight");
+                Debug.Log($"Anchor '{otherAnchor.label}' moved far outside proximity range ({distance}m), clearing relationship");
+                
+                // Clear the relationship line explicitly
+                if (sphereToggleScript == null)
+                {
+                    sphereToggleScript = _grabbedAnchor.sphereObj.GetComponent<SphereToggleScript>();
+                }
+                
+                if (sphereToggleScript != null && sphereToggleScript.relationLineManager != null)
+                {
+                    // Clear relationship specifically with this anchor
+                    sphereToggleScript.ClearSpecificRelationship(otherAnchor.label);
+                }
+            }
+        }
+        
+        // For any anchors that are still in the highlighted set but not in stillHighlighted,
+        // they must have moved out of range and need to be deselected
+        foreach (var anchorToDeselect in toDeselect)
+        {
+            ResetAnchorHighlight(anchorToDeselect);
+            
+            // Clear the relationship line explicitly
+            if (sphereToggleScript == null)
+            {
+                sphereToggleScript = _grabbedAnchor.sphereObj.GetComponent<SphereToggleScript>();
+            }
+            
+            if (sphereToggleScript != null && sphereToggleScript.relationLineManager != null)
+            {
+                // Clear relationship specifically with this anchor
+                sphereToggleScript.ClearSpecificRelationship(anchorToDeselect.label);
             }
         }
         

@@ -104,6 +104,49 @@ public class RelationshipLineManager : MonoBehaviour
         activeLines.Clear();
     }
 
+    /// <summary>
+    /// Clears only the relationship line between two specific anchors.
+    /// </summary>
+    /// <param name="sourceAnchor">The source anchor of the line</param>
+    /// <param name="targetAnchor">The target anchor of the line</param>
+    /// <returns>True if the line was found and removed, false otherwise</returns>
+    public bool ClearSpecificLine(SceneObjectAnchor sourceAnchor, SceneObjectAnchor targetAnchor)
+    {
+        if (sourceAnchor == null || targetAnchor == null)
+        {
+            Debug.LogWarning("Cannot clear specific line: Invalid anchor reference");
+            return false;
+        }
+
+        // Find the line connecting these two anchors
+        LineConnection lineToRemove = null;
+        foreach (var connection in activeLines)
+        {
+            if ((connection.source == sourceAnchor && connection.target == targetAnchor) ||
+                (connection.source == targetAnchor && connection.target == sourceAnchor))
+            {
+                lineToRemove = connection;
+                break;
+            }
+        }
+        
+        // If found, remove it
+        if (lineToRemove != null)
+        {
+            if (lineToRemove.lineRenderer != null)
+            {
+                Destroy(lineToRemove.lineRenderer.gameObject);
+            }
+            activeLines.Remove(lineToRemove);
+            Debug.Log($"Cleared relationship line between '{sourceAnchor.label}' and '{targetAnchor.label}'");
+            return true;
+        }
+        
+        // Line not found
+        Debug.Log($"No active relationship line found between '{sourceAnchor.label}' and '{targetAnchor.label}'");
+        return false;
+    }
+
     private class LineConnection
     {
         public LineRenderer lineRenderer;
