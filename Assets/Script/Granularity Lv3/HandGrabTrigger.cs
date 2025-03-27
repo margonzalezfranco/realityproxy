@@ -1008,19 +1008,29 @@ public class HandGrabTrigger : MonoBehaviour
             return;
         }
         
-        // Check if the current color is green (our highlight color)
-        bool isCurrentlyGreen = false;
+        // Define the highlight color we're checking for (hex: #3089CF)
+        Color highlightColor = new Color(0.188f, 0.537f, 0.812f, 1.0f);
+        
+        // Check if the current color is our highlight color
+        bool isCurrentlyHighlighted = false;
         foreach (Material mat in renderer.materials)
         {
-            if (mat.HasProperty("_Color") && mat.GetColor("_Color") == Color.green)
+            if (mat.HasProperty("_Color"))
             {
-                isCurrentlyGreen = true;
-                break;
+                Color currentColor = mat.GetColor("_Color");
+                // Check if colors are approximately equal (floating point comparison)
+                if (Mathf.Approximately(currentColor.r, highlightColor.r) &&
+                    Mathf.Approximately(currentColor.g, highlightColor.g) &&
+                    Mathf.Approximately(currentColor.b, highlightColor.b))
+                {
+                    isCurrentlyHighlighted = true;
+                    break;
+                }
             }
         }
         
         // Only reset if it's currently highlighted
-        if (isCurrentlyGreen || proximityHighlightMaterial != null)
+        if (isCurrentlyHighlighted || proximityHighlightMaterial != null)
         {
             // Reset to original material
             Material defaultMaterial = sphereMaterial;
@@ -1040,7 +1050,7 @@ public class HandGrabTrigger : MonoBehaviour
                 }
             }
             
-            Debug.Log($"Reset highlight on anchor '{anchor.label}' from green to original material");
+            Debug.Log($"Reset highlight on anchor '{anchor.label}' from highlight color to original material");
         }
     }
 
@@ -1058,6 +1068,14 @@ public class HandGrabTrigger : MonoBehaviour
         
         Material[] originalMaterials = renderer.materials;
         
+        // Define highlight color (hex: #3089CF)
+        Color highlightColor = new Color(
+            r: 0.188f,  // 48/255
+            g: 0.537f,  // 137/255
+            b: 0.812f,  // 207/255
+            a: 1.0f
+        );
+        
         // Apply highlight material if available
         if (proximityHighlightMaterial != null)
         {
@@ -1070,12 +1088,12 @@ public class HandGrabTrigger : MonoBehaviour
         }
         else
         {
-            // If no highlight material provided, modify the existing material's color to green
+            // If no highlight material provided, modify the existing material's color
             foreach (Material mat in renderer.materials)
             {
                 if (mat.HasProperty("_Color"))
                 {
-                    mat.SetColor("_Color", Color.green);
+                    mat.SetColor("_Color", highlightColor);
                 }
             }
         }

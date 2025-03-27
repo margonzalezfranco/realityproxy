@@ -27,6 +27,14 @@ public class RelationshipLineManager : MonoBehaviour
     {
         ClearAllLines();
 
+        // Define relationship line color (hex: #3089CF)
+        Color lineColor = new Color(
+            r: 0.188f,  // 48/255
+            g: 0.537f,  // 137/255
+            b: 0.812f,  // 207/255
+            a: 0.6f     // 60% opacity for better visibility
+        );
+
         // Loop over each key in 'relationships'
         // Key = the label of the related item
         // Value = short relationship descriptor
@@ -55,8 +63,7 @@ public class RelationshipLineManager : MonoBehaviour
             lr.endWidth = lineWidth;
             lr.material = lineMaterial;
             lr.useWorldSpace = true;
-            lr.material.color = Color.cyan;
-            lr.material.color = new Color(lr.material.color.r, lr.material.color.g, lr.material.color.b, 0.2f);
+            lr.material.color = lineColor;
 
             GameObject labelObj = null;
             if (labelPrefab != null && !string.IsNullOrEmpty(relationText))
