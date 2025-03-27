@@ -125,6 +125,9 @@ public class SphereToggleScript : MonoBehaviour
     [Tooltip("Offset distance above the finger point")]
     public float planeUpOffset = 0.02f;
 
+    [Tooltip("Maximum distance between hands to activate pointing detection (in meters)")]
+    public float maxHandProximityDistance = 0.2f;  // 20cm default
+
     private Vector3 relativePosition; // Store relative position to holding hand
 
     public GameObject recorderToggle;
@@ -406,6 +409,21 @@ public class SphereToggleScript : MonoBehaviour
     {
         while (true)
         {
+            // Check if hands are close enough to enable pointing detection
+            bool handsInProximity = CheckHandsProximity();
+            
+            if (!handsInProximity)
+            {
+                // If hands are too far apart, disable pointing and wait
+                if (currentlyPointing)
+                {
+                    currentlyPointing = false;
+                    OnPointingStateChanged?.Invoke(false);
+                }
+                yield return new WaitForSeconds(0.5f); // Check less frequently when hands are far apart
+                continue;
+            }
+            
             // 1) Capture the current frame
             Texture2D frameTex = CaptureFrame(cameraRenderTex);
             string base64Image = ConvertTextureToBase64(frameTex);
@@ -502,8 +520,49 @@ public class SphereToggleScript : MonoBehaviour
         }
     }
 
+    // New method to check if hands are within proximity threshold
+    private bool CheckHandsProximity()
+    {
+        if (handTracking == null) return false;
+        
+        var handSubsystems = new List<XRHandSubsystem>();
+        SubsystemManager.GetSubsystems(handSubsystems);
+        
+        if (handSubsystems.Count == 0) return false;
+        
+        var handSubsystem = handSubsystems[0];
+        
+        // Get positions of both hands
+        bool leftHandTracked = handSubsystem.leftHand.isTracked && 
+                               handSubsystem.leftHand.GetJoint(XRHandJointID.Wrist).TryGetPose(out Pose leftPose);
+        
+        bool rightHandTracked = handSubsystem.rightHand.isTracked && 
+                                handSubsystem.rightHand.GetJoint(XRHandJointID.Wrist).TryGetPose(out Pose rightPose);
+        
+        // Both hands must be tracked
+        if (!leftHandTracked || !rightHandTracked) return false;
+        
+        // Calculate distance between hand wrists
+        float distance = Vector3.Distance(leftPose.position, rightPose.position);
+        
+        // Debug.Log($"Hand distance: {distance}m, threshold: {maxHandProximityDistance}m");
+        
+        // Return true if hands are within the proximity threshold
+        return distance <= maxHandProximityDistance;
+    }
+
     private void UpdatePointingVisualization()
     {
+        // First check if hands are in proximity - early exit if not
+        if (!CheckHandsProximity())
+        {
+            if (pointingPlane != null && pointingPlane.activeSelf)
+            {
+                pointingPlane.SetActive(false);
+            }
+            return;
+        }
+        
         if (handTracking != null)
         {
             var handSubsystems = new List<XRHandSubsystem>();
