@@ -109,6 +109,9 @@ public class HandGrabTrigger : MonoBehaviour
     [Tooltip("Material to use for proximity highlight effect")]
     public Material proximityHighlightMaterial;
 
+    [Tooltip("Default material to restore when highlight ends")]
+    public Material sphereMaterial;
+
     [Tooltip("Duration of the highlight effect in seconds")]
     public float highlightDuration = 0.5f;
 
@@ -869,6 +872,9 @@ public class HandGrabTrigger : MonoBehaviour
         Vector3 grabbedAnchorPos = _grabbedAnchor.sphereObj.transform.position;
         string grabbedLabel = _grabbedAnchor.label;
         
+        // Make a copy of the recently highlighted list to avoid modification during iteration
+        HashSet<SceneObjectAnchor> stillHighlighted = new HashSet<SceneObjectAnchor>();
+        
         // Check distance to each other anchor
         foreach (var otherAnchor in allAnchors)
         {
@@ -887,11 +893,14 @@ public class HandGrabTrigger : MonoBehaviour
                 // Skip if we recently highlighted this anchor
                 if (recentlyHighlighted.Contains(otherAnchor))
                 {
+                    // Keep track that this anchor is still within range
+                    stillHighlighted.Add(otherAnchor);
                     continue;
                 }
                 
                 // Add to recently highlighted set
                 recentlyHighlighted.Add(otherAnchor);
+                stillHighlighted.Add(otherAnchor);
                 
                 Debug.Log($"Proximity detected between '{grabbedLabel}' and '{otherAnchor.label}' (distance: {distance}m)");
                 
@@ -919,6 +928,63 @@ public class HandGrabTrigger : MonoBehaviour
                 // and to prevent multiple concurrent API calls
                 break;
             }
+            else if (recentlyHighlighted.Contains(otherAnchor))
+            {
+                // This anchor was previously highlighted but is now out of range
+                // Reset its appearance immediately
+                ResetAnchorHighlight(otherAnchor);
+                Debug.Log($"Anchor '{otherAnchor.label}' moved out of proximity range, resetting highlight");
+            }
+        }
+        
+        // Update the recently highlighted set to only include anchors still within range
+        recentlyHighlighted = stillHighlighted;
+    }
+
+    /// <summary>
+    /// Immediately resets an anchor's highlight without waiting for the coroutine
+    /// </summary>
+    private void ResetAnchorHighlight(SceneObjectAnchor anchor)
+    {
+        var renderer = anchor.sphereObj.GetComponent<MeshRenderer>();
+        if (renderer == null)
+        {
+            return;
+        }
+        
+        // Check if the current color is green (our highlight color)
+        bool isCurrentlyGreen = false;
+        foreach (Material mat in renderer.materials)
+        {
+            if (mat.HasProperty("_Color") && mat.GetColor("_Color") == Color.green)
+            {
+                isCurrentlyGreen = true;
+                break;
+            }
+        }
+        
+        // Only reset if it's currently highlighted
+        if (isCurrentlyGreen || proximityHighlightMaterial != null)
+        {
+            // Reset to original material
+            Material defaultMaterial = sphereMaterial;
+            if (defaultMaterial != null)
+            {
+                renderer.material = defaultMaterial;
+            }
+            else
+            {
+                // If no default material is available, reset color to white
+                foreach (Material mat in renderer.materials)
+                {
+                    if (mat.HasProperty("_Color"))
+                    {
+                        mat.SetColor("_Color", Color.white);
+                    }
+                }
+            }
+            
+            Debug.Log($"Reset highlight on anchor '{anchor.label}' from green to original material");
         }
     }
 
@@ -948,12 +1014,12 @@ public class HandGrabTrigger : MonoBehaviour
         }
         else
         {
-            // If no highlight material provided, modify the existing material's color
+            // If no highlight material provided, modify the existing material's color to green
             foreach (Material mat in renderer.materials)
             {
                 if (mat.HasProperty("_Color"))
                 {
-                    mat.SetColor("_Color", Color.yellow);
+                    mat.SetColor("_Color", Color.green);
                 }
             }
         }
@@ -961,12 +1027,12 @@ public class HandGrabTrigger : MonoBehaviour
         // Wait for the highlight duration
         yield return new WaitForSeconds(highlightDuration);
         
-        // Restore original materials
-        renderer.materials = originalMaterials;
-        
-        // Remove from recently highlighted after a cooldown
-        yield return new WaitForSeconds(proximityCheckInterval * 2);
-        recentlyHighlighted.Remove(anchor);
+        // Restore original materials only if the anchor is still in the highlighted set
+        // This prevents conflicts with the main proximity check
+        if (!recentlyHighlighted.Contains(anchor))
+        {
+            renderer.materials = originalMaterials;
+        }
     }
 
     /// <summary>
