@@ -1316,7 +1316,7 @@ public class SphereToggleScript : MonoBehaviour
         // Create a temporary relationship dictionary with "Loading..." text
         Dictionary<string, string> loadingDict = new Dictionary<string, string>
         {
-            { objectB, "Loading..." }
+            { objectB, "..." }
         };
         
         // Show initial connection line with loading text
