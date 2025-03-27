@@ -32,7 +32,7 @@ public class RelationshipLineManager : MonoBehaviour
             r: 0.188f,  // 48/255
             g: 0.537f,  // 137/255
             b: 0.812f,  // 207/255
-            a: 0.6f     // 60% opacity for better visibility
+            a: 0.2f   
         );
 
         // Loop over each key in 'relationships'
