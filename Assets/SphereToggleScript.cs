@@ -660,6 +660,9 @@ public class SphereToggleScript : MonoBehaviour
             Please return a JSON list of possible user questions about this product/item.
             Focus on questions that are relevant to the current scene context and tasks.
             Return only the most likely questions, up to 5 maximum.
+
+            Please predict the questions that the user truly wants to know in the current context, rather than providing irrelevant questions. Only offer questions that are genuinely valuable to the user, which means questions that they might actually want to understand.
+
             In the format:
             json
             [
@@ -1417,6 +1420,7 @@ public class SphereToggleScript : MonoBehaviour
         3. Causal relationships (one affects the other)
         4. Hierarchical relationships (one is part of the other)
         5. Common usage patterns
+        6. if {objectA} and {objectB} are medicine or supplements, can they be used together? (e.g. like medicine or supplements, for the safety of the user can they be used together?) 
 
         Output a single JSON object with ONE key-value pair where:
         - Key is ""{objectB}"" (the exact string)
