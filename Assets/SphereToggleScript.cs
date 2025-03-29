@@ -147,6 +147,10 @@ public class SphereToggleScript : MonoBehaviour
     // Add this variable to store original AnimateWindow settings
     private Vector3 originalStartPosition;
     private Vector3 originalEndPosition;
+    
+    // Visual indicator for relationship mode
+    private Material originalRecorderMaterial;
+    private Color originalRecorderColor;
 
     private void Start()
     {
@@ -222,6 +226,17 @@ public class SphereToggleScript : MonoBehaviour
 
         // Subscribe to our own pointing state event
         OnPointingStateChanged += HandlePointingStateChanged;
+
+        // If recorder exists, cache its original material color for visual feedback
+        if (recorderToggle != null)
+        {
+            Renderer recorderRenderer = recorderToggle.GetComponent<Renderer>();
+            if (recorderRenderer != null && recorderRenderer.material != null)
+            {
+                originalRecorderMaterial = recorderRenderer.material;
+                originalRecorderColor = originalRecorderMaterial.color;
+            }
+        }
     }
 
     private void OnDestroy()
@@ -335,14 +350,19 @@ public class SphereToggleScript : MonoBehaviour
     {
         if (toggle != null)
         {
+            // Get the LazyFollow component
+            LazyFollow lazyFollow = toggle.GetComponent<LazyFollow>();
+            
             if (isOn)
             {
+                // Disable the LazyFollow component when setting parent
+                if (lazyFollow != null) lazyFollow.enabled = false;
+                
                 toggle.transform.SetParent(transform);
                 if (!toggle.transform.hasChanged)  toggle.transform.localScale = toggle.transform.localScale / transform.localScale.x;
                 toggle.GetComponent<SpatialUI>().UpdateReferenceScale();
                 toggle.transform.localPosition = offset;
                 toggle.transform.localRotation = Quaternion.identity;
-                // toggle.GetComponent<LazyFollow>().enabled = false;
 
                 if (toggleType == "recorder" && recorder != null && labelUnderSphere != null) recorder.SetObjectLabel(labelUnderSphere.text, this.gameObject);
             }
@@ -351,7 +371,10 @@ public class SphereToggleScript : MonoBehaviour
                 toggle.transform.SetParent(null);
                 toggle.transform.localPosition = Vector3.zero;
                 toggle.transform.localRotation = Quaternion.identity;
-                // toggle.GetComponent<LazyFollow>().enabled = true;
+                
+                // Re-enable the LazyFollow component when resetting parent
+                if (lazyFollow != null) lazyFollow.enabled = true;
+                
                 if (toggleType == "recorder")
                 {
                     SpeechToTextRecorder recorder = toggle.GetComponent<SpeechToTextRecorder>();
@@ -365,6 +388,29 @@ public class SphereToggleScript : MonoBehaviour
     private void UpdateRecorderToggle(bool isOn)
     {
         UpdateTogglePosition(recorderToggle, recorderToggleOffset, isOn, "recorder");
+        
+        // Check if recorder is in relationship mode and update visual feedback
+        if (isOn && recorder != null)
+        {
+            // Use public property to determine relationship mode
+            bool isRelationshipMode = recorder.IsInRelationshipMode;
+            
+            // Update visual feedback (change color) based on mode
+            Renderer recorderRenderer = recorderToggle.GetComponent<Renderer>();
+            if (recorderRenderer != null && recorderRenderer.material != null)
+            {
+                if (isRelationshipMode)
+                {
+                    // In relationship mode (not attached to object), tint the recorder blue
+                    recorderRenderer.material.color = new Color(0.2f, 0.4f, 1.0f, originalRecorderColor.a);
+                }
+                else
+                {
+                    // In object mode (attached to object), use original color
+                    recorderRenderer.material.color = originalRecorderColor;
+                }
+            }
+        }
     }
 
     private void UpdateObjectTrackingToggle(bool isOn)
