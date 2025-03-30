@@ -247,4 +247,33 @@ public class SceneObjectManager : MonoBehaviour
     {
         return anchors.Find(a => a.sphereObj == obj);
     }
+
+    /// <summary>
+    /// Clears all anchors from the scene, removing their GameObjects and emptying the anchors list.
+    /// </summary>
+    /// 
+
+    [ContextMenu("Clear All Anchors")]
+    public void ClearAllAnchors()
+    {
+        // Destroy all the sphere GameObjects
+        foreach (var anchor in anchors)
+        {
+            if (anchor.sphereObj != null)
+            {
+                Destroy(anchor.sphereObj);
+            }
+        }
+
+        // Clear the anchors list
+        anchors.Clear();
+        
+        // Also clear relationship lines if we have a reference to the manager
+        if (relationLineManager != null)
+        {
+            relationLineManager.ClearAllLines();
+        }
+        
+        Debug.Log("All anchors have been cleared from the scene");
+    }
 }
