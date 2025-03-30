@@ -342,7 +342,9 @@ public class SphereToggleScript : MonoBehaviour
                 toggle.GetComponent<SpatialUI>().UpdateReferenceScale();
                 toggle.transform.localPosition = offset;
                 toggle.transform.localRotation = Quaternion.identity;
-                // toggle.GetComponent<LazyFollow>().enabled = false;
+                
+                var lazyFollow = toggle.GetComponent<LazyFollow>();
+                if (lazyFollow != null) lazyFollow.enabled = false;
 
                 if (toggleType == "recorder" && recorder != null && labelUnderSphere != null) recorder.SetObjectLabel(labelUnderSphere.text, this.gameObject);
             }
@@ -351,7 +353,10 @@ public class SphereToggleScript : MonoBehaviour
                 toggle.transform.SetParent(null);
                 toggle.transform.localPosition = Vector3.zero;
                 toggle.transform.localRotation = Quaternion.identity;
-                // toggle.GetComponent<LazyFollow>().enabled = true;
+                
+                var lazyFollow = toggle.GetComponent<LazyFollow>();
+                if (lazyFollow != null) lazyFollow.enabled = true;
+                
                 if (toggleType == "recorder")
                 {
                     SpeechToTextRecorder recorder = toggle.GetComponent<SpeechToTextRecorder>();
@@ -1071,10 +1076,11 @@ public class SphereToggleScript : MonoBehaviour
                 }
 
                 // Deactivate first two children
-                if (menuCanvas.childCount >= 2)
+                if (menuCanvas.childCount >= 3)
                 {
                     menuCanvas.GetChild(0).gameObject.SetActive(false);
                     menuCanvas.GetChild(1).gameObject.SetActive(false);
+                    menuCanvas.GetChild(2).gameObject.SetActive(false);
                 }
 
                 // Update state and trigger effects
@@ -1189,10 +1195,11 @@ public class SphereToggleScript : MonoBehaviour
                     LazyFollow lazyFollow = menuCanvas.GetComponent<LazyFollow>();
                     if (lazyFollow != null)   lazyFollow.positionFollowMode = LazyFollow.PositionFollowMode.None;
 
-                    if (menuCanvas.childCount >= 2)
+                    if (menuCanvas.childCount >= 3)
                     {
                         menuCanvas.GetChild(0).gameObject.SetActive(false);
                         menuCanvas.GetChild(1).gameObject.SetActive(false);
+                        menuCanvas.GetChild(2).gameObject.SetActive(false);
                     }
 
                     menuCanvas.SetParent(transform);

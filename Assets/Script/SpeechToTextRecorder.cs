@@ -4,6 +4,9 @@ using System.IO;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using Newtonsoft.Json; // Added for JSON parsing
+using PolySpatial.Template; // Added for SceneObjectManager etc.
+using System.Linq;
 
 [RequireComponent(typeof(SpeechToTextGeneral))]
 public class SpeechToTextRecorder : GeminiGeneral
@@ -23,6 +26,36 @@ public class SpeechToTextRecorder : GeminiGeneral
     [TextArea(3, 10)]
     [SerializeField] private string objectContextPromptTemplate = "You are a helpful AI assistant responding to the user's request about {0}. You can see what the user is currently looking at, but you don't have to only rely on that. You don't have to wait to see the object to respond. Only respond information about this object. Please respond concisely and avoid using markdown formatting. User request: {1}";
 
+    [Tooltip("System prompt template to use in global mode. Use {0} for scene context, {1} for object list, {2} for transcribed text")]
+    [TextArea(5, 15)]
+    [SerializeField] private string environmentLevelPromptTemplate = @"You are analyzing a user's request within a scene.
+Scene context: {0}
+Detected objects: {1}
+User request: {2}
+
+1. Identify objects in the scene that are related to each other based on the user's request and scene context.
+2. Find meaningful relationships between objects in the detected list.
+3. Output ONLY a JSON array of relationship objects with the following structure:
+
+```json
+[
+  {{
+    ""Source Object"": ""name_of_source_object"",
+    ""Target Object"": ""name_of_target_object"",
+    ""Relation Label"": ""brief relationship description (5 words max)""
+  }},
+  {{
+    ""Source Object"": ""name_of_another_source"",
+    ""Target Object"": ""name_of_another_target"",
+    ""Relation Label"": ""another relationship description""
+  }}
+]
+```
+
+If no relationships can be identified, return an empty array: []
+
+IMPORTANT: Only include objects that are in the detected objects list provided above.";
+
     [Header("Gesture Control")]
     [SerializeField] private bool useMiddlePinchControl = true;
     [Tooltip("Which hand to use for middle finger pinch control")]
@@ -36,6 +69,15 @@ public class SpeechToTextRecorder : GeminiGeneral
     [SerializeField] private UnityEngine.Events.UnityEvent<string> onGeminiResponseReceived;
     [SerializeField] private GameObject chatbox;
     [SerializeField] private GameObject chatboxOnObject;
+
+    [Header("Scene Dependencies")] // Added Header
+    [Tooltip("Manager that tracks all recognized objects in the scene.")]
+    [SerializeField] private SceneObjectManager sceneObjectManager;
+    [Tooltip("Manager that draws lines between related items.")]
+    [SerializeField] private RelationshipLineManager relationshipLineManager;
+    [Tooltip("Manager that provides scene context.")]
+    [SerializeField] private SceneContextManager sceneContextManager;
+
     [Header("Debug")]
     [SerializeField] private AudioClip recordedAudio;
     [SerializeField] private string transcriptionResult;
@@ -55,7 +97,16 @@ public class SpeechToTextRecorder : GeminiGeneral
     {
         base.Awake(); // Call GeminiGeneral's Awake to initialize the Gemini client
         speechToText = GetComponent<SpeechToTextGeneral>();
-        
+
+        // Find dependencies if not assigned
+        if (sceneObjectManager == null) sceneObjectManager = FindFirstObjectByType<SceneObjectManager>();
+        if (relationshipLineManager == null) relationshipLineManager = FindFirstObjectByType<RelationshipLineManager>();
+        if (sceneContextManager == null) sceneContextManager = FindFirstObjectByType<SceneContextManager>();
+
+        if (sceneObjectManager == null) Debug.LogError("SceneObjectManager not found!");
+        if (relationshipLineManager == null) Debug.LogError("RelationshipLineManager not found!");
+        if (sceneContextManager == null) Debug.LogError("SceneContextManager not found!");
+
         // Get the hand subsystem once at startup
         var handSubsystems = new List<XRHandSubsystem>();
         SubsystemManager.GetSubsystems(handSubsystems);
@@ -381,59 +432,79 @@ public class SpeechToTextRecorder : GeminiGeneral
         Debug.Log($"Saved recording to: {filePath}");
     }
 
-    public void TalkToGemini(string prompt)
+    public void TalkToGemini(string userQuery)
     {
-        string formattedPrompt;
-        
+        string finalPrompt;
+        bool isObjectMode = !string.IsNullOrEmpty(currentObjectLabel);
+
         // If objectLevelRecordingToggle is true and we have a current object label,
         // use the object context prompt template
-        if (objectLevelRecordingToggle && !string.IsNullOrEmpty(currentObjectLabel))
+        if (isObjectMode)
         {
-            formattedPrompt = string.Format(objectContextPromptTemplate, currentObjectLabel, prompt);
-            Debug.Log($"Using object context prompt with label '{currentObjectLabel}'");
+            finalPrompt = string.Format(objectContextPromptTemplate, currentObjectLabel, userQuery);
+            Debug.Log($"[SpeechRecorder] Using OBJECT context prompt with label '{currentObjectLabel}'");
         }
-        else
+        else // Global Mode
         {
-            // Otherwise use the standard prompt template
-            formattedPrompt = string.Format(systemPromptTemplate, prompt);
+             // --- Prepare context for Global Mode Prompt ---
+            string currentSceneContext = "unknown environment";
+            List<string> itemLabels = new List<string>();
+            string objectListString = "none";
+
+            // Get Scene Context
+            if (sceneContextManager != null && sceneContextManager.GetCurrentAnalysis() != null)
+            {
+                var analysis = sceneContextManager.GetCurrentAnalysis();
+                currentSceneContext = analysis.sceneType ?? "unknown environment";
+                // Could potentially add task context here too if needed later
+            }
+
+            // Get Object List
+            if (sceneObjectManager != null)
+            {
+                var anchors = sceneObjectManager.GetAllAnchors();
+                foreach (var a in anchors)
+                {
+                    itemLabels.Add(a.label);
+                }
+                if (itemLabels.Count > 0)
+                {
+                    objectListString = string.Join(", ", itemLabels);
+                }
+            }
+             // --- Format the Global Prompt ---
+            finalPrompt = string.Format(environmentLevelPromptTemplate, currentSceneContext, objectListString, userQuery);
+            Debug.Log($"[SpeechRecorder] Using ENVIRONMENT context prompt.");
+            Debug.Log($"[SpeechRecorder] Scene: {currentSceneContext}, Objects: {objectListString}");
         }
-        
-        Debug.Log($"Formatted prompt: {formattedPrompt}");
-        
-        StartCoroutine(GeminiQueryRoutine(formattedPrompt));
+
+        Debug.Log($"[SpeechRecorder] Final prompt: {finalPrompt}");
+
+        // Use MakeGeminiRequest for concurrency management inherited from GeminiGeneral
+        var request = MakeGeminiRequest(finalPrompt, null); // Assuming no image needed for these prompts
+
+        // Start the coroutine to wait for the response and handle it
+        StartCoroutine(GeminiQueryRoutine(request, isObjectMode));
     }
 
-    private IEnumerator GeminiQueryRoutine(string prompt)
+    private IEnumerator GeminiQueryRoutine(RequestStatus requestStatus, bool isObjectMode)
     {
-        Debug.Log($"Sending prompt to Gemini: {prompt}");
-        
-        // 1) Capture frame from RenderTexture (if available)
-        string base64Image = null;
-        if (cameraRenderTex != null)
-        {
-            Texture2D frameTex = CaptureFrame(cameraRenderTex);
-            base64Image = ConvertTextureToBase64(frameTex);
-            Destroy(frameTex); // Clean up texture
-        }
-        
-        // 2) Make the request to Gemini
-        var request = MakeGeminiRequest(prompt, base64Image);
-        
-        // 3) Wait for the request to complete
-        while (!request.IsCompleted)
+        Debug.Log("[SpeechRecorder] Waiting for Gemini response...");
+        // Wait until the transcription task is completed
+        while (!requestStatus.IsCompleted)
         {
             yield return null;
         }
-        
-        // 4) Process the response
-        if (request.Error != null)
+
+        // Check if there was an error
+        if (requestStatus.Error != null)
         {
-            Debug.LogError($"Gemini API error: {request.Error.Message}");
+            Debug.LogError($"Gemini API error: {requestStatus.Error.Message}");
             geminiResponse = "Error communicating with Gemini.";
         }
         else
         {
-            string rawResponse = request.Result;
+            string rawResponse = requestStatus.Result;
             geminiResponse = ParseGeminiRawResponse(rawResponse);
             Debug.Log($"Gemini response: {geminiResponse}");
             
@@ -457,7 +528,228 @@ public class SpeechToTextRecorder : GeminiGeneral
             
             // 6) Invoke event with the response
             onGeminiResponseReceived?.Invoke(geminiResponse);
+            
+            // 7) Parse the response for relationships if it's not in object mode
+            if (!isObjectMode && sceneObjectManager != null && relationshipLineManager != null)
+            {
+                try
+                {
+                    // Clear any existing relationship lines first
+                    relationshipLineManager.ClearAllLines();
+                    
+                    // Try to extract JSON from the response
+                    string jsonContent = TryExtractJson(geminiResponse);
+                    Debug.Log($"[SpeechRecorder] Extracted JSON: {jsonContent}");
+                    
+                    // Try to parse the relationships as a JSON array of relationship objects
+                    List<RelationshipInfo> relationships = null;
+                    
+                    if (!string.IsNullOrEmpty(jsonContent))
+                    {
+                        try 
+                        {
+                            // Check if it's an array first
+                            if (jsonContent.Trim().StartsWith("["))
+                            {
+                                relationships = JsonConvert.DeserializeObject<List<RelationshipInfo>>(jsonContent);
+                                Debug.Log($"[SpeechRecorder] Successfully parsed JSON array with {relationships.Count} items");
+                            }
+                            // If it's a single object, wrap it in an array
+                            else if (jsonContent.Trim().StartsWith("{"))
+                            {
+                                var singleRelationship = JsonConvert.DeserializeObject<RelationshipInfo>(jsonContent);
+                                if (singleRelationship != null)
+                                {
+                                    relationships = new List<RelationshipInfo> { singleRelationship };
+                                    Debug.Log("[SpeechRecorder] Successfully parsed single JSON object and wrapped in array");
+                                }
+                            }
+                        }
+                        catch (JsonException je)
+                        {
+                            Debug.LogWarning($"[SpeechRecorder] Failed to parse as relationships array: {je.Message}");
+                            Debug.LogWarning($"[SpeechRecorder] JSON content was: {jsonContent}");
+                            
+                            // Try the old format as fallback
+                            try 
+                            {
+                                Dictionary<string, string> oldFormatDict = JsonConvert.DeserializeObject<Dictionary<string, string>>(jsonContent);
+                                if (oldFormatDict != null && oldFormatDict.Count > 0)
+                                {
+                                    Debug.Log("[SpeechRecorder] Found old format dictionary, converting to new format");
+                                    ConvertOldFormatToNewFormat(oldFormatDict, out relationships);
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                Debug.LogWarning($"[SpeechRecorder] Not in old format either: {ex.Message}");
+                            }
+                        }
+                    }
+                    
+                    if (relationships != null && relationships.Count > 0)
+                    {
+                        Debug.Log($"[SpeechRecorder] Found {relationships.Count} relationships to visualize");
+                        
+                        // Log details of each relationship for debugging
+                        for (int i = 0; i < relationships.Count; i++)
+                        {
+                            var rel = relationships[i];
+                            Debug.Log($"[SpeechRecorder] Relationship {i+1}: {rel.SourceObject} -> {rel.TargetObject}: '{rel.RelationLabel}'");
+                        }
+                        
+                        // Get all anchors from the SceneObjectManager
+                        var allAnchors = sceneObjectManager.GetAllAnchors();
+                        
+                        // Log available anchors for debugging
+                        Debug.Log($"[SpeechRecorder] Available anchors: {string.Join(", ", allAnchors.Select(a => a.label))}");
+                        
+                        // Use the new bidirectional relationship visualization
+                        // Convert our internal RelationshipInfo objects to the RelationshipLineManager format
+                        List<RelationshipLineManager.RelationshipInfo> relationshipLineInfos = 
+                            relationships.Select(r => new RelationshipLineManager.RelationshipInfo
+                            {
+                                SourceObject = r.SourceObject,
+                                TargetObject = r.TargetObject,
+                                RelationLabel = r.RelationLabel
+                            }).ToList();
+                        
+                        // Call the bidirectional relationship visualization
+                        relationshipLineManager.ShowBidirectionalRelationships(relationshipLineInfos, allAnchors);
+                        Debug.Log($"[SpeechRecorder] Visualized {relationships.Count} bidirectional relationships");
+                    }
+                    else
+                    {
+                        Debug.Log("[SpeechRecorder] No relationships found in response");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogError($"[SpeechRecorder] Error processing relationships: {ex.Message}");
+                }
+            }
         }
+    }
+
+    /// <summary>
+    /// Tries to extract a JSON object/array from a text string that might contain
+    /// JSON within code blocks marked by ```json or similar formats.
+    /// </summary>
+    private string TryExtractJson(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return null;
+
+        // Case 1: Check for ```json blocks first
+        if (text.Contains("```json"))
+        {
+            var splitted = text.Split(new[] { "```json" }, StringSplitOptions.None);
+            if (splitted.Length > 1)
+            {
+                var splitted2 = splitted[1].Split(new[] { "```" }, StringSplitOptions.None);
+                return splitted2[0].Trim();
+            }
+        }
+        
+        // Case 2: Check for just ``` blocks (without explicit json)
+        if (text.Contains("```"))
+        {
+            var splitted = text.Split(new[] { "```" }, StringSplitOptions.None);
+            if (splitted.Length > 1)
+            {
+                // Get the content of the first code block
+                var codeBlock = splitted[1].Trim();
+                
+                // Only return it if it starts with { or [ (likely JSON)
+                if ((codeBlock.StartsWith("{") && codeBlock.EndsWith("}")) || 
+                    (codeBlock.StartsWith("[") && codeBlock.EndsWith("]")))
+                {
+                    return codeBlock;
+                }
+            }
+        }
+
+        // Case 3: Check for JSON array first since we're now expecting an array format
+        int openBracket = text.IndexOf('[');
+        int closeBracket = text.LastIndexOf(']');
+        
+        if (openBracket >= 0 && closeBracket > openBracket)
+        {
+            string jsonSubstring = text.Substring(openBracket, closeBracket - openBracket + 1);
+            // Validate this is actually JSON
+            try
+            {
+                JsonConvert.DeserializeObject(jsonSubstring);
+                return jsonSubstring; // Only return if it's valid JSON
+            }
+            catch
+            {
+                // Not valid JSON, ignore
+                Debug.LogWarning($"Found array-like structure but failed to parse as JSON: {jsonSubstring}");
+            }
+        }
+
+        // Case 4: Try to find a JSON object directly in the text
+        int openBrace = text.IndexOf('{');
+        int closeBrace = text.LastIndexOf('}');
+        
+        if (openBrace >= 0 && closeBrace > openBrace)
+        {
+            string jsonSubstring = text.Substring(openBrace, closeBrace - openBrace + 1);
+            // Validate this is actually JSON by trying to parse it
+            try
+            {
+                JsonConvert.DeserializeObject(jsonSubstring);
+                return jsonSubstring; // Only return if it's valid JSON
+            }
+            catch
+            {
+                // Not valid JSON, ignore
+                Debug.LogWarning($"Found object-like structure but failed to parse as JSON: {jsonSubstring}");
+            }
+        }
+
+        // No valid JSON found
+        return null;
+    }
+
+    // Define a class to match the new JSON structure
+    [System.Serializable]
+    private class RelationshipInfo
+    {
+        [JsonProperty("Source Object")]
+        public string SourceObject;
+        
+        [JsonProperty("Target Object")]
+        public string TargetObject;
+        
+        [JsonProperty("Relation Label")]
+        public string RelationLabel;
+    }
+    
+    // Helper method to convert from old format to new format
+    private void ConvertOldFormatToNewFormat(Dictionary<string, string> oldFormat, out List<RelationshipInfo> newFormat)
+    {
+        newFormat = new List<RelationshipInfo>();
+        
+        // Determine a source object (first key or try to find a primary object)
+        string sourceObject = oldFormat.Keys.FirstOrDefault();
+        
+        // For each key-value pair, create a relationship
+        foreach (var kvp in oldFormat)
+        {
+            if (kvp.Key != sourceObject) // Avoid self-relationships
+            {
+                newFormat.Add(new RelationshipInfo 
+                { 
+                    SourceObject = sourceObject,
+                    TargetObject = kvp.Key,
+                    RelationLabel = kvp.Value
+                });
+            }
+        }
+        
+        Debug.Log($"[SpeechRecorder] Converted {oldFormat.Count} old format items to {newFormat.Count} new format relationships");
     }
 }
 

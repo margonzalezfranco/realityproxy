@@ -12,7 +12,7 @@ public class RelationshipLineManager : MonoBehaviour
     public Material lineMaterial;
     public float lineWidth = 0.01f;
     public GameObject labelPrefab;   // A small canvas or 3D text prefab
-    [SerializeField] private float labelScale = 0.002f;  // Add this new field for label scaling
+    [SerializeField] private float labelScale = 0.002f;  // Changed back to original value
 
     // We'll store active lines so we can remove them later
     private List<LineConnection> activeLines = new List<LineConnection>();
@@ -25,15 +25,65 @@ public class RelationshipLineManager : MonoBehaviour
         Dictionary<string, string> relationships, 
         List<SceneObjectAnchor> allAnchors)
     {
-        ClearAllLines();
+        // Don't clear lines here - we want to allow multiple source anchors with their relationships
+        // ClearAllLines(); - remove this line to allow multiple source anchors
+
+        if (sourceAnchor == null)
+        {
+            Debug.LogError("ShowRelationships: sourceAnchor is null!");
+            return;
+        }
+
+        if (relationships == null || relationships.Count == 0)
+        {
+            Debug.LogWarning("ShowRelationships: No relationships provided!");
+            return;
+        }
+
+        if (allAnchors == null || allAnchors.Count == 0)
+        {
+            Debug.LogWarning("ShowRelationships: No anchors provided!");
+            return;
+        }
 
         // Define relationship line color (hex: #3089CF)
         Color lineColor = new Color(
             r: 0.188f,  // 48/255
             g: 0.537f,  // 137/255
             b: 0.812f,  // 207/255
-            a: 0.2f   
+            a: 0.2f     // Changed back to original alpha
         );
+
+        // Color for source anchor highlight (hex: #2096F3 with 100% alpha)
+        Color sourceHighlightColor = new Color(
+            r: 0.125f,  // 32/255
+            g: 0.588f,  // 150/255
+            b: 0.953f,  // 243/255
+            a: 1.0f     // 100% alpha
+        );
+
+        // Color for target anchor highlight (hex: #2096F3 with 50% alpha)
+        Color targetHighlightColor = new Color(
+            r: 0.125f,  // 32/255
+            g: 0.588f,  // 150/255
+            b: 0.953f,  // 243/255
+            a: 0.5f     // 50% alpha
+        );
+
+        // Highlight the source anchor
+        if (sourceAnchor.sphereObj != null)
+        {
+            var renderer = sourceAnchor.sphereObj.GetComponent<Renderer>();
+            if (renderer != null && renderer.material != null)
+            {
+                // Store original color if needed
+                renderer.material.color = sourceHighlightColor;
+                Debug.Log($"Highlighted source anchor: {sourceAnchor.label}");
+            }
+        }
+
+        // Log that we're starting to create relationship lines
+        Debug.Log($"Creating relationship lines from '{sourceAnchor.label}' to {relationships.Count} targets");
 
         // Loop over each key in 'relationships'
         // Key = the label of the related item
@@ -51,6 +101,55 @@ public class RelationshipLineManager : MonoBehaviour
                 continue;
             }
 
+            // Highlight the target anchor
+            if (targetAnchor.sphereObj != null)
+            {
+                var renderer = targetAnchor.sphereObj.GetComponent<Renderer>();
+                if (renderer != null && renderer.material != null)
+                {
+                    renderer.material.color = targetHighlightColor;
+                    Debug.Log($"Highlighted target anchor: {targetAnchor.label}");
+                }
+            }
+
+            if (sourceAnchor.sphereObj == null)
+            {
+                Debug.LogError($"Source anchor '{sourceAnchor.label}' has no sphereObj!");
+                continue;
+            }
+
+            if (targetAnchor.sphereObj == null)
+            {
+                Debug.LogError($"Target anchor '{targetAnchor.label}' has no sphereObj!");
+                continue;
+            }
+
+            // Check if a line already exists between these two anchors
+            bool lineExists = false;
+            foreach (var connection in activeLines)
+            {
+                if ((connection.source == sourceAnchor && connection.target == targetAnchor) ||
+                    (connection.source == targetAnchor && connection.target == sourceAnchor))
+                {
+                    lineExists = true;
+                    
+                    // Update existing line's label if the connection is in the same direction
+                    if (connection.source == sourceAnchor && connection.target == targetAnchor)
+                    {
+                        var tmp = connection.labelObject?.GetComponentInChildren<TextMeshPro>();
+                        if (tmp != null)
+                        {
+                            tmp.text = relationText;
+                            Debug.Log($"Updated existing connection: {sourceAnchor.label} → {targetAnchor.label} with text: '{relationText}'");
+                        }
+                    }
+                    break;
+                }
+            }
+
+            // Skip if line already exists
+            if (lineExists) continue;
+
             // Create a line from sourceAnchor -> targetAnchor
             var lineObj = new GameObject($"RelLine_{sourceAnchor.label}_to_{relatedItemLabel}");
             lineObj.transform.SetParent(this.transform, false);
@@ -59,11 +158,25 @@ public class RelationshipLineManager : MonoBehaviour
             lr.positionCount = 2;
             lr.SetPosition(0, sourceAnchor.sphereObj.transform.position);
             lr.SetPosition(1, targetAnchor.sphereObj.transform.position);
-            lr.startWidth = lineWidth;
+            lr.startWidth = lineWidth; // Removed the multiplier
             lr.endWidth = lineWidth;
-            lr.material = lineMaterial;
+            
+            // Make sure the material is assigned
+            if (lineMaterial == null)
+            {
+                Debug.LogWarning("Line material is null, creating default material");
+                lineMaterial = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
+                lineMaterial.color = lineColor;
+            }
+            
+            // Create a new material instance to avoid shared material issues
+            lr.material = new Material(lineMaterial);
+            lr.material.color = lineColor; // Explicitly set color
             lr.useWorldSpace = true;
-            lr.material.color = lineColor;
+            lr.startColor = lineColor;
+            lr.endColor = lineColor;
+
+            Debug.Log($"Created line from '{sourceAnchor.label}' to '{targetAnchor.label}'");
 
             GameObject labelObj = null;
             if (labelPrefab != null && !string.IsNullOrEmpty(relationText))
@@ -82,7 +195,22 @@ public class RelationshipLineManager : MonoBehaviour
                 labelObj.transform.localScale = Vector3.one * labelScale;
 
                 var tmp = labelObj.GetComponentInChildren<TextMeshPro>();
-                if (tmp) tmp.text = relationText;
+                if (tmp) 
+                {
+                    tmp.text = relationText;
+                    Debug.Log($"Created label: '{relationText}'");
+                }
+                else
+                {
+                    Debug.LogWarning("TextMeshPro component not found on label prefab!");
+                }
+            }
+            else
+            {
+                if (labelPrefab == null)
+                    Debug.LogWarning("LabelPrefab is null!");
+                if (string.IsNullOrEmpty(relationText))
+                    Debug.LogWarning($"RelationText is empty for '{relatedItemLabel}'!");
             }
 
             // Store the connection info
@@ -93,7 +221,138 @@ public class RelationshipLineManager : MonoBehaviour
                 target = targetAnchor,
                 labelObject = labelObj
             });
+            
+            Debug.Log($"Added line connection: {sourceAnchor.label} → {targetAnchor.label}");
         }
+        
+        // Log the total number of active lines
+        Debug.Log($"Total active lines: {activeLines.Count}");
+    }
+
+    /// <summary>
+    /// Shows bidirectional relationships between multiple objects from a list of explicit relationships.
+    /// Each relationship specifies source, target, and a description.
+    /// </summary>
+    /// <param name="relationships">List of relationships with explicit source and target objects</param>
+    /// <param name="allAnchors">List of all available anchors in the scene</param>
+    public void ShowBidirectionalRelationships(List<RelationshipInfo> relationships, List<SceneObjectAnchor> allAnchors)
+    {
+        if (relationships == null || relationships.Count == 0)
+        {
+            Debug.LogWarning("ShowBidirectionalRelationships: No relationships provided!");
+            return;
+        }
+
+        if (allAnchors == null || allAnchors.Count == 0)
+        {
+            Debug.LogWarning("ShowBidirectionalRelationships: No anchors provided!");
+            return;
+        }
+
+        Debug.Log($"ShowBidirectionalRelationships: Processing {relationships.Count} relationships with {allAnchors.Count} available anchors");
+        
+        // Log all available anchors for debugging
+        foreach (var anchor in allAnchors)
+        {
+            Debug.Log($"Available anchor: {anchor.label} (has sphereObj: {anchor.sphereObj != null})");
+        }
+
+        // First clear any existing lines
+        ClearAllLines();
+
+        // Group relationships by source object
+        Dictionary<string, Dictionary<string, string>> groupedRelationships = new Dictionary<string, Dictionary<string, string>>();
+        
+        foreach (var relation in relationships)
+        {
+            string sourceObj = relation.SourceObject;
+            string targetObj = relation.TargetObject;
+            string relationLabel = relation.RelationLabel;
+            
+            Debug.Log($"Processing relationship: {sourceObj} -> {targetObj}: '{relationLabel}'");
+            
+            if (string.IsNullOrEmpty(sourceObj) || string.IsNullOrEmpty(targetObj))
+            {
+                Debug.LogWarning("Found relationship with missing source or target object");
+                continue;
+            }
+            
+            if (!groupedRelationships.ContainsKey(sourceObj))
+            {
+                groupedRelationships[sourceObj] = new Dictionary<string, string>();
+            }
+            
+            groupedRelationships[sourceObj][targetObj] = relationLabel;
+        }
+        
+        // Visualize each group of relationships
+        foreach (var sourceObjKvp in groupedRelationships)
+        {
+            string sourceObjectLabel = sourceObjKvp.Key;
+            Dictionary<string, string> targetRelationships = sourceObjKvp.Value;
+            
+            var sourceAnchor = FindBestMatchingAnchor(sourceObjectLabel, allAnchors);
+            if (sourceAnchor != null)
+            {
+                Debug.Log($"Visualizing relationships from {sourceObjectLabel} to {targetRelationships.Count} other objects");
+                ShowRelationships(sourceAnchor, targetRelationships, allAnchors);
+            }
+            else
+            {
+                Debug.LogWarning($"Could not find anchor for source object: {sourceObjectLabel}");
+                foreach (var anchor in allAnchors)
+                {
+                    Debug.Log($"  Available: '{anchor.label}'");
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Finds the best matching anchor for a given label, trying different matching techniques
+    /// </summary>
+    private SceneObjectAnchor FindBestMatchingAnchor(string label, List<SceneObjectAnchor> anchors)
+    {
+        // Step 1: Try exact match (case-insensitive)
+        var exactMatch = anchors.Find(a => string.Equals(a.label, label, System.StringComparison.OrdinalIgnoreCase));
+        if (exactMatch != null)
+        {
+            Debug.Log($"Found exact match for '{label}'");
+            return exactMatch;
+        }
+        
+        // Step 2: Try contains match
+        var containsMatch = anchors.Find(a => 
+            a.label.IndexOf(label, System.StringComparison.OrdinalIgnoreCase) >= 0 || 
+            label.IndexOf(a.label, System.StringComparison.OrdinalIgnoreCase) >= 0);
+            
+        if (containsMatch != null)
+        {
+            Debug.Log($"Found contains match: '{containsMatch.label}' for '{label}'");
+            return containsMatch;
+        }
+        
+        // Step 3: Try word-by-word match for multi-word labels
+        string[] words = label.Split(' ', '-', '_');
+        if (words.Length > 1)
+        {
+            foreach (var word in words)
+            {
+                if (word.Length < 3) continue; // Skip short words
+                
+                var wordMatch = anchors.Find(a => 
+                    a.label.IndexOf(word, System.StringComparison.OrdinalIgnoreCase) >= 0);
+                    
+                if (wordMatch != null)
+                {
+                    Debug.Log($"Found word match: '{wordMatch.label}' for word '{word}' from '{label}'");
+                    return wordMatch;
+                }
+            }
+        }
+        
+        Debug.LogWarning($"No matching anchor found for '{label}' among {anchors.Count} anchors");
+        return null;
     }
 
     /// <summary>
@@ -101,13 +360,46 @@ public class RelationshipLineManager : MonoBehaviour
     /// </summary>
     public void ClearAllLines()
     {
-        foreach (var c in activeLines)
+        // Default color to restore anchors to when clearing relationships
+        Color defaultSphereColor = new Color(1.0f, 1.0f, 1.0f, 1.0f); // White
+        
+        // Restore original colors of source and target anchors
+        HashSet<SceneObjectAnchor> processedAnchors = new HashSet<SceneObjectAnchor>();
+        
+        foreach (var connection in activeLines)
         {
-            if (c.lineRenderer != null)
+            // Reset source anchor color if it exists and hasn't been processed
+            if (connection.source != null && connection.source.sphereObj != null && !processedAnchors.Contains(connection.source))
             {
-                Destroy(c.lineRenderer.gameObject);
+                var renderer = connection.source.sphereObj.GetComponent<Renderer>();
+                if (renderer != null && renderer.material != null)
+                {
+                    renderer.material.color = defaultSphereColor;
+                    processedAnchors.Add(connection.source);
+                    Debug.Log($"Restored color for source anchor: {connection.source.label}");
+                }
+            }
+            
+            // Reset target anchor color if it exists and hasn't been processed
+            if (connection.target != null && connection.target.sphereObj != null && !processedAnchors.Contains(connection.target))
+            {
+                var renderer = connection.target.sphereObj.GetComponent<Renderer>();
+                if (renderer != null && renderer.material != null)
+                {
+                    renderer.material.color = defaultSphereColor;
+                    processedAnchors.Add(connection.target);
+                    Debug.Log($"Restored color for target anchor: {connection.target.label}");
+                }
+            }
+            
+            // Destroy the line renderer object
+            if (connection.lineRenderer != null)
+            {
+                Destroy(connection.lineRenderer.gameObject);
             }
         }
+        
+        Debug.Log($"Cleared {activeLines.Count} relationship lines");
         activeLines.Clear();
     }
 
@@ -162,7 +454,7 @@ public class RelationshipLineManager : MonoBehaviour
         public GameObject labelObject;  // Add this to track the label
     }
 
-    // Add Update method to continuously update line positions
+    // Update method simplified to match the original code
     private void Update()
     {
         foreach (var connection in activeLines)
@@ -206,5 +498,14 @@ public class RelationshipLineManager : MonoBehaviour
                 }
             }
         }
+    }
+
+    // Class to match the relationship info structure from SpeechToTextRecorder
+    [System.Serializable]
+    public class RelationshipInfo
+    {
+        public string SourceObject;
+        public string TargetObject;
+        public string RelationLabel;
     }
 }

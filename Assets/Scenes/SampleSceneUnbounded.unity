@@ -3035,8 +3035,8 @@ RectTransform:
   m_ConstrainProportionsScale: 1
   m_Children:
   - {fileID: 866230894}
-  - {fileID: 780958559}
   - {fileID: 945836482}
+  - {fileID: 780958559}
   - {fileID: 90799425}
   - {fileID: 835279498}
   m_Father: {fileID: 0}
@@ -4300,6 +4300,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 9184914e7058e408db2f8b8c35bf442c, type: 3}
       insertIndex: -1
       addedObject: {fileID: 779485462}
+    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 9184914e7058e408db2f8b8c35bf442c, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 779485468}
   m_SourcePrefab: {fileID: 100100000, guid: 9184914e7058e408db2f8b8c35bf442c, type: 3}
 --- !u!1 &779485459 stripped
 GameObject:
@@ -4508,6 +4511,33 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 1.4999998, y: 0.59999996, z: 0.05000002}
   m_Center: {x: 0.00000011920929, y: -0.00000011920929, z: 0}
+--- !u!114 &779485468
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 779485459}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1a2d7d89889b4d94fa1f8d6fe49788e8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  m_Target: {fileID: 0}
+  m_TargetOffset: {x: -0.166, y: -0.13, z: 0.5}
+  m_FollowInLocalSpace: 0
+  m_ApplyTargetInLocalSpace: 0
+  m_MovementSpeed: 4
+  m_MovementSpeedVariancePercentage: 0.25
+  m_SnapOnEnable: 1
+  m_PositionFollowMode: 1
+  m_MinDistanceAllowed: 0.05
+  m_MaxDistanceAllowed: 0.5
+  m_TimeUntilThresholdReachesMaxDistance: 3
+  m_RotationFollowMode: 1
+  m_MinAngleAllowed: 0.1
+  m_MaxAngleAllowed: 5
+  m_TimeUntilThresholdReachesMaxAngle: 3
 --- !u!1 &780958558
 GameObject:
   m_ObjectHideFlags: 0
@@ -4542,7 +4572,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 1}
   m_AnchorMax: {x: 0.5, y: 1}
-  m_AnchoredPosition: {x: 0, y: -98.6}
+  m_AnchoredPosition: {x: 0, y: -168.6}
   m_SizeDelta: {x: 150, y: 60}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &780958560
@@ -5252,7 +5282,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 1}
   m_AnchorMax: {x: 0.5, y: 1}
-  m_AnchoredPosition: {x: 0, y: -168.6}
+  m_AnchoredPosition: {x: 0, y: -98.6}
   m_SizeDelta: {x: 150, y: 60}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &945836483
@@ -10140,6 +10170,18 @@ MonoBehaviour:
     but you don''t have to only rely on that. You don''t have to wait to see the
     object to respond. Only respond information about this object. Please respond
     concisely and avoid using markdown formatting. User request: {1}'
+  environmentLevelPromptTemplate: "You are analyzing a user's request within a scene.\nScene
+    context: {0}\nDetected objects: {1}\nUser request: {2}\n\n1. Identify objects
+    in the scene that are related to each other based on the user's request and scene
+    context.\n2. Find meaningful relationships between objects in the detected list.\n3.
+    Output ONLY a JSON array of relationship objects with the following structure:\n\n```json\n[\n 
+    {{\n    \"\"Source Object\"\": \"\"name_of_source_object\"\",\n    \"\"Target
+    Object\"\": \"\"name_of_target_object\"\",\n    \"\"Relation Label\"\": \"\"brief
+    relationship description (5 words max)\"\"\n  }},\n  {{\n    \"\"Source Object\"\":
+    \"\"name_of_another_source\"\",\n    \"\"Target Object\"\": \"\"name_of_another_target\"\",\n   
+    \"\"Relation Label\"\": \"\"another relationship description\"\"\n  }}\n]\n```\n\nIf
+    no relationships can be identified, return an empty array: []\n\nIMPORTANT: Only
+    include objects that are in the detected objects list provided above."
   useMiddlePinchControl: 0
   useLeftHand: 1
   geminiHandSphere: {fileID: 1694838163}
@@ -10151,6 +10193,9 @@ MonoBehaviour:
       m_Calls: []
   chatbox: {fileID: 189891876}
   chatboxOnObject: {fileID: 1208220120}
+  sceneObjectManager: {fileID: 0}
+  relationshipLineManager: {fileID: 0}
+  sceneContextManager: {fileID: 0}
   recordedAudio: {fileID: 0}
   transcriptionResult: 
   isProcessing: 0
