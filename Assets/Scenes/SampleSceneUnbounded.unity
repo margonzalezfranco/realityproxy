@@ -7902,7 +7902,7 @@ MonoBehaviour:
   geminiModelName: gemini-2.0-flash
   geminiApiKey: AIzaSyBx5IRXG1FOUN3HdnKFMgsQA5zOcui7Mhc
   cameraRenderTex: {fileID: 8400000, guid: 78e2b50f1cd8640efa61e2994d5eaec2, type: 2}
-  analysisPeriod: 20
+  analysisPeriod: 10
   isAnalyzing: 1
   sceneManager: {fileID: 1242229081}
   currentSceneType: Not analyzed yet
