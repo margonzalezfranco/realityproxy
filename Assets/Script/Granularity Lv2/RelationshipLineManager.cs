@@ -91,14 +91,8 @@ public class RelationshipLineManager : MonoBehaviour
         var speechRecorder = FindFirstObjectByType<SpeechToTextRecorder>();
         if (speechRecorder != null)
         {
-            if (speechRecorder.responseTextOnObject != null)
-            {
-                speechRecorder.responseTextOnObject.text = "";
-            }
-            if (speechRecorder.chatboxOnObject != null)
-            {
-                speechRecorder.chatboxOnObject.SetActive(false);
-            }
+            speechRecorder.ClearResponseText();
+            speechRecorder.HideChatbox();
         }
         
         Debug.Log("Cleared all highlights, relationship lines, and response text");

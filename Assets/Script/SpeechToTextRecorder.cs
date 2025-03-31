@@ -1000,6 +1000,23 @@ IMPORTANT:
         public List<string> objects;
         public string rationale;
     }
+
+    // Add public methods to clear response text and hide chatbox
+    public void ClearResponseText()
+    {
+        if (responseTextOnObject != null)
+        {
+            responseTextOnObject.text = "";
+        }
+    }
+
+    public void HideChatbox()
+    {
+        if (chatboxOnObject != null)
+        {
+            chatboxOnObject.SetActive(false);
+        }
+    }
 }
 
 // Helper class to save AudioClip as WAV file
