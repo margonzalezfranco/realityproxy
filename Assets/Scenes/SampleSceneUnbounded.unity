@@ -10171,17 +10171,29 @@ MonoBehaviour:
     object to respond. Only respond information about this object. Please respond
     concisely and avoid using markdown formatting. User request: {1}'
   environmentLevelPromptTemplate: "You are analyzing a user's request within a scene.\nScene
-    context: {0}\nDetected objects: {1}\nUser request: {2}\n\n1. Identify objects
-    in the scene that are related to each other based on the user's request and scene
-    context.\n2. Find meaningful relationships between objects in the detected list.\n3.
-    Output ONLY a JSON array of relationship objects with the following structure:\n\n```json\n[\n 
-    {{\n    \"\"Source Object\"\": \"\"name_of_source_object\"\",\n    \"\"Target
-    Object\"\": \"\"name_of_target_object\"\",\n    \"\"Relation Label\"\": \"\"brief
-    relationship description (5 words max)\"\"\n  }},\n  {{\n    \"\"Source Object\"\":
-    \"\"name_of_another_source\"\",\n    \"\"Target Object\"\": \"\"name_of_another_target\"\",\n   
-    \"\"Relation Label\"\": \"\"another relationship description\"\"\n  }}\n]\n```\n\nIf
-    no relationships can be identified, return an empty array: []\n\nIMPORTANT: Only
-    include objects that are in the detected objects list provided above."
+    context: {0}\nDetected objects: {1}\nUser request: {2}\n\nDetermine if the user
+    is asking about RELATIONSHIPS between objects or wants to HIGHLIGHT specific
+    objects:\n\nFor RELATIONSHIPS between objects (e.g., \"\"how are these objects
+    related?\"\" or \"\"show connections between items\"\"):\n1. Identify objects
+    in the scene that are related to each other based on the user's request.\n2.
+    Find meaningful relationships between objects in the detected list.\n3. Output
+    a JSON array of relationship objects with the following structure:\n```json\n{{\n 
+    \"\"type\"\": \"\"relationships\"\",\n  \"\"data\"\": [\n    {{\n      \"\"Source
+    Object\"\": \"\"name_of_source_object\"\",\n      \"\"Target Object\"\": \"\"name_of_target_object\"\",\n     
+    \"\"Relation Label\"\": \"\"brief relationship description (5 words max)\"\"\n   
+    }},\n    {{\n      \"\"Source Object\"\": \"\"name_of_another_source\"\",\n     
+    \"\"Target Object\"\": \"\"name_of_another_target\"\",\n      \"\"Relation Label\"\":
+    \"\"another relationship description\"\"\n    }}\n  ]\n}}\n```\n\nFor HIGHLIGHT
+    requests (e.g., \"\"show me all food items\"\" or \"\"highlight the kitchen tools\"\"):\n1.
+    Identify which objects from the detected list match the user's criteria.\n2.
+    Output a JSON object with the following structure:\n```json\n{{\n  \"\"type\"\":
+    \"\"highlight\"\",\n  \"\"data\"\": {{\n    \"\"objects\"\": [\n      \"\"object1\"\",\n     
+    \"\"object2\"\",\n      \"\"object3\"\"\n    ],\n    \"\"rationale\"\": \"\"Brief
+    explanation of why these objects were selected (1-2 sentences)\"\"\n  }}\n}}\n```\n\nIf
+    no relevant objects or relationships can be identified, return:\n```json\n{{\n 
+    \"\"type\"\": \"\"none\"\",\n  \"\"message\"\": \"\"No relevant objects or relationships
+    found\"\"\n}}\n```\n\nIMPORTANT: Only include objects that are in the detected
+    objects list provided above."
   useMiddlePinchControl: 0
   useLeftHand: 1
   geminiHandSphere: {fileID: 1694838163}

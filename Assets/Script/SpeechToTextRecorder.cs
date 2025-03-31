@@ -33,26 +33,54 @@ Scene context: {0}
 Detected objects: {1}
 User request: {2}
 
-1. Identify objects in the scene that are related to each other based on the user's request and scene context.
-2. Find meaningful relationships between objects in the detected list.
-3. Output ONLY a JSON array of relationship objects with the following structure:
+Determine if the user is asking about RELATIONSHIPS between objects or wants to HIGHLIGHT specific objects:
 
+For RELATIONSHIPS between objects (e.g., ""how are these objects related?"" or ""show connections between items""):
+1. Identify objects in the scene that are related to each other based on the user's request.
+2. Find meaningful relationships between objects in the detected list.
+3. Output a JSON array of relationship objects with the following structure:
 ```json
-[
-  {{
-    ""Source Object"": ""name_of_source_object"",
-    ""Target Object"": ""name_of_target_object"",
-    ""Relation Label"": ""brief relationship description (5 words max)""
-  }},
-  {{
-    ""Source Object"": ""name_of_another_source"",
-    ""Target Object"": ""name_of_another_target"",
-    ""Relation Label"": ""another relationship description""
-  }}
-]
+{{
+  ""type"": ""relationships"",
+  ""data"": [
+    {{
+      ""Source Object"": ""name_of_source_object"",
+      ""Target Object"": ""name_of_target_object"",
+      ""Relation Label"": ""brief relationship description (5 words max)""
+    }},
+    {{
+      ""Source Object"": ""name_of_another_source"",
+      ""Target Object"": ""name_of_another_target"",
+      ""Relation Label"": ""another relationship description""
+    }}
+  ]
+}}
 ```
 
-If no relationships can be identified, return an empty array: []
+For HIGHLIGHT requests (e.g., ""show me all food items"" or ""highlight the kitchen tools""):
+1. Identify which objects from the detected list match the user's criteria.
+2. Output a JSON object with the following structure:
+```json
+{{
+  ""type"": ""highlight"",
+  ""data"": {{
+    ""objects"": [
+      ""object1"",
+      ""object2"",
+      ""object3""
+    ],
+    ""rationale"": ""Brief explanation of why these objects were selected (1-2 sentences)""
+  }}
+}}
+```
+
+If no relevant objects or relationships can be identified, return:
+```json
+{{
+  ""type"": ""none"",
+  ""message"": ""No relevant objects or relationships found""
+}}
+```
 
 IMPORTANT: Only include objects that are in the detected objects list provided above.";
 
@@ -529,7 +557,7 @@ IMPORTANT: Only include objects that are in the detected objects list provided a
             // 6) Invoke event with the response
             onGeminiResponseReceived?.Invoke(geminiResponse);
             
-            // 7) Parse the response for relationships if it's not in object mode
+            // 7) Parse the response for relationships or highlights if it's not in object mode
             if (!isObjectMode && sceneObjectManager != null && relationshipLineManager != null)
             {
                 try
@@ -541,91 +569,120 @@ IMPORTANT: Only include objects that are in the detected objects list provided a
                     string jsonContent = TryExtractJson(geminiResponse);
                     Debug.Log($"[SpeechRecorder] Extracted JSON: {jsonContent}");
                     
-                    // Try to parse the relationships as a JSON array of relationship objects
-                    List<RelationshipInfo> relationships = null;
-                    
                     if (!string.IsNullOrEmpty(jsonContent))
                     {
                         try 
                         {
-                            // Check if it's an array first
-                            if (jsonContent.Trim().StartsWith("["))
+                            // First, try to parse as a ResponseWrapper to determine the type
+                            ResponseWrapper responseWrapper = null;
+                            try
                             {
-                                relationships = JsonConvert.DeserializeObject<List<RelationshipInfo>>(jsonContent);
-                                Debug.Log($"[SpeechRecorder] Successfully parsed JSON array with {relationships.Count} items");
+                                responseWrapper = JsonConvert.DeserializeObject<ResponseWrapper>(jsonContent);
                             }
-                            // If it's a single object, wrap it in an array
-                            else if (jsonContent.Trim().StartsWith("{"))
+                            catch (JsonException)
                             {
-                                var singleRelationship = JsonConvert.DeserializeObject<RelationshipInfo>(jsonContent);
-                                if (singleRelationship != null)
-                                {
-                                    relationships = new List<RelationshipInfo> { singleRelationship };
-                                    Debug.Log("[SpeechRecorder] Successfully parsed single JSON object and wrapped in array");
-                                }
+                                Debug.LogWarning("[SpeechRecorder] Failed to parse as ResponseWrapper, trying legacy formats");
                             }
-                        }
-                        catch (JsonException je)
-                        {
-                            Debug.LogWarning($"[SpeechRecorder] Failed to parse as relationships array: {je.Message}");
-                            Debug.LogWarning($"[SpeechRecorder] JSON content was: {jsonContent}");
                             
-                            // Try the old format as fallback
-                            try 
+                            if (responseWrapper != null && !string.IsNullOrEmpty(responseWrapper.type))
                             {
-                                Dictionary<string, string> oldFormatDict = JsonConvert.DeserializeObject<Dictionary<string, string>>(jsonContent);
-                                if (oldFormatDict != null && oldFormatDict.Count > 0)
+                                // Process according to the response type
+                                switch (responseWrapper.type.ToLower())
                                 {
-                                    Debug.Log("[SpeechRecorder] Found old format dictionary, converting to new format");
-                                    ConvertOldFormatToNewFormat(oldFormatDict, out relationships);
+                                    case "relationships":
+                                        // Convert the data object to a JSON string first, then deserialize to the proper type
+                                        string relationshipsJson = JsonConvert.SerializeObject(responseWrapper.data);
+                                        List<RelationshipInfo> relationships = JsonConvert.DeserializeObject<List<RelationshipInfo>>(relationshipsJson);
+                                        ProcessRelationships(relationships, sceneObjectManager.GetAllAnchors());
+                                        break;
+                                        
+                                    case "highlight":
+                                        // Convert the data object to a JSON string first, then deserialize to the proper type
+                                        string highlightJson = JsonConvert.SerializeObject(responseWrapper.data);
+                                        HighlightData highlightData = JsonConvert.DeserializeObject<HighlightData>(highlightJson);
+                                        ProcessHighlights(highlightData, sceneObjectManager.GetAllAnchors());
+                                        break;
+                                        
+                                    case "none":
+                                        Debug.Log($"[SpeechRecorder] No relevant objects or relationships found: {responseWrapper.message}");
+                                        break;
+                                        
+                                    default:
+                                        Debug.LogWarning($"[SpeechRecorder] Unknown response type: {responseWrapper.type}");
+                                        break;
                                 }
                             }
-                            catch (Exception ex)
+                            // Fall back to legacy formats if needed
+                            else if (jsonContent.Contains("Source Object") || jsonContent.Contains("Target Object"))
                             {
-                                Debug.LogWarning($"[SpeechRecorder] Not in old format either: {ex.Message}");
+                                // Try to parse as relationships array directly
+                                try
+                                {
+                                    if (jsonContent.Trim().StartsWith("["))
+                                    {
+                                        List<RelationshipInfo> relationships = JsonConvert.DeserializeObject<List<RelationshipInfo>>(jsonContent);
+                                        ProcessRelationships(relationships, sceneObjectManager.GetAllAnchors());
+                                    }
+                                    else if (jsonContent.Trim().StartsWith("{"))
+                                    {
+                                        var singleRelationship = JsonConvert.DeserializeObject<RelationshipInfo>(jsonContent);
+                                        if (singleRelationship != null)
+                                        {
+                                            ProcessRelationships(new List<RelationshipInfo> { singleRelationship }, sceneObjectManager.GetAllAnchors());
+                                        }
+                                    }
+                                }
+                                catch (JsonException je)
+                                {
+                                    Debug.LogWarning($"[SpeechRecorder] Failed to parse as relationships: {je.Message}");
+                                }
+                            }
+                            // Check if it could be highlight format
+                            else if (jsonContent.Contains("objects") && jsonContent.Contains("rationale"))
+                            {
+                                try
+                                {
+                                    HighlightData highlightData = JsonConvert.DeserializeObject<HighlightData>(jsonContent);
+                                    ProcessHighlights(highlightData, sceneObjectManager.GetAllAnchors());
+                                }
+                                catch (JsonException je)
+                                {
+                                    Debug.LogWarning($"[SpeechRecorder] Failed to parse as highlight data: {je.Message}");
+                                }
+                            }
+                            // Legacy dictionary format
+                            else
+                            {
+                                try 
+                                {
+                                    Dictionary<string, string> oldFormatDict = JsonConvert.DeserializeObject<Dictionary<string, string>>(jsonContent);
+                                    if (oldFormatDict != null && oldFormatDict.Count > 0)
+                                    {
+                                        Debug.Log("[SpeechRecorder] Found old format dictionary, converting to new format");
+                                        List<RelationshipInfo> relationships;
+                                        ConvertOldFormatToNewFormat(oldFormatDict, out relationships);
+                                        ProcessRelationships(relationships, sceneObjectManager.GetAllAnchors());
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    Debug.LogWarning($"[SpeechRecorder] Not in old format either: {ex.Message}");
+                                }
                             }
                         }
-                    }
-                    
-                    if (relationships != null && relationships.Count > 0)
-                    {
-                        Debug.Log($"[SpeechRecorder] Found {relationships.Count} relationships to visualize");
-                        
-                        // Log details of each relationship for debugging
-                        for (int i = 0; i < relationships.Count; i++)
+                        catch (Exception ex)
                         {
-                            var rel = relationships[i];
-                            Debug.Log($"[SpeechRecorder] Relationship {i+1}: {rel.SourceObject} -> {rel.TargetObject}: '{rel.RelationLabel}'");
+                            Debug.LogError($"[SpeechRecorder] Error processing JSON response: {ex.Message}");
                         }
-                        
-                        // Get all anchors from the SceneObjectManager
-                        var allAnchors = sceneObjectManager.GetAllAnchors();
-                        
-                        // Log available anchors for debugging
-                        Debug.Log($"[SpeechRecorder] Available anchors: {string.Join(", ", allAnchors.Select(a => a.label))}");
-                        
-                        // Use the new bidirectional relationship visualization
-                        // Convert our internal RelationshipInfo objects to the RelationshipLineManager format
-                        List<RelationshipLineManager.RelationshipInfo> relationshipLineInfos = 
-                            relationships.Select(r => new RelationshipLineManager.RelationshipInfo
-                            {
-                                SourceObject = r.SourceObject,
-                                TargetObject = r.TargetObject,
-                                RelationLabel = r.RelationLabel
-                            }).ToList();
-                        
-                        // Call the bidirectional relationship visualization
-                        relationshipLineManager.ShowBidirectionalRelationships(relationshipLineInfos, allAnchors);
-                        Debug.Log($"[SpeechRecorder] Visualized {relationships.Count} bidirectional relationships");
                     }
                     else
                     {
-                        Debug.Log("[SpeechRecorder] No relationships found in response");
+                        Debug.Log("[SpeechRecorder] No valid JSON found in response");
                     }
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogError($"[SpeechRecorder] Error processing relationships: {ex.Message}");
+                    Debug.LogError($"[SpeechRecorder] Error processing response: {ex.Message}");
                 }
             }
         }
@@ -750,6 +807,140 @@ IMPORTANT: Only include objects that are in the detected objects list provided a
         }
         
         Debug.Log($"[SpeechRecorder] Converted {oldFormat.Count} old format items to {newFormat.Count} new format relationships");
+    }
+
+    // New method to process relationships data
+    private void ProcessRelationships(List<RelationshipInfo> relationships, List<SceneObjectAnchor> allAnchors)
+    {
+        if (relationships == null || relationships.Count == 0)
+        {
+            Debug.Log("[SpeechRecorder] No relationships to process");
+            return;
+        }
+        
+        Debug.Log($"[SpeechRecorder] Processing {relationships.Count} relationships");
+        
+        // Log details of each relationship for debugging
+        for (int i = 0; i < relationships.Count; i++)
+        {
+            var rel = relationships[i];
+            Debug.Log($"[SpeechRecorder] Relationship {i+1}: {rel.SourceObject} -> {rel.TargetObject}: '{rel.RelationLabel}'");
+        }
+        
+        // Convert our internal RelationshipInfo objects to the RelationshipLineManager format
+        List<RelationshipLineManager.RelationshipInfo> relationshipLineInfos = 
+            relationships.Select(r => new RelationshipLineManager.RelationshipInfo
+            {
+                SourceObject = r.SourceObject,
+                TargetObject = r.TargetObject,
+                RelationLabel = r.RelationLabel
+            }).ToList();
+        
+        // Call the bidirectional relationship visualization
+        relationshipLineManager.ShowBidirectionalRelationships(relationshipLineInfos, allAnchors);
+        Debug.Log($"[SpeechRecorder] Visualized {relationships.Count} bidirectional relationships");
+    }
+
+    // New method to process highlight data
+    private void ProcessHighlights(HighlightData highlightData, List<SceneObjectAnchor> allAnchors)
+    {
+        if (highlightData == null || highlightData.objects == null || highlightData.objects.Count == 0)
+        {
+            Debug.Log("[SpeechRecorder] No objects to highlight");
+            return;
+        }
+        
+        Debug.Log($"[SpeechRecorder] Highlighting {highlightData.objects.Count} objects: {string.Join(", ", highlightData.objects)}");
+        Debug.Log($"[SpeechRecorder] Rationale: {highlightData.rationale}");
+        
+        // Default highlight color (bright green)
+        Color highlightColor = new Color(0.2f, 0.9f, 0.3f, 1.0f);
+        
+        // Find and highlight each object
+        int highlightedCount = 0;
+        foreach (string objectName in highlightData.objects)
+        {
+            SceneObjectAnchor anchor = FindBestMatchingAnchor(objectName, allAnchors);
+            
+            if (anchor != null && anchor.sphereObj != null)
+            {
+                var renderer = anchor.sphereObj.GetComponent<Renderer>();
+                if (renderer != null && renderer.material != null)
+                {
+                    renderer.material.color = highlightColor;
+                    highlightedCount++;
+                    Debug.Log($"[SpeechRecorder] Highlighted object: {anchor.label}");
+                }
+            }
+            else
+            {
+                Debug.LogWarning($"[SpeechRecorder] Could not find object to highlight: {objectName}");
+            }
+        }
+        
+        // Update response text with the rationale if objects were highlighted
+        if (highlightedCount > 0 && responseText != null)
+        {
+            string highlightMessage = $"Highlighted {highlightedCount} objects: {highlightData.rationale}";
+            responseText.text = highlightMessage;
+        }
+    }
+
+    // Helper method to find best matching anchor for a given label
+    private SceneObjectAnchor FindBestMatchingAnchor(string label, List<SceneObjectAnchor> anchors)
+    {
+        // Step 1: Try exact match (case-insensitive)
+        var exactMatch = anchors.Find(a => string.Equals(a.label, label, System.StringComparison.OrdinalIgnoreCase));
+        if (exactMatch != null)
+        {
+            return exactMatch;
+        }
+        
+        // Step 2: Try contains match
+        var containsMatch = anchors.Find(a => 
+            a.label.IndexOf(label, System.StringComparison.OrdinalIgnoreCase) >= 0 || 
+            label.IndexOf(a.label, System.StringComparison.OrdinalIgnoreCase) >= 0);
+            
+        if (containsMatch != null)
+        {
+            return containsMatch;
+        }
+        
+        // Step 3: Try word-by-word match for multi-word labels
+        string[] words = label.Split(' ', '-', '_');
+        if (words.Length > 1)
+        {
+            foreach (var word in words)
+            {
+                if (word.Length < 3) continue; // Skip short words
+                
+                var wordMatch = anchors.Find(a => 
+                    a.label.IndexOf(word, System.StringComparison.OrdinalIgnoreCase) >= 0);
+                    
+                if (wordMatch != null)
+                {
+                    return wordMatch;
+                }
+            }
+        }
+        
+        return null;
+    }
+
+    // Additional classes to support the new response format
+    [System.Serializable]
+    private class ResponseWrapper
+    {
+        public string type;
+        public object data;
+        public string message;
+    }
+
+    [System.Serializable]
+    private class HighlightData
+    {
+        public List<string> objects;
+        public string rationale;
     }
 }
 
