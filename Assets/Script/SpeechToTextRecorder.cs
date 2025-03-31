@@ -53,7 +53,8 @@ For RELATIONSHIPS between objects (e.g., ""how are these objects related?"" or "
       ""Target Object"": ""name_of_another_target"",
       ""Relation Label"": ""another relationship description""
     }}
-  ]
+  ],
+  ""message"": ""Found [number] relationships. [object1] is [brief relation] to [object2].""
 }}
 ```
 
@@ -70,7 +71,8 @@ For HIGHLIGHT requests (e.g., ""show me all food items"" or ""highlight the kitc
       ""object3""
     ],
     ""rationale"": ""Brief explanation of why these objects were selected (1-2 sentences)""
-  }}
+  }},
+  ""message"": ""Highlighted [number] [category] items.""
 }}
 ```
 
@@ -78,11 +80,15 @@ If no relevant objects or relationships can be identified, return:
 ```json
 {{
   ""type"": ""none"",
-  ""message"": ""No relevant objects or relationships found""
+  ""message"": ""No matching objects found. Try rephrasing.""
 }}
 ```
 
-IMPORTANT: Only include objects that are in the detected objects list provided above.";
+IMPORTANT: 
+1. Only include objects that are in the detected objects list provided above.
+2. Keep messages short and clear (max 15 words).
+3. Focus on key information only.
+4. Avoid technical terms or JSON structure.";
 
     [Header("Gesture Control")]
     [SerializeField] private bool useMiddlePinchControl = true;
@@ -542,10 +548,35 @@ IMPORTANT: Only include objects that are in the detected objects list provided a
                 responseText.text = geminiResponse;
             }
 
-            // 5) Update UI if available
+            // 5) Update UI if available - now showing the user-friendly message
             if (responseTextOnObject != null && !string.IsNullOrEmpty(geminiResponse))
             {
-                responseTextOnObject.text = geminiResponse;
+                try
+                {
+                    // Try to extract JSON from the response
+                    string jsonContent = TryExtractJson(geminiResponse);
+                    if (!string.IsNullOrEmpty(jsonContent))
+                    {
+                        ResponseWrapper responseWrapper = JsonConvert.DeserializeObject<ResponseWrapper>(jsonContent);
+                        if (responseWrapper != null && !string.IsNullOrEmpty(responseWrapper.message))
+                        {
+                            responseTextOnObject.text = responseWrapper.message;
+                        }
+                        else
+                        {
+                            responseTextOnObject.text = geminiResponse;
+                        }
+                    }
+                    else
+                    {
+                        responseTextOnObject.text = geminiResponse;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"Failed to parse response for object text: {ex.Message}");
+                    responseTextOnObject.text = geminiResponse;
+                }
             }
 
             // 6) Update UI if available
@@ -726,27 +757,7 @@ IMPORTANT: Only include objects that are in the detected objects list provided a
             }
         }
 
-        // Case 3: Check for JSON array first since we're now expecting an array format
-        int openBracket = text.IndexOf('[');
-        int closeBracket = text.LastIndexOf(']');
-        
-        if (openBracket >= 0 && closeBracket > openBracket)
-        {
-            string jsonSubstring = text.Substring(openBracket, closeBracket - openBracket + 1);
-            // Validate this is actually JSON
-            try
-            {
-                JsonConvert.DeserializeObject(jsonSubstring);
-                return jsonSubstring; // Only return if it's valid JSON
-            }
-            catch
-            {
-                // Not valid JSON, ignore
-                Debug.LogWarning($"Found array-like structure but failed to parse as JSON: {jsonSubstring}");
-            }
-        }
-
-        // Case 4: Try to find a JSON object directly in the text
+        // Case 3: Try to find a complete JSON object first (prioritize over arrays)
         int openBrace = text.IndexOf('{');
         int closeBrace = text.LastIndexOf('}');
         
@@ -761,8 +772,26 @@ IMPORTANT: Only include objects that are in the detected objects list provided a
             }
             catch
             {
-                // Not valid JSON, ignore
                 Debug.LogWarning($"Found object-like structure but failed to parse as JSON: {jsonSubstring}");
+            }
+        }
+
+        // Case 4: Only then check for JSON arrays
+        int openBracket = text.IndexOf('[');
+        int closeBracket = text.LastIndexOf(']');
+        
+        if (openBracket >= 0 && closeBracket > openBracket)
+        {
+            string jsonSubstring = text.Substring(openBracket, closeBracket - openBracket + 1);
+            // Validate this is actually JSON
+            try
+            {
+                JsonConvert.DeserializeObject(jsonSubstring);
+                return jsonSubstring; // Only return if it's valid JSON
+            }
+            catch
+            {
+                Debug.LogWarning($"Found array-like structure but failed to parse as JSON: {jsonSubstring}");
             }
         }
 
@@ -841,6 +870,46 @@ IMPORTANT: Only include objects that are in the detected objects list provided a
         Debug.Log($"[SpeechRecorder] Visualized {relationships.Count} bidirectional relationships");
     }
 
+    // Helper method to find all matching anchors for a given label
+    private List<SceneObjectAnchor> FindMatchingAnchors(string label, List<SceneObjectAnchor> anchors)
+    {
+        List<SceneObjectAnchor> matches = new List<SceneObjectAnchor>();
+        
+        // Step 1: Try exact matches (case-insensitive)
+        matches.AddRange(anchors.Where(a => string.Equals(a.label, label, System.StringComparison.OrdinalIgnoreCase)));
+        if (matches.Count > 0)
+        {
+            return matches;
+        }
+        
+        // Step 2: Try contains matches
+        matches.AddRange(anchors.Where(a => 
+            a.label.IndexOf(label, System.StringComparison.OrdinalIgnoreCase) >= 0 || 
+            label.IndexOf(a.label, System.StringComparison.OrdinalIgnoreCase) >= 0));
+            
+        if (matches.Count > 0)
+        {
+            return matches;
+        }
+        
+        // Step 3: Try word-by-word match for multi-word labels
+        string[] words = label.Split(' ', '-', '_');
+        if (words.Length > 1)
+        {
+            foreach (var word in words)
+            {
+                if (word.Length < 3) continue; // Skip short words
+                
+                var wordMatches = anchors.Where(a => 
+                    a.label.IndexOf(word, System.StringComparison.OrdinalIgnoreCase) >= 0);
+                    
+                matches.AddRange(wordMatches);
+            }
+        }
+        
+        return matches.Distinct().ToList(); // Remove any duplicates
+    }
+
     // New method to process highlight data
     private void ProcessHighlights(HighlightData highlightData, List<SceneObjectAnchor> allAnchors)
     {
@@ -852,79 +921,68 @@ IMPORTANT: Only include objects that are in the detected objects list provided a
         
         Debug.Log($"[SpeechRecorder] Highlighting {highlightData.objects.Count} objects: {string.Join(", ", highlightData.objects)}");
         Debug.Log($"[SpeechRecorder] Rationale: {highlightData.rationale}");
+
+        // Clear all previous highlights before starting new ones
+        relationshipLineManager.ClearAllHighlightsAndLines();
         
-        // Default highlight color (bright green)
-        Color highlightColor = new Color(0.2f, 0.9f, 0.3f, 1.0f);
+        // Reset the highlight timer when showing new highlights
+        relationshipLineManager.highlightTimer = 0f;
+        relationshipLineManager.hasActiveHighlights = true;
+        
+        // Use the same highlight color as RelationshipLineManager (hex: #2096F3 with 100% alpha)
+        Color highlightColor = new Color(
+            r: 0.125f,  // 32/255
+            g: 0.588f,  // 150/255
+            b: 0.953f,  // 243/255
+            a: 1.0f     // 100% alpha
+        );
         
         // Find and highlight each object
-        int highlightedCount = 0;
+        HashSet<SceneObjectAnchor> highlightedAnchors = new HashSet<SceneObjectAnchor>();
+        
         foreach (string objectName in highlightData.objects)
         {
-            SceneObjectAnchor anchor = FindBestMatchingAnchor(objectName, allAnchors);
+            List<SceneObjectAnchor> matchingAnchors = FindMatchingAnchors(objectName, allAnchors);
             
-            if (anchor != null && anchor.sphereObj != null)
+            foreach (var anchor in matchingAnchors)
             {
-                var renderer = anchor.sphereObj.GetComponent<Renderer>();
-                if (renderer != null && renderer.material != null)
+                if (anchor != null && anchor.sphereObj != null && !highlightedAnchors.Contains(anchor))
                 {
-                    renderer.material.color = highlightColor;
-                    highlightedCount++;
-                    Debug.Log($"[SpeechRecorder] Highlighted object: {anchor.label}");
+                    // Highlight the sphere
+                    var renderer = anchor.sphereObj.GetComponent<Renderer>();
+                    if (renderer != null && renderer.material != null)
+                    {
+                        renderer.material.color = highlightColor;
+                    }
+
+                    // Highlight the child label object
+                    var labelObj = anchor.sphereObj.transform.GetChild(0)?.gameObject;
+                    if (labelObj != null)
+                    {
+                        var labelRenderer = labelObj.GetComponent<Renderer>();
+                        if (labelRenderer != null && labelRenderer.material != null)
+                        {
+                            labelRenderer.material.color = highlightColor;
+                        }
+                    }
+
+                    highlightedAnchors.Add(anchor);
+                    Debug.Log($"[SpeechRecorder] Highlighted object and label: {anchor.label}");
                 }
             }
-            else
+            
+            if (matchingAnchors.Count == 0)
             {
-                Debug.LogWarning($"[SpeechRecorder] Could not find object to highlight: {objectName}");
+                Debug.LogWarning($"[SpeechRecorder] Could not find any objects to highlight matching: {objectName}");
             }
         }
         
         // Update response text with the rationale if objects were highlighted
-        if (highlightedCount > 0 && responseText != null)
+        if (highlightedAnchors.Count > 0 && responseText != null)
         {
-            string highlightMessage = $"Highlighted {highlightedCount} objects: {highlightData.rationale}";
+            string highlightMessage = $"Highlighted {highlightedAnchors.Count} objects: {highlightData.rationale}";
             responseText.text = highlightMessage;
         }
-    }
-
-    // Helper method to find best matching anchor for a given label
-    private SceneObjectAnchor FindBestMatchingAnchor(string label, List<SceneObjectAnchor> anchors)
-    {
-        // Step 1: Try exact match (case-insensitive)
-        var exactMatch = anchors.Find(a => string.Equals(a.label, label, System.StringComparison.OrdinalIgnoreCase));
-        if (exactMatch != null)
-        {
-            return exactMatch;
-        }
-        
-        // Step 2: Try contains match
-        var containsMatch = anchors.Find(a => 
-            a.label.IndexOf(label, System.StringComparison.OrdinalIgnoreCase) >= 0 || 
-            label.IndexOf(a.label, System.StringComparison.OrdinalIgnoreCase) >= 0);
-            
-        if (containsMatch != null)
-        {
-            return containsMatch;
-        }
-        
-        // Step 3: Try word-by-word match for multi-word labels
-        string[] words = label.Split(' ', '-', '_');
-        if (words.Length > 1)
-        {
-            foreach (var word in words)
-            {
-                if (word.Length < 3) continue; // Skip short words
-                
-                var wordMatch = anchors.Find(a => 
-                    a.label.IndexOf(word, System.StringComparison.OrdinalIgnoreCase) >= 0);
-                    
-                if (wordMatch != null)
-                {
-                    return wordMatch;
-                }
-            }
-        }
-        
-        return null;
     }
 
     // Additional classes to support the new response format

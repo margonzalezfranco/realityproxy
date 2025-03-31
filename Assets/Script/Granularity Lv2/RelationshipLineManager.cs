@@ -14,19 +14,107 @@ public class RelationshipLineManager : MonoBehaviour
     public GameObject labelPrefab;   // A small canvas or 3D text prefab
     [SerializeField] private float labelScale = 0.002f;  // Changed back to original value
 
+    [Header("Highlight Settings")]
+    [Tooltip("Time in seconds before highlights are automatically cleared. Set to 0 to disable auto-clear.")]
+    public float highlightTimeout = 10f;
+    public float highlightTimer { get; set; } = 0f;
+    public bool hasActiveHighlights { get; set; } = false;
+
+    [Header("Scene Dependencies")]
+    [Tooltip("Manager that tracks all recognized objects in the scene.")]
+    public SceneObjectManager sceneObjectManager;
+
     // We'll store active lines so we can remove them later
     private List<LineConnection> activeLines = new List<LineConnection>();
 
+    private void Awake()
+    {
+        // Find SceneObjectManager if not assigned
+        if (sceneObjectManager == null)
+        {
+            sceneObjectManager = FindFirstObjectByType<SceneObjectManager>();
+            if (sceneObjectManager == null)
+            {
+                Debug.LogError("SceneObjectManager not found! Please assign it in the inspector.");
+                return;
+            }
+        }
+    }
+
     /// <summary>
-    /// Creates lines from 'sourceAnchor' to each 'targetAnchor', with a text label describing the relationship.
+    /// Clears all highlights and relationship lines from the previous generation.
+    /// Call this before starting a new round of relationship or highlight generation.
+    /// </summary>
+    public void ClearAllHighlightsAndLines()
+    {
+        // Default color to restore anchors to when clearing relationships (#5E5E5E)
+        Color defaultSphereColor = new Color(
+            r: 0.369f,  // 94/255
+            g: 0.369f,  // 94/255
+            b: 0.369f,  // 94/255
+            a: 1.0f     // 100% alpha
+        );
+        
+        // First, clear all existing relationship lines and their associated highlights
+        ClearAllLines();
+        
+        // Then, find and reset ALL scene anchors (in case some were highlighted but not connected by lines)
+        if (sceneObjectManager != null)
+        {
+            var allAnchors = sceneObjectManager.GetAllAnchors();
+            foreach (var anchor in allAnchors)
+            {
+                if (anchor != null && anchor.sphereObj != null)
+                {
+                    // Reset sphere color
+                    var renderer = anchor.sphereObj.GetComponent<Renderer>();
+                    if (renderer != null && renderer.material != null)
+                    {
+                        renderer.material.color = defaultSphereColor;
+                    }
+
+                    // Reset label color
+                    var labelObj = anchor.sphereObj.transform.GetChild(0)?.gameObject;
+                    if (labelObj != null)
+                    {
+                        var labelRenderer = labelObj.GetComponent<Renderer>();
+                        if (labelRenderer != null && labelRenderer.material != null)
+                        {
+                            labelRenderer.material.color = defaultSphereColor;
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Clear response text and hide chatbox if they exist
+        var speechRecorder = FindFirstObjectByType<SpeechToTextRecorder>();
+        if (speechRecorder != null)
+        {
+            if (speechRecorder.responseTextOnObject != null)
+            {
+                speechRecorder.responseTextOnObject.text = "";
+            }
+            if (speechRecorder.chatboxOnObject != null)
+            {
+                speechRecorder.chatboxOnObject.SetActive(false);
+            }
+        }
+        
+        Debug.Log("Cleared all highlights, relationship lines, and response text");
+    }
+
+    /// <summary>
+    /// Shows relationships from 'sourceAnchor' to each 'targetAnchor', with a text label describing the relationship.
     /// </summary>
     public void ShowRelationships(
         SceneObjectAnchor sourceAnchor, 
         Dictionary<string, string> relationships, 
         List<SceneObjectAnchor> allAnchors)
     {
-        // Don't clear lines here - we want to allow multiple source anchors with their relationships
-        // ClearAllLines(); - remove this line to allow multiple source anchors
+        // Reset the highlight timer when showing new relationships
+        highlightTimer = 0f;
+        hasActiveHighlights = true;
 
         if (sourceAnchor == null)
         {
@@ -70,15 +158,27 @@ public class RelationshipLineManager : MonoBehaviour
             a: 0.5f     // 50% alpha
         );
 
-        // Highlight the source anchor
+        // Highlight the source anchor and its label
         if (sourceAnchor.sphereObj != null)
         {
+            // Highlight the sphere
             var renderer = sourceAnchor.sphereObj.GetComponent<Renderer>();
             if (renderer != null && renderer.material != null)
             {
-                // Store original color if needed
                 renderer.material.color = sourceHighlightColor;
                 Debug.Log($"Highlighted source anchor: {sourceAnchor.label}");
+            }
+
+            // Highlight the child label object
+            var sourceLabelObj = sourceAnchor.sphereObj.transform.GetChild(0)?.gameObject;
+            if (sourceLabelObj != null)
+            {
+                var labelRenderer = sourceLabelObj.GetComponent<Renderer>();
+                if (labelRenderer != null && labelRenderer.material != null)
+                {
+                    labelRenderer.material.color = sourceHighlightColor;
+                    Debug.Log($"Highlighted source anchor label: {sourceAnchor.label}");
+                }
             }
         }
 
@@ -101,14 +201,27 @@ public class RelationshipLineManager : MonoBehaviour
                 continue;
             }
 
-            // Highlight the target anchor
+            // Highlight the target anchor and its label
             if (targetAnchor.sphereObj != null)
             {
+                // Highlight the sphere
                 var renderer = targetAnchor.sphereObj.GetComponent<Renderer>();
                 if (renderer != null && renderer.material != null)
                 {
                     renderer.material.color = targetHighlightColor;
                     Debug.Log($"Highlighted target anchor: {targetAnchor.label}");
+                }
+
+                // Highlight the child label object
+                var targetLabelObj = targetAnchor.sphereObj.transform.GetChild(0)?.gameObject;
+                if (targetLabelObj != null)
+                {
+                    var labelRenderer = targetLabelObj.GetComponent<Renderer>();
+                    if (labelRenderer != null && labelRenderer.material != null)
+                    {
+                        labelRenderer.material.color = targetHighlightColor;
+                        Debug.Log($"Highlighted target anchor label: {targetAnchor.label}");
+                    }
                 }
             }
 
@@ -360,8 +473,13 @@ public class RelationshipLineManager : MonoBehaviour
     /// </summary>
     public void ClearAllLines()
     {
-        // Default color to restore anchors to when clearing relationships
-        Color defaultSphereColor = new Color(1.0f, 1.0f, 1.0f, 1.0f); // White
+        // Default color to restore anchors to when clearing relationships (#5E5E5E)
+        Color defaultSphereColor = new Color(
+            r: 0.369f,  // 94/255
+            g: 0.369f,  // 94/255
+            b: 0.369f,  // 94/255
+            a: 1.0f     // 100% alpha
+        );
         
         // Restore original colors of source and target anchors
         HashSet<SceneObjectAnchor> processedAnchors = new HashSet<SceneObjectAnchor>();
@@ -371,25 +489,51 @@ public class RelationshipLineManager : MonoBehaviour
             // Reset source anchor color if it exists and hasn't been processed
             if (connection.source != null && connection.source.sphereObj != null && !processedAnchors.Contains(connection.source))
             {
+                // Reset sphere color
                 var renderer = connection.source.sphereObj.GetComponent<Renderer>();
                 if (renderer != null && renderer.material != null)
                 {
                     renderer.material.color = defaultSphereColor;
-                    processedAnchors.Add(connection.source);
-                    Debug.Log($"Restored color for source anchor: {connection.source.label}");
                 }
+
+                // Reset label color
+                var sourceLabelObj = connection.source.sphereObj.transform.GetChild(0)?.gameObject;
+                if (sourceLabelObj != null)
+                {
+                    var labelRenderer = sourceLabelObj.GetComponent<Renderer>();
+                    if (labelRenderer != null && labelRenderer.material != null)
+                    {
+                        labelRenderer.material.color = defaultSphereColor;
+                    }
+                }
+
+                processedAnchors.Add(connection.source);
+                Debug.Log($"Restored color for source anchor and label: {connection.source.label}");
             }
             
             // Reset target anchor color if it exists and hasn't been processed
             if (connection.target != null && connection.target.sphereObj != null && !processedAnchors.Contains(connection.target))
             {
+                // Reset sphere color
                 var renderer = connection.target.sphereObj.GetComponent<Renderer>();
                 if (renderer != null && renderer.material != null)
                 {
                     renderer.material.color = defaultSphereColor;
-                    processedAnchors.Add(connection.target);
-                    Debug.Log($"Restored color for target anchor: {connection.target.label}");
                 }
+
+                // Reset label color
+                var targetLabelObj = connection.target.sphereObj.transform.GetChild(0)?.gameObject;
+                if (targetLabelObj != null)
+                {
+                    var labelRenderer = targetLabelObj.GetComponent<Renderer>();
+                    if (labelRenderer != null && labelRenderer.material != null)
+                    {
+                        labelRenderer.material.color = defaultSphereColor;
+                    }
+                }
+
+                processedAnchors.Add(connection.target);
+                Debug.Log($"Restored color for target anchor and label: {connection.target.label}");
             }
             
             // Destroy the line renderer object
@@ -457,6 +601,19 @@ public class RelationshipLineManager : MonoBehaviour
     // Update method simplified to match the original code
     private void Update()
     {
+        // Check if we should clear highlights due to timeout
+        if (hasActiveHighlights && highlightTimeout > 0)
+        {
+            highlightTimer += Time.deltaTime;
+            if (highlightTimer >= highlightTimeout)
+            {
+                ClearAllHighlightsAndLines();
+                highlightTimer = 0f;
+                hasActiveHighlights = false;
+                Debug.Log($"Cleared highlights after {highlightTimeout} seconds timeout");
+            }
+        }
+
         foreach (var connection in activeLines)
         {
             if (connection.source != null && connection.target != null)

@@ -6293,6 +6293,8 @@ MonoBehaviour:
   lineWidth: 0.01
   labelPrefab: {fileID: 6763369549751811372, guid: 5a34dbd9b67df4a89a605919b6fcfeaf, type: 3}
   labelScale: 0.002
+  highlightTimeout: 10
+  sceneObjectManager: {fileID: 1242229081}
 --- !u!4 &1083609193
 Transform:
   m_ObjectHideFlags: 0
@@ -10183,17 +10185,21 @@ MonoBehaviour:
     \"\"Relation Label\"\": \"\"brief relationship description (5 words max)\"\"\n   
     }},\n    {{\n      \"\"Source Object\"\": \"\"name_of_another_source\"\",\n     
     \"\"Target Object\"\": \"\"name_of_another_target\"\",\n      \"\"Relation Label\"\":
-    \"\"another relationship description\"\"\n    }}\n  ]\n}}\n```\n\nFor HIGHLIGHT
-    requests (e.g., \"\"show me all food items\"\" or \"\"highlight the kitchen tools\"\"):\n1.
-    Identify which objects from the detected list match the user's criteria.\n2.
-    Output a JSON object with the following structure:\n```json\n{{\n  \"\"type\"\":
-    \"\"highlight\"\",\n  \"\"data\"\": {{\n    \"\"objects\"\": [\n      \"\"object1\"\",\n     
-    \"\"object2\"\",\n      \"\"object3\"\"\n    ],\n    \"\"rationale\"\": \"\"Brief
-    explanation of why these objects were selected (1-2 sentences)\"\"\n  }}\n}}\n```\n\nIf
-    no relevant objects or relationships can be identified, return:\n```json\n{{\n 
-    \"\"type\"\": \"\"none\"\",\n  \"\"message\"\": \"\"No relevant objects or relationships
-    found\"\"\n}}\n```\n\nIMPORTANT: Only include objects that are in the detected
-    objects list provided above."
+    \"\"another relationship description\"\"\n    }}\n  ],\n  \"\"message\"\": \"\"Found
+    [number] relationships. [object1] is [brief relation] to [object2].\"\"\n}}\n```\n\nFor
+    HIGHLIGHT requests (e.g., \"\"show me all food items\"\" or \"\"highlight the
+    kitchen tools\"\"):\n1. Identify which objects from the detected list match the
+    user's criteria.\n2. Output a JSON object with the following structure:\n```json\n{{\n 
+    \"\"type\"\": \"\"highlight\"\",\n  \"\"data\"\": {{\n    \"\"objects\"\": [\n     
+    \"\"object1\"\",\n      \"\"object2\"\",\n      \"\"object3\"\"\n    ],\n   
+    \"\"rationale\"\": \"\"Brief explanation of why these objects were selected (1-2
+    sentences)\"\"\n  }},\n  \"\"message\"\": \"\"Highlighted [number] [category]
+    items.\"\"\n}}\n```\n\nIf no relevant objects or relationships can be identified,
+    return:\n```json\n{{\n  \"\"type\"\": \"\"none\"\",\n  \"\"message\"\": \"\"No
+    matching objects found. Try rephrasing.\"\"\n}}\n```\n\nIMPORTANT: \n1. Only
+    include objects that are in the detected objects list provided above.\n2. Keep
+    messages short and clear (max 15 words).\n3. Focus on key information only.\n4.
+    Avoid technical terms or JSON structure."
   useMiddlePinchControl: 0
   useLeftHand: 1
   geminiHandSphere: {fileID: 1694838163}

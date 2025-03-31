@@ -351,6 +351,7 @@ public class SphereToggleScript : MonoBehaviour
             else
             {
                 toggle.transform.SetParent(null);
+                toggle.GetComponent<SpatialUI>().UpdateReferenceScale();
                 toggle.transform.localPosition = Vector3.zero;
                 toggle.transform.localRotation = Quaternion.identity;
                 
@@ -1121,10 +1122,11 @@ public class SphereToggleScript : MonoBehaviour
                 }
 
                 // Reactivate first two children
-                if (menuCanvas.childCount >= 2)
+                if (menuCanvas.childCount >= 3)
                 {
                     menuCanvas.GetChild(0).gameObject.SetActive(true);
                     menuCanvas.GetChild(1).gameObject.SetActive(true);
+                    menuCanvas.GetChild(2).gameObject.SetActive(true);
                 }
 
                 // Update state and trigger effects
@@ -1293,10 +1295,11 @@ public class SphereToggleScript : MonoBehaviour
                     LazyFollow lazyFollow = menuCanvas.GetComponent<LazyFollow>();
                     if (lazyFollow != null) lazyFollow.positionFollowMode = LazyFollow.PositionFollowMode.Follow;
 
-                    if (menuCanvas.childCount >= 2)
+                    if (menuCanvas.childCount >= 3)
                     {
                         menuCanvas.GetChild(0).gameObject.SetActive(true);
                         menuCanvas.GetChild(1).gameObject.SetActive(true);
+                        menuCanvas.GetChild(2).gameObject.SetActive(true);
                     }
 
                     // Restore the AnimateWindow end position if it exists
