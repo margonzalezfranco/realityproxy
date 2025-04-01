@@ -4,7 +4,11 @@ using System.IO;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+#if !UNITY_VISIONOS
+using Microsoft.CSharp; // Required for dynamic type binding
+#endif
 using Newtonsoft.Json; // Added for JSON parsing
+using Newtonsoft.Json.Linq; // Added for JObject
 using PolySpatial.Template; // Added for SceneObjectManager etc.
 using System.Linq;
 
@@ -141,6 +145,22 @@ IMPORTANT:
         if (relationshipLineManager == null) Debug.LogError("RelationshipLineManager not found!");
         if (sceneContextManager == null) Debug.LogError("SceneContextManager not found!");
 
+        // Check critical UI references
+        if (chatboxOnObject == null) Debug.LogError("ChatboxOnObject reference is missing! Responses won't be displayed.");
+        if (responseTextOnObject == null) Debug.LogError("ResponseTextOnObject reference is missing! Response text won't be displayed.");
+        if (chatbox == null) Debug.LogError("Chatbox reference is missing!");
+        if (responseText == null) Debug.LogError("ResponseText reference is missing!");
+        
+        // Verify the chatbox object exists and is properly configured
+        if (chatboxOnObject != null)
+        {
+            Debug.Log($"ChatboxOnObject found: {chatboxOnObject.name}, Initial state: {(chatboxOnObject.activeSelf ? "Active" : "Inactive")}");
+            if (responseTextOnObject != null)
+            {
+                Debug.Log($"ResponseTextOnObject found: {responseTextOnObject.name}");
+            }
+        }
+
         // Get the hand subsystem once at startup
         var handSubsystems = new List<XRHandSubsystem>();
         SubsystemManager.GetSubsystems(handSubsystems);
@@ -152,6 +172,86 @@ IMPORTANT:
         else
         {
             Debug.LogWarning("No hand tracking subsystem found for SpeechToTextRecorder");
+        }
+        
+        // Test the API key to catch issues early
+        StartCoroutine(TestApiKey());
+    }
+
+    private System.Collections.IEnumerator TestApiKey()
+    {
+        // Short delay to let everything initialize
+        yield return new WaitForSeconds(2f);
+        
+        if (speechToText == null || string.IsNullOrEmpty(speechToText.speechApiKey))
+        {
+            Debug.LogError("Speech-to-Text API key is not set or component is missing. Transcription will fail.");
+            yield break;
+        }
+        
+        if (speechToText.speechApiKey.Contains("YOUR_") || speechToText.speechApiKey.Length < 20)
+        {
+            Debug.LogError("Speech-to-Text API key appears to be a placeholder or invalid. Please set a valid API key.");
+            yield break;
+        }
+        
+        Debug.Log("Testing Speech-to-Text API key...");
+        
+        // Create a minimal test audio (silence) just to check API connectivity
+        byte[] testAudio = new byte[1600]; // 100ms of silence at 16kHz
+        
+        // Send a minimal request to check if the API key is valid
+        var testRequest = speechToText.TranscribeAudio(testAudio);
+        
+        // Wait for completion
+        while (!testRequest.IsCompleted)
+        {
+            yield return null;
+        }
+        
+        // Check for authentication or quota errors in the response
+        if (testRequest.Error != null)
+        {
+            Debug.LogError($"API key test failed with error: {testRequest.Error.Message}");
+            if (testRequest.Error.Message.Contains("401") || testRequest.Error.Message.Contains("403"))
+            {
+                Debug.LogError("Authorization error: Your Speech-to-Text API key is invalid or has insufficient permissions.");
+            }
+        }
+        else
+        {
+            string response = testRequest.Result;
+            if (response.Contains("error"))
+            {
+                Debug.LogError($"API key test returned an error: {response}");
+                
+                try
+                {
+                    var errorObj = JsonConvert.DeserializeObject<JObject>(response);
+                    if (errorObj != null && errorObj["error"] != null && errorObj["error"]["message"] != null)
+                    {
+                        string errorMsg = errorObj["error"]["message"].ToString();
+                        Debug.LogError($"API Error: {errorMsg}");
+                        
+                        if (errorMsg.Contains("API key"))
+                        {
+                            Debug.LogError("Your Speech-to-Text API key appears to be invalid.");
+                        }
+                        else if (errorMsg.Contains("quota"))
+                        {
+                            Debug.LogError("Your Speech-to-Text API quota has been exceeded.");
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogError($"Failed to parse error response: {ex.Message}");
+                }
+            }
+            else
+            {
+                Debug.Log("Speech-to-Text API key test successful. Transcription should work correctly.");
+            }
         }
     }
 
@@ -306,8 +406,9 @@ IMPORTANT:
             originalRecorderParent = transform.parent.gameObject;
         }
         
-        // Set parent to the sphere toggle
-        if (sphereToggle != null)
+        // Only change parent if we're not already positioned relative to a pointing plane
+        bool isAlreadyOnPointingPlane = transform.parent != null && transform.parent.name == "PointingPlane";
+        if (sphereToggle != null && !isAlreadyOnPointingPlane)
         {
             transform.SetParent(sphereToggle.transform);
         }
@@ -318,7 +419,12 @@ IMPORTANT:
     // Method to reset object label and restore original parent
     public void ResetObjectLabel()
     {
+        // Store the current label before clearing it
+        string previousLabel = currentObjectLabel;
         currentObjectLabel = null;
+        
+        // Check if we are currently parented to a pointing plane
+        bool wasOnPointingPlane = transform.parent != null && transform.parent.name == "PointingPlane";
         
         // Restore original parent if it exists
         if (originalRecorderParent != null)
@@ -330,7 +436,7 @@ IMPORTANT:
             transform.SetParent(null);
         }
         
-        Debug.Log("Recorder object association cleared");
+        Debug.Log($"Recorder object association cleared from {previousLabel}, was on pointing plane: {wasOnPointingPlane}");
     }
 
     private void StartRecording()
@@ -353,8 +459,21 @@ IMPORTANT:
         recordedAudio = Microphone.Start(deviceName, false, maxRecordingLength, recordingFrequency);
         recordingStartTime = Time.time;
         transcriptionResult = "";
-        if (responseTextOnObject != null) responseTextOnObject.text = "";
-        if (chatboxOnObject != null) chatboxOnObject.SetActive(false);
+        
+        // Clear the response text but don't permanently disable the chatbox
+        if (responseTextOnObject != null) 
+        {
+            responseTextOnObject.text = "";
+            Debug.Log("[SpeechRecorder] Cleared responseTextOnObject text for new recording");
+        }
+        
+        // Note: We're temporarily hiding the chatbox during recording, but it will be shown again after receiving a response
+        if (chatboxOnObject != null) 
+        {
+            Debug.Log($"[SpeechRecorder] Setting chatboxOnObject inactive for recording. Current state before: {chatboxOnObject.activeSelf}");
+            chatboxOnObject.SetActive(false);
+        }
+        
         Debug.Log($"Started recording using {deviceName}");
     }
 
@@ -380,18 +499,48 @@ IMPORTANT:
 
     private void ProcessRecordingAndTranscribe(int position)
     {
-        // Create a float array for the audio data
-        float[] audioData = new float[position * recordedAudio.channels];
-        recordedAudio.GetData(audioData, 0);
+        try
+        {
+            // Create a float array for the audio data
+            float[] audioData = new float[position * recordedAudio.channels];
+            recordedAudio.GetData(audioData, 0);
 
-        // Convert float array to PCM byte array (16-bit)
-        byte[] byteData = ConvertAudioDataToBytes(audioData);
+            // Check if audio data has adequate volume
+            float maxVolume = 0;
+            float sumVolume = 0;
+            for (int i = 0; i < audioData.Length; i++)
+            {
+                float absValue = Mathf.Abs(audioData[i]);
+                maxVolume = Mathf.Max(maxVolume, absValue);
+                sumVolume += absValue;
+            }
+            float avgVolume = sumVolume / audioData.Length;
+            
+            Debug.Log($"Audio stats - Length: {audioData.Length} samples, Max volume: {maxVolume}, Avg volume: {avgVolume}");
+            
+            // Warning for low volume
+            if (maxVolume < 0.05f)
+            {
+                Debug.LogWarning("Audio volume appears to be very low. Microphone may not be capturing properly.");
+            }
 
-        // Now send for transcription
-        var requestStatus = speechToText.TranscribeAudio(byteData);
+            // Convert float array to PCM byte array (16-bit)
+            byte[] byteData = ConvertAudioDataToBytes(audioData);
+            
+            Debug.Log($"Sending {byteData.Length} bytes of audio data for transcription");
 
-        // Wait for and handle the result
-        StartCoroutine(WaitForTranscriptionResult(requestStatus));
+            // Now send for transcription
+            var requestStatus = speechToText.TranscribeAudio(byteData);
+
+            // Wait for and handle the result
+            StartCoroutine(WaitForTranscriptionResult(requestStatus));
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"Error processing recording: {ex.Message}\nStack trace: {ex.StackTrace}");
+            isProcessing = false;
+            transcriptionResult = "Error processing audio.";
+        }
     }
 
     private System.Collections.IEnumerator WaitForTranscriptionResult(SpeechToTextGeneral.RequestStatus requestStatus)
@@ -406,6 +555,10 @@ IMPORTANT:
         if (requestStatus.Error != null)
         {
             Debug.LogError($"Transcription error: {requestStatus.Error.Message}");
+            if (requestStatus.Error.InnerException != null)
+            {
+                Debug.LogError($"Inner exception: {requestStatus.Error.InnerException.Message}");
+            }
             transcriptionResult = "Error during transcription.";
         }
         else
@@ -413,19 +566,84 @@ IMPORTANT:
             string rawJson = requestStatus.Result;
             Debug.Log($"Raw transcription response: {rawJson}");
 
-            // Parse the result to get just the transcript text
-            string parsedResult = SpeechToTextGeneral.ParseTranscriptionResult(rawJson);
-            
-            if (!string.IsNullOrEmpty(parsedResult))
+            // Check for API error message
+            if (rawJson.Contains("\"error\":"))
             {
-                transcriptionResult = parsedResult;
-                requestText.text = transcriptionResult;
-                TalkToGemini(transcriptionResult);
+                Debug.LogError("API error detected in response!");
+                
+                // Try to extract the error message
+                try
+                {
+                    var errorResponse = JsonConvert.DeserializeObject<JObject>(rawJson);
+                    if (errorResponse != null && errorResponse["error"] != null)
+                    {
+                        string errorMsg = errorResponse["error"].ToString();
+                        
+                        if (errorMsg.Contains("API key"))
+                        {
+                            transcriptionResult = "API Key Error: Please check your Google API key.";
+                            Debug.LogError("Speech-to-Text API key appears to be invalid or expired. Please check the key in the SpeechToTextGeneral component.");
+                        }
+                        else if (errorMsg.Contains("quota"))
+                        {
+                            transcriptionResult = "API Error: Quota exceeded. Try again later.";
+                            Debug.LogError("Speech-to-Text API quota has been exceeded. You may need to wait or upgrade your quota.");
+                        }
+                        else
+                        {
+                            transcriptionResult = $"API Error: {errorMsg}";
+                        }
+                    }
+                    else
+                    {
+                        transcriptionResult = "Unknown API error.";
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogError($"Error parsing API error: {ex.Message}");
+                    transcriptionResult = "Error parsing API response.";
+                }
+            }
+            // Validate the response has the expected format
+            else if (string.IsNullOrEmpty(rawJson))
+            {
+                Debug.LogError("Received empty response from transcription service.");
+                transcriptionResult = "No response from transcription service.";
+            }
+            else if (!rawJson.Contains("results"))
+            {
+                Debug.LogError("Response does not contain 'results' field. API key may be invalid or quota exceeded.");
+                
+                // Check for common responses
+                if (rawJson.Contains("totalBilledTime") && rawJson.Contains("requestId") && !rawJson.Contains("results"))
+                {
+                    Debug.LogError("Received billing info but no results - this typically means the API processed the request but didn't detect any speech in the audio.");
+                    Debug.LogError("Make sure your microphone is working and you're speaking clearly during recording.");
+                    transcriptionResult = "No speech detected in audio.";
+                }
+                else
+                {
+                    Debug.LogError("Check your API key validity, quota, and billing status in the Google Cloud Console.");
+                    transcriptionResult = "API error: Invalid response format.";
+                }
             }
             else
             {
-                transcriptionResult = "No text recognized.";
-                Debug.LogWarning("No transcription found in response.");
+                // Parse the result to get just the transcript text
+                string parsedResult = SpeechToTextGeneral.ParseTranscriptionResult(rawJson);
+                
+                if (!string.IsNullOrEmpty(parsedResult))
+                {
+                    transcriptionResult = parsedResult;
+                    requestText.text = transcriptionResult;
+                    TalkToGemini(transcriptionResult);
+                }
+                else
+                {
+                    transcriptionResult = "No text recognized.";
+                    Debug.LogWarning("No transcription found in response.");
+                }
             }
         }
 
@@ -542,13 +760,13 @@ IMPORTANT:
             geminiResponse = ParseGeminiRawResponse(rawResponse);
             Debug.Log($"Gemini response: {geminiResponse}");
             
-            // 5) Update UI if available
+            // Update UI if available
             if (responseText != null && !string.IsNullOrEmpty(geminiResponse))
             {
                 responseText.text = geminiResponse;
             }
 
-            // 5) Update UI if available - now showing the user-friendly message
+            // Update UI if available - now showing the user-friendly message
             if (responseTextOnObject != null && !string.IsNullOrEmpty(geminiResponse))
             {
                 try
@@ -579,16 +797,33 @@ IMPORTANT:
                 }
             }
 
-            // 6) Update UI if available
-            if (chatboxOnObject != null && !string.IsNullOrEmpty(geminiResponse))
+            // Update UI if available
+            if (chatboxOnObject != null)
             {
+                Debug.Log($"[SpeechRecorder] Setting chatboxOnObject active state to true. Reference exists: {chatboxOnObject != null}, Current active state: {chatboxOnObject.activeSelf}");
                 chatboxOnObject.SetActive(true);
+                
+                // Force update to ensure the object is visible
+                if (chatboxOnObject.transform.parent != null)
+                {
+                    Canvas canvas = chatboxOnObject.GetComponentInParent<Canvas>();
+                    if (canvas != null)
+                    {
+                        Debug.Log("[SpeechRecorder] Found parent canvas, forcing refresh");
+                        canvas.enabled = false;
+                        canvas.enabled = true;
+                    }
+                }
+            }
+            else
+            {
+                Debug.LogWarning("[SpeechRecorder] chatboxOnObject reference is null! Cannot display response.");
             }
             
-            // 6) Invoke event with the response
+            // Invoke event with the response
             onGeminiResponseReceived?.Invoke(geminiResponse);
             
-            // 7) Parse the response for relationships or highlights if it's not in object mode
+            // Parse the response for relationships or highlights if it's not in object mode
             if (!isObjectMode && sceneObjectManager != null && relationshipLineManager != null)
             {
                 try
@@ -1015,6 +1250,29 @@ IMPORTANT:
         if (chatboxOnObject != null)
         {
             chatboxOnObject.SetActive(false);
+        }
+    }
+
+    // Add this method at the end of the class
+    public void ForceShowChatbox()
+    {
+        if (chatboxOnObject != null)
+        {
+            Debug.Log($"[SpeechRecorder] Force-showing chatboxOnObject. Current state: {chatboxOnObject.activeSelf}");
+            chatboxOnObject.SetActive(true);
+            
+            // Try to ensure the parent canvas is refreshed
+            Canvas parentCanvas = chatboxOnObject.GetComponentInParent<Canvas>();
+            if (parentCanvas != null)
+            {
+                Debug.Log("[SpeechRecorder] Refreshing parent canvas");
+                parentCanvas.enabled = false;
+                parentCanvas.enabled = true;
+            }
+        }
+        else
+        {
+            Debug.LogWarning("[SpeechRecorder] Cannot force-show chatboxOnObject because reference is null");
         }
     }
 }

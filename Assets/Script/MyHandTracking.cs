@@ -68,7 +68,7 @@ public class MyHandTracking : MonoBehaviour
             if (leftHandGrabber != null)
             {
                 leftHandGrabber.handType = "left";
-                Debug.Log("Added HandGrabTrigger to left hand with handType = left");
+                // Debug.Log("Added HandGrabTrigger to left hand with handType = left");
             }
         }
 
@@ -79,7 +79,7 @@ public class MyHandTracking : MonoBehaviour
             if (rightHandGrabber != null)
             {
                 rightHandGrabber.handType = "right";
-                Debug.Log("Added HandGrabTrigger to right hand with handType = right");
+                // Debug.Log("Added HandGrabTrigger to right hand with handType = right");
             }
         }
 
@@ -88,7 +88,7 @@ public class MyHandTracking : MonoBehaviour
         if (handSubsystems.Count > 0)
         {
             handSubsystem = handSubsystems[0];
-            Debug.Log("Hand tracking subsystem found!");
+            // Debug.Log("Hand tracking subsystem found!");
 
             if (visualizeJoints)
             {
@@ -202,7 +202,7 @@ public class MyHandTracking : MonoBehaviour
                 // Invoke pinch started event
                 OnPinchStarted?.Invoke(isLeft);
                 
-                Debug.Log($"{(isLeft ? "Left" : "Right")} hand pinch started. Distance: {distance:F3}m");
+                // Debug.Log($"{(isLeft ? "Left" : "Right")} hand pinch started. Distance: {distance:F3}m");
             }
             // Detect pinch end (using a larger threshold for release to prevent flickering)
             else if (isPinching && distance > pinchReleaseThreshold)
@@ -216,7 +216,7 @@ public class MyHandTracking : MonoBehaviour
                 // Invoke pinch ended event
                 OnPinchEnded?.Invoke(isLeft);
                 
-                Debug.Log($"{(isLeft ? "Left" : "Right")} hand pinch ended. Distance: {distance:F3}m");
+                // Debug.Log($"{(isLeft ? "Left" : "Right")} hand pinch ended. Distance: {distance:F3}m");
             }
         }
     }
@@ -244,7 +244,7 @@ public class MyHandTracking : MonoBehaviour
                 // Invoke middle finger pinch started event
                 OnMiddlePinchStarted?.Invoke(isLeft);
                 
-                Debug.Log($"{(isLeft ? "Left" : "Right")} hand middle finger pinch started. Distance: {distance:F3}m");
+                // Debug.Log($"{(isLeft ? "Left" : "Right")} hand middle finger pinch started. Distance: {distance:F3}m");
             }
             // Detect middle finger pinch end (using a larger threshold for release to prevent flickering)
             else if (isMiddlePinching && distance > middlePinchReleaseThreshold)
@@ -258,7 +258,7 @@ public class MyHandTracking : MonoBehaviour
                 // Invoke middle finger pinch ended event
                 OnMiddlePinchEnded?.Invoke(isLeft);
                 
-                Debug.Log($"{(isLeft ? "Left" : "Right")} hand middle finger pinch ended. Distance: {distance:F3}m");
+                // Debug.Log($"{(isLeft ? "Left" : "Right")} hand middle finger pinch ended. Distance: {distance:F3}m");
             }
         }
     }

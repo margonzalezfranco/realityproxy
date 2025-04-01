@@ -125,6 +125,9 @@ public class SphereToggleScript : MonoBehaviour
     [Tooltip("Offset distance above the finger point")]
     public float planeUpOffset = 0.02f;
 
+    [Tooltip("Offset distance for recorder toggle below the pointing plane (negative = below)")]
+    public float recorderOffsetFromPointingPlane = -0.05f;
+
     [Tooltip("Maximum distance between hands to activate pointing detection (in meters)")]
     public float maxHandProximityDistance = 0.2f;  // 20cm default
 
@@ -147,6 +150,26 @@ public class SphereToggleScript : MonoBehaviour
     // Add this variable to store original AnimateWindow settings
     private Vector3 originalStartPosition;
     private Vector3 originalEndPosition;
+
+    // Add new variables for auto-recording
+    [Header("Auto-Recording")]
+    [Tooltip("Whether to automatically start recording when a new part is pointed at")]
+    public bool enableAutoRecordOnPointing = true;
+    
+    [Tooltip("Duration in seconds for automatic recording before stopping")]
+    public float autoRecordDuration = 10f;
+    
+    [Tooltip("Minimum time between auto-recordings to prevent rapid toggling")]
+    public float minTimeBetweenAutoRecordings = 3f;
+    
+    [Tooltip("Color to use when auto-recording is active")]
+    public Color autoRecordingActiveColor = new Color(1f, 0.3f, 0.3f, 1f); // Bright red by default
+
+    private bool isAutoRecording = false;
+    private float lastAutoRecordTime = 0f;
+    private Coroutine autoRecordingStopCoroutine;
+    private string lastRecordedPart = "";
+    private Material originalRecorderMaterial;
 
     private void Start()
     {
@@ -493,6 +516,29 @@ public class SphereToggleScript : MonoBehaviour
                     if (isPointingNow)
                     {
                         UpdatePointingVisualization();
+                        
+                        // Check if this is a new part being pointed at
+                        bool isNewPart = pointingInfo.part != lastRecordedPart;
+                        
+                        // If this is a new part and auto-recording is enabled, start recording
+                        if (isNewPart && enableAutoRecordOnPointing && recorderToggle != null)
+                        {
+                            // Update the last recorded part
+                            lastRecordedPart = pointingInfo.part;
+                            
+                            // Check if enough time has passed since the last auto-recording
+                            float timeSinceLastRecording = Time.time - lastAutoRecordTime;
+                            if (timeSinceLastRecording >= minTimeBetweenAutoRecordings)
+                            {
+                                // Start auto-recording
+                                StartAutoRecording();
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // Reset the last recorded part when not pointing
+                        lastRecordedPart = "";
                     }
 
                     // Update UI elements
@@ -582,61 +628,80 @@ public class SphereToggleScript : MonoBehaviour
             {
                 var handSubsystem = handSubsystems[0];
                 
-                GameObject holdingHand = transform.parent == handTracking.m_SpawnedLeftHand.transform ? 
-                    handTracking.m_SpawnedLeftHand : 
-                    handTracking.m_SpawnedRightHand;
+                // Since we're using onlyAllowLeftHandGrab mode, we know the holding hand is always the left hand
+                GameObject holdingHand = handTracking.m_SpawnedLeftHand;
                 
-                XRHand pointingHand = (holdingHand == handTracking.m_SpawnedLeftHand) ? 
-                    handSubsystem.rightHand : 
-                    handSubsystem.leftHand;
+                // The pointing hand is always the right hand
+                XRHand pointingHand = handSubsystem.rightHand;
                 
                 if (pointingHand.isTracked && pointingHand.GetJoint(XRHandJointID.IndexTip).TryGetPose(out Pose fingerTipPose))
                 {
                     if (pointingPlane != null)
                     {
-                        //// pointingPlane: the root label that is spawned at the finger tip relative to the holding hand, and it moves with the finger tip while looking at the camera ////
-
                         // Ensure the plane is active
                         pointingPlane.SetActive(true);
+                        
+                        // Ensure the plane has the correct name for detection in SpeechToTextRecorder
+                        pointingPlane.name = "PointingPlane";
 
-                        // Calculate initial relative position if not set
-                        if (relativePosition == Vector3.zero)
+                        // We need to determine if we should initialize or update the plane position
+                        bool shouldInitialize = !pointingPlane.transform.IsChildOf(holdingHand.transform);
+                        bool hasLazyFollow = pointingPlane.GetComponent<DualTargetLazyFollow>() != null;
+                        
+                        if (shouldInitialize || !hasLazyFollow)
                         {
-                            relativePosition = holdingHand.transform.InverseTransformPoint(fingerTipPose.position);
-                        }
-
-                        // If LazyFollow doesn't exist, add it
-                        var lazyFollow = pointingPlane.GetComponent<DualTargetLazyFollow>();
-                        if (lazyFollow == null)
-                        {
-                            lazyFollow = pointingPlane.AddComponent<DualTargetLazyFollow>();
+                            // First time setup or reattaching:
+                            // 1. Make pointing plane a child of the holding hand
+                            pointingPlane.transform.SetParent(holdingHand.transform);
                             
-                            // Configure following parameters
-                            lazyFollow.movementSpeed = 20f;
-                            lazyFollow.movementSpeedVariancePercentage = 0.25f;
+                            // 2. Calculate position relative to the holding hand based on the pointing finger
+                            // This gets the position of the right index finger tip relative to the left hand
+                            Vector3 relativeFingerPos = holdingHand.transform.InverseTransformPoint(fingerTipPose.position);
+                            relativePosition = relativeFingerPos;
+                            
+                            // 3. Set this position with a vertical offset
+                            Vector3 fixedOffset = relativePosition + (Vector3.up * planeUpOffset);
+                            pointingPlane.transform.localPosition = fixedOffset;
+                            
+                            // 4. Remove any existing LazyFollow component to prevent automatic movement
+                            var oldLazyFollow = pointingPlane.GetComponent<LazyFollow>();
+                            if (oldLazyFollow != null)
+                            {
+                                Destroy(oldLazyFollow);
+                            }
+                            
+                            var oldDualLazyFollow = pointingPlane.GetComponent<DualTargetLazyFollow>();
+                            if (oldDualLazyFollow != null)
+                            {
+                                Destroy(oldDualLazyFollow);
+                            }
+                            
+                            // 5. Add and configure a new DualTargetLazyFollow for rotation only
+                            var lazyFollow = pointingPlane.AddComponent<DualTargetLazyFollow>();
+                            
+                            // Configure component
+                            lazyFollow.movementSpeed = 15f;
+                            lazyFollow.movementSpeedVariancePercentage = 0.2f;
+                            lazyFollow.minAngleAllowed = 3f;
+                            lazyFollow.maxAngleAllowed = 15f;
+                            lazyFollow.timeUntilThresholdReachesMaxAngle = 0.3f;
                             lazyFollow.minDistanceAllowed = 0.02f;
                             lazyFollow.maxDistanceAllowed = 0.05f;
                             lazyFollow.timeUntilThresholdReachesMaxDistance = 0.3f;
                             
-                            lazyFollow.minAngleAllowed = 3f;
-                            lazyFollow.maxAngleAllowed = 15f;
-                            lazyFollow.timeUntilThresholdReachesMaxAngle = 0.3f;
+                            // 6. Important: Only use LazyFollow for rotation to face the camera, not position
+                            lazyFollow.positionFollowMode = LazyFollow.PositionFollowMode.None; // Don't follow position
+                            lazyFollow.rotationFollowMode = LazyFollow.RotationFollowMode.LookAt; // Look at camera
+                            lazyFollow.rotationTarget = Camera.main.transform;
                             
-                            lazyFollow.positionFollowMode = LazyFollow.PositionFollowMode.Follow;
-                            lazyFollow.rotationFollowMode = LazyFollow.RotationFollowMode.LookAt;
-                            
-                            lazyFollow.positionTarget = holdingHand.transform; // move with the holding hand
-                            lazyFollow.rotationTarget = Camera.main.transform; // look at the camera
+                            Debug.Log("Initialized pointing plane at fixed position relative to holding hand");
                         }
-
-                        // Update the relative position for continuous tracking
-                        relativePosition = holdingHand.transform.InverseTransformPoint(fingerTipPose.position);
-
-                        // Add up offset to the relative position
-                        Vector3 offsetPosition = relativePosition + (Vector3.up * planeUpOffset);
                         
-                        // Update the LazyFollow target offset
-                        lazyFollow.targetOffset = offsetPosition;
+                        // Update recorder position after updating pointing plane
+                        if (recorderToggle != null && isOn)
+                        {
+                            UpdateRecorderPositionOnPointing();
+                        }
                     }
                 }
             }
@@ -997,23 +1062,6 @@ public class SphereToggleScript : MonoBehaviour
         }
     }
 
-    // Helper method to configure DualTargetLazyFollow parameters
-    private void ConfigureDualTargetLazyFollow(DualTargetLazyFollow lazyFollow)
-    {
-        lazyFollow.movementSpeed = 20f;
-        lazyFollow.movementSpeedVariancePercentage = 0.25f;
-        lazyFollow.minDistanceAllowed = 0.02f;
-        lazyFollow.maxDistanceAllowed = 0.05f;
-        lazyFollow.timeUntilThresholdReachesMaxDistance = 0.3f;
-        
-        lazyFollow.minAngleAllowed = 3f;
-        lazyFollow.maxAngleAllowed = 15f;
-        lazyFollow.timeUntilThresholdReachesMaxAngle = 0.3f;
-        
-        lazyFollow.positionFollowMode = LazyFollow.PositionFollowMode.Follow;
-        lazyFollow.rotationFollowMode = LazyFollow.RotationFollowMode.LookAt;
-    }
-
     // Helper method to setup DualTargetLazyFollow on a GameObject
     private void SetupDualTargetLazyFollow(GameObject target, Vector3 offset)
     {
@@ -1029,7 +1077,16 @@ public class SphereToggleScript : MonoBehaviour
         if (dualTargetLazyFollow == null)
         {
             dualTargetLazyFollow = target.AddComponent<DualTargetLazyFollow>();
-            ConfigureDualTargetLazyFollow(dualTargetLazyFollow);
+            
+            // Configure component
+            dualTargetLazyFollow.movementSpeed = 15f;
+            dualTargetLazyFollow.movementSpeedVariancePercentage = 0.2f;
+            dualTargetLazyFollow.minAngleAllowed = 3f;
+            dualTargetLazyFollow.maxAngleAllowed = 15f;
+            dualTargetLazyFollow.timeUntilThresholdReachesMaxAngle = 0.3f;
+            dualTargetLazyFollow.minDistanceAllowed = 0.02f;
+            dualTargetLazyFollow.maxDistanceAllowed = 0.05f;
+            dualTargetLazyFollow.timeUntilThresholdReachesMaxDistance = 0.3f;
         }
 
         // Set the targets
@@ -1135,6 +1192,9 @@ public class SphereToggleScript : MonoBehaviour
 
                 // Stop object inspection
                 OnObjectInspected(false);
+                
+                // Stop any active auto-recording
+                StopAutoRecordingIfActive();
             }
         }
     }
@@ -1145,23 +1205,115 @@ public class SphereToggleScript : MonoBehaviour
         {
             if (pointingPlane != null)
             {
-                // Disable the plane and its LazyFollow component
-                var lazyFollow = pointingPlane.GetComponent<DualTargetLazyFollow>();
-                if (lazyFollow != null)
-                {
-                    Destroy(lazyFollow);
-                }
+                // Don't unparent the pointing plane from the holding hand
+                // We want to keep the parent relationship with the holding hand at all times
+                
+                // Just hide the plane when not pointing
                 pointingPlane.SetActive(false);
+                
+                // Reset relative position to force recalculation next time
+                relativePosition = Vector3.zero;
             }
+            
+            // Reset recorder toggle position when pointing stops
+            if (recorderToggle != null && isOn)
+            {
+                UpdateRecorderToggle(true);
+            }
+            
+            // Stop auto-recording if active when pointing ends
+            StopAutoRecordingIfActive();
+            
+            // Reset the last recorded part
+            lastRecordedPart = "";
         }
         else
         {
             if (pointingPlane != null)
             {
                 pointingPlane.SetActive(true);
+                // Update the position based on the current pointing finger position
                 UpdatePointingVisualization();
+                
+                // Update recorder toggle position when pointing starts
+                if (recorderToggle != null && isOn)
+                {
+                    UpdateRecorderPositionOnPointing();
+                }
             }
         }
+    }
+
+    // Method to update recorder toggle position when pointing is active
+    private void UpdateRecorderPositionOnPointing()
+    {
+        if (recorderToggle == null || pointingPlane == null || !currentlyPointing)
+            return;
+            
+        // Make the recorder toggle a child of the pointing plane
+        recorderToggle.transform.SetParent(pointingPlane.transform);
+        
+        // Reset scale if it got changed (adaptation from UpdateTogglePosition method)
+        if (!recorderToggle.transform.hasChanged)
+        {
+            recorderToggle.transform.localScale = recorderToggle.transform.localScale / pointingPlane.transform.localScale.x;
+        }
+        
+        // Update reference scale
+        var spatialUI = recorderToggle.GetComponent<SpatialUI>();
+        if (spatialUI != null)
+        {
+            spatialUI.UpdateReferenceScale();
+        }
+        
+        // Position the recorder relative to the pointing plane
+        // A negative Y value positions it below the plane, positive would place it above
+        recorderToggle.transform.localPosition = new Vector3(0f, recorderOffsetFromPointingPlane, 0f);
+        recorderToggle.transform.localRotation = Quaternion.identity;
+        
+        // Disable LazyFollow on the recorder to prevent conflicts
+        var lazyFollow = recorderToggle.GetComponent<LazyFollow>();
+        if (lazyFollow != null)
+        {
+            lazyFollow.enabled = false;
+        }
+        
+        // Since the pointing plane is now a child of the holding hand and has fixed position,
+        // we should ensure the recorder looks toward the camera
+        var dualLazyFollow = recorderToggle.GetComponent<DualTargetLazyFollow>();
+        if (dualLazyFollow == null)
+        {
+            dualLazyFollow = recorderToggle.AddComponent<DualTargetLazyFollow>();
+            
+            // Configure the dual target lazy follow component
+            dualLazyFollow.movementSpeed = 15f;
+            dualLazyFollow.movementSpeedVariancePercentage = 0.2f;
+            dualLazyFollow.minAngleAllowed = 3f;
+            dualLazyFollow.maxAngleAllowed = 15f;
+            dualLazyFollow.timeUntilThresholdReachesMaxAngle = 0.3f;
+            
+            // Set to only use rotation follow mode, not position
+            dualLazyFollow.positionFollowMode = LazyFollow.PositionFollowMode.None;
+            dualLazyFollow.rotationFollowMode = LazyFollow.RotationFollowMode.LookAt;
+            
+            // Set the rotation target to look at the camera
+            dualLazyFollow.rotationTarget = Camera.main.transform;
+        }
+        
+        // Ensure the recorder still has the correct object label association
+        SpeechToTextRecorder recorderComponent = recorderToggle.GetComponent<SpeechToTextRecorder>();
+        if (recorderComponent == null && recorderToggle.transform.parent != null)
+        {
+            recorderComponent = recorderToggle.transform.parent.GetComponent<SpeechToTextRecorder>();
+        }
+        
+        if (recorderComponent != null && labelUnderSphere != null)
+        {
+            // This will update the object label without changing the parent again
+            recorderComponent.SetObjectLabel(labelUnderSphere.text, this.gameObject);
+        }
+        
+        Debug.Log("Repositioned recorder toggle below pointing plane");
     }
 
     // Add this class to parse the JSON response
@@ -1543,5 +1695,186 @@ public class SphereToggleScript : MonoBehaviour
         relationLineManager.ClearSpecificLine(myAnchor, targetAnchor);
         
         Debug.Log($"Cleared relationship line between '{labelUnderSphere.text}' and '{targetObjectLabel}'");
+    }
+
+    // New method to start automatic recording
+    private void StartAutoRecording()
+    {
+        // If already auto-recording, stop the previous one first
+        if (isAutoRecording && autoRecordingStopCoroutine != null)
+        {
+            StopCoroutine(autoRecordingStopCoroutine);
+        }
+        
+        // Get the recorder toggle component
+        if (recorderToggle != null)
+        {
+            // Update tracking variables
+            isAutoRecording = true;
+            lastAutoRecordTime = Time.time;
+            
+            // Simulate pressing the recorder toggle button
+            SpatialUIToggle toggle = recorderToggle.GetComponent<SpatialUIToggle>();
+            if (toggle != null)
+            {
+                // Simulate button press sequence
+                toggle.PressStart();
+                toggle.PressEnd();
+                
+                Debug.Log($"Auto-recording started for part: {lastRecordedPart}");
+            }
+            
+            // Start coroutine to automatically stop recording after the specified duration
+            autoRecordingStopCoroutine = StartCoroutine(StopAutoRecordingAfterDelay(autoRecordDuration));
+            
+            // Highlight the recorder toggle to show it's active
+            HighlightRecorderToggle(true);
+        }
+    }
+    
+    // Coroutine to stop auto-recording after a delay
+    private IEnumerator StopAutoRecordingAfterDelay(float delay)
+    {
+        yield return new WaitForSeconds(delay);
+        
+        // Simulate pressing the recorder toggle button to stop recording
+        if (recorderToggle != null)
+        {
+            SpatialUIToggle toggle = recorderToggle.GetComponent<SpatialUIToggle>();
+            if (toggle != null)
+            {
+                // Simulate button press sequence
+                toggle.PressStart();
+                toggle.PressEnd();
+                
+                Debug.Log($"Auto-recording stopped after {delay} seconds");
+            }
+        }
+        
+        // Reset auto-recording flag
+        isAutoRecording = false;
+        
+        // Remove highlight from recorder toggle
+        HighlightRecorderToggle(false);
+    }
+    
+    // Helper method to visually highlight the recorder toggle when auto-recording
+    private void HighlightRecorderToggle(bool highlight)
+    {
+        if (recorderToggle == null)
+            return;
+            
+        // Get the toggle component
+        SpatialUIToggle toggle = recorderToggle.GetComponent<SpatialUIToggle>();
+        if (toggle != null)
+        {
+            // Save the original material when first highlighting
+            if (highlight && originalRecorderMaterial == null)
+            {
+                // Try to get the renderer
+                MeshRenderer renderer = recorderToggle.GetComponent<MeshRenderer>();
+                if (renderer == null)
+                {
+                    renderer = recorderToggle.GetComponentInChildren<MeshRenderer>();
+                }
+                
+                if (renderer != null && renderer.material != null)
+                {
+                    originalRecorderMaterial = renderer.material;
+                    
+                    // Create a new material based on the original but with the highlight color
+                    Material highlightMaterial = new Material(originalRecorderMaterial);
+                    highlightMaterial.color = autoRecordingActiveColor;
+                    renderer.material = highlightMaterial;
+                }
+            }
+            // Restore the original material when un-highlighting
+            else if (!highlight && originalRecorderMaterial != null)
+            {
+                MeshRenderer renderer = recorderToggle.GetComponent<MeshRenderer>();
+                if (renderer == null)
+                {
+                    renderer = recorderToggle.GetComponentInChildren<MeshRenderer>();
+                }
+                
+                if (renderer != null)
+                {
+                    renderer.material = originalRecorderMaterial;
+                    originalRecorderMaterial = null;
+                }
+            }
+            
+            // Also use the toggle's built-in visual state
+            if (highlight)
+            {
+                toggle.PassiveToggleWithoutInvokeOn();
+            }
+            else
+            {
+                toggle.PassiveToggleWithoutInvokeOff();
+            }
+        }
+    }
+    
+    // Make sure to handle cleanup if object is destroyed while auto-recording
+    private void OnDisable()
+    {
+        if (sceneContextManager != null)
+        {
+            sceneContextManager.OnSceneContextComplete -= HandleSceneAnalysis;
+        }
+
+        // Unsubscribe from all events
+        HandGrabTrigger.OnAnchorGrabbed -= HandleAnchorGrabbed;
+        HandGrabTrigger.OnAnchorReleased -= HandleAnchorReleased;
+        UnsubscribeFromToggleEvents();
+        OnPointingStateChanged -= HandlePointingStateChanged;
+
+        // Make sure to set pointing state to false when destroyed
+        if (currentlyPointing)
+        {
+            currentlyPointing = false;
+            OnPointingStateChanged?.Invoke(false);
+        }
+
+        if (pointingPlane != null)
+        {
+            pointingPlane.SetActive(false);
+        }
+        
+        // Clean up auto-recording if active
+        StopAutoRecordingIfActive();
+    }
+
+    // Helper method to stop auto-recording if it's currently active
+    private void StopAutoRecordingIfActive()
+    {
+        if (isAutoRecording)
+        {
+            // Simulate pressing the recorder toggle button to stop recording
+            if (recorderToggle != null)
+            {
+                SpatialUIToggle toggle = recorderToggle.GetComponent<SpatialUIToggle>();
+                if (toggle != null)
+                {
+                    // Simulate button press sequence
+                    toggle.PressStart();
+                    toggle.PressEnd();
+                    
+                    Debug.Log("Auto-recording stopped due to object being disabled or released");
+                }
+            }
+            
+            isAutoRecording = false;
+            
+            if (autoRecordingStopCoroutine != null)
+            {
+                StopCoroutine(autoRecordingStopCoroutine);
+                autoRecordingStopCoroutine = null;
+            }
+            
+            // Reset toggle visual state
+            HighlightRecorderToggle(false);
+        }
     }
 }
