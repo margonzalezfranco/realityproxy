@@ -30,6 +30,10 @@ public class SpeechToTextRecorder : GeminiGeneral
     [TextArea(3, 10)]
     [SerializeField] private string objectContextPromptTemplate = "You are a helpful AI assistant responding to the user's request about {0}. You can see what the user is currently looking at, but you don't have to only rely on that. You don't have to wait to see the object to respond. Only respond information about this object. Please respond concisely and avoid using markdown formatting. User request: {1}";
 
+    [Tooltip("System prompt template to use when user is pointing at a specific part. Use {0} for object name, {1} for part name, {2} for part description, and {3} for transcribed text")]
+    [TextArea(3, 10)]
+    [SerializeField] private string pointingPromptTemplate = "You are a helpful AI assistant responding to the user's request about a specific part of an object. The user is pointing at the '{1}' part of {0}. This part is described as: '{2}'. Please provide specific information about this part. Respond concisely and avoid using markdown formatting. User request: {3}";
+
     [Tooltip("System prompt template to use in global mode. Use {0} for scene context, {1} for object list, {2} for transcribed text")]
     [TextArea(5, 15)]
     [SerializeField] private string environmentLevelPromptTemplate = @"You are analyzing a user's request within a scene.
@@ -100,12 +104,9 @@ IMPORTANT:
     [SerializeField] private bool useLeftHand = true;
 
     [Header("Gemini Response")]
-    [SerializeField] private GameObject geminiHandSphere;
     [SerializeField] private TMPro.TextMeshPro requestText;
-    [SerializeField] private TMPro.TextMeshPro responseText;
     [SerializeField] private TMPro.TextMeshPro responseTextOnObject;
     [SerializeField] private UnityEngine.Events.UnityEvent<string> onGeminiResponseReceived;
-    [SerializeField] private GameObject chatbox;
     [SerializeField] private GameObject chatboxOnObject;
 
     [Header("Scene Dependencies")] // Added Header
@@ -122,10 +123,25 @@ IMPORTANT:
     [SerializeField] private bool isProcessing = false;
     [SerializeField] private string geminiResponse;
 
+    [Header("UI Display Settings")]
+    [Tooltip("Time in seconds to automatically hide the response UI after displaying")]
+    [SerializeField] private float responseDisplayDuration = 10f; // 10 seconds default timeout
+    [Tooltip("Enable/disable auto-hiding of response UI")]
+    [SerializeField] private bool enableResponseAutoHide = true;
+    private Coroutine responseHideCoroutine;
+
+    [Header("Pointing Reference")]
+    [Tooltip("Reference to the pointing plane used for part-specific interactions")]
+    [SerializeField] private GameObject pointingPlane;
+
     private SpeechToTextGeneral speechToText;
     private float recordingStartTime;
     private bool wasRecordingLastFrame = false;
     private XRHandSubsystem handSubsystem; // Cache the hand subsystem
+
+    // Add variables to track pointing state
+    private string currentPointingPartName = null;
+    private string currentPointingPartDescription = null;
 
     public bool objectLevelRecordingToggle = true;
     private string currentObjectLabel = null;
@@ -140,18 +156,17 @@ IMPORTANT:
         if (sceneObjectManager == null) sceneObjectManager = FindFirstObjectByType<SceneObjectManager>();
         if (relationshipLineManager == null) relationshipLineManager = FindFirstObjectByType<RelationshipLineManager>();
         if (sceneContextManager == null) sceneContextManager = FindFirstObjectByType<SceneContextManager>();
+        if (pointingPlane == null) pointingPlane = GameObject.Find("PointingPlane");
 
         if (sceneObjectManager == null) Debug.LogError("SceneObjectManager not found!");
         if (relationshipLineManager == null) Debug.LogError("RelationshipLineManager not found!");
         if (sceneContextManager == null) Debug.LogError("SceneContextManager not found!");
+        if (pointingPlane == null) Debug.LogWarning("PointingPlane not found! Part-specific prompts will not work.");
 
         // Check critical UI references
         if (chatboxOnObject == null) Debug.LogError("ChatboxOnObject reference is missing! Responses won't be displayed.");
         if (responseTextOnObject == null) Debug.LogError("ResponseTextOnObject reference is missing! Response text won't be displayed.");
-        if (chatbox == null) Debug.LogError("Chatbox reference is missing!");
-        if (responseText == null) Debug.LogError("ResponseText reference is missing!");
         
-        // Verify the chatbox object exists and is properly configured
         if (chatboxOnObject != null)
         {
             Debug.Log($"ChatboxOnObject found: {chatboxOnObject.name}, Initial state: {(chatboxOnObject.activeSelf ? "Active" : "Inactive")}");
@@ -264,6 +279,9 @@ IMPORTANT:
             MyHandTracking.OnMiddlePinchEnded += HandleMiddlePinchEnded;
             Debug.Log("Subscribed to middle finger pinch events for speech recording");
         }
+        
+        // Subscribe to pointing state changes
+        SphereToggleScript.OnPointingStateChanged += HandlePointingStateChanged;
     }
 
     private void OnDisable()
@@ -274,6 +292,9 @@ IMPORTANT:
             MyHandTracking.OnMiddlePinchStarted -= HandleMiddlePinchStarted;
             MyHandTracking.OnMiddlePinchEnded -= HandleMiddlePinchEnded;
         }
+        
+        // Unsubscribe from pointing state changes
+        SphereToggleScript.OnPointingStateChanged -= HandlePointingStateChanged;
     }
 
     private void HandleMiddlePinchStarted(bool isLeft)
@@ -285,7 +306,6 @@ IMPORTANT:
             if (!isRecording)
             {
                 ToggleRecording();
-                UpdateGeminiHandSpherePositionToMiddleFingerTip();
             }
         }
     }
@@ -299,8 +319,88 @@ IMPORTANT:
             if (isRecording)
             {
                 ToggleRecording();
-                UpdateGeminiHandSphereForRecordEnd();
             }
+        }
+    }
+
+    // Function to find description text component by name in the scene
+    private TMPro.TextMeshPro FindDescriptionTextInScene()
+    {
+        // Try to find specific game objects with DescriptionText
+        TMPro.TextMeshPro[] allTextComponents = FindObjectsByType<TMPro.TextMeshPro>(FindObjectsSortMode.None);
+        foreach (var textComp in allTextComponents)
+        {
+            if (textComp.gameObject.name == "DescriptionText" && textComp.gameObject.activeInHierarchy)
+            {
+                return textComp;
+            }
+        }
+
+        // If not found by name, try active SphereToggleScript components
+        SphereToggleScript[] activeToggles = FindObjectsByType<SphereToggleScript>(FindObjectsSortMode.None);
+        foreach (var toggle in activeToggles)
+        {
+            if (toggle.gameObject.activeInHierarchy && toggle.descriptionText != null)
+            {
+                return toggle.descriptionText;
+            }
+        }
+
+        return null;
+    }
+
+    // Handler for pointing state changes
+    private void HandlePointingStateChanged(bool isPointing)
+    {
+        if (!isPointing)
+        {
+            // Reset pointing part info when pointing stops
+            currentPointingPartName = null;
+            currentPointingPartDescription = null;
+            Debug.Log("[SpeechRecorder] Pointing ended, cleared part context");
+        }
+        else
+        {
+            // When pointing starts, we'll try to get current part info if possible
+            if (pointingPlane != null && pointingPlane.activeSelf)
+            {
+                var pointingPlaneText = pointingPlane.GetComponentInChildren<TMPro.TextMeshPro>();
+                if (pointingPlaneText != null && !string.IsNullOrEmpty(pointingPlaneText.text) && pointingPlaneText.text != "none")
+                {
+                    // Look for a description text component
+                    TMPro.TextMeshPro descriptionText = FindDescriptionTextInScene();
+                    
+                    // Update our pointing information
+                    currentPointingPartName = pointingPlaneText.text;
+                    currentPointingPartDescription = descriptionText != null ? descriptionText.text : null;
+                    
+                    Debug.Log($"[SpeechRecorder] Pointing started, captured part info: '{currentPointingPartName}' - '{currentPointingPartDescription}'");
+                }
+            }
+        }
+    }
+
+    // Function to update pointing part information - can be called externally
+    public void UpdatePointingPartInfo(string partName, string partDescription)
+    {
+        // If we're clearing the information (both params null)
+        if (string.IsNullOrEmpty(partName) && string.IsNullOrEmpty(partDescription))
+        {
+            if (currentPointingPartName != null)
+            {
+                Debug.Log($"[SpeechRecorder] Cleared pointing part info (was: '{currentPointingPartName}')");
+            }
+            currentPointingPartName = null;
+            currentPointingPartDescription = null;
+            return;
+        }
+        
+        // Only update if we have valid part name
+        if (!string.IsNullOrEmpty(partName))
+        {
+            currentPointingPartName = partName;
+            currentPointingPartDescription = partDescription;
+            Debug.Log($"[SpeechRecorder] Updated pointing part info: '{partName}' - '{partDescription}'");
         }
     }
 
@@ -320,12 +420,6 @@ IMPORTANT:
             wasRecordingLastFrame = isRecording;
         }
 
-        // Continuously update the Gemini hand sphere position while recording
-        if (isRecording && geminiHandSphere != null)
-        {
-            UpdateGeminiHandSpherePositionToMiddleFingerTip();
-        }
-
         // Update recording time in inspector for visibility
         if (isRecording)
         {
@@ -338,55 +432,6 @@ IMPORTANT:
         }
     }
 
-    private void UpdateGeminiHandSpherePositionToMiddleFingerTip()
-    {
-        if (geminiHandSphere != null)
-        {
-            // Only clear text and set color when first starting recording
-            if (!wasRecordingLastFrame && isRecording)
-            {
-                // clear the request text and the response text
-                requestText.text = "";
-                responseText.text = "";
-                chatbox.SetActive(false);
-                Material material = geminiHandSphere.GetComponent<Renderer>().material;
-                material.color = new Color(material.color.r, material.color.g, material.color.b, 1.0f);
-            }
-            
-            // Directly use the cached hand subsystem
-            if (handSubsystem != null && handSubsystem.running)
-            {
-                // Get the appropriate hand based on the useLeftHand setting
-                var hand = useLeftHand ? handSubsystem.leftHand : handSubsystem.rightHand;
-                
-                // Check if the hand is tracked
-                if (hand.isTracked)
-                {
-                    // Try to get the middle fingertip position
-                    if (hand.GetJoint(XRHandJointID.MiddleTip).TryGetPose(out Pose middleTipPose))
-                    {
-                        // Update the position of the gemini hand sphere to the position of the middle finger tip
-                        geminiHandSphere.transform.position = middleTipPose.position;
-                    }
-                }
-            }
-            else
-            {
-                Debug.LogWarning("Hand subsystem not available or not running");
-            }
-        }
-    }
-
-    private void UpdateGeminiHandSphereForRecordEnd()
-    {
-        if (geminiHandSphere != null)
-        {
-            // get the material of the geminiHandSphere and set it to 50% transparent
-            Material material = geminiHandSphere.GetComponent<Renderer>().material;
-            material.color = new Color(material.color.r, material.color.g, material.color.b, 0.2f);
-            chatbox.SetActive(true);
-        }
-    }
 
     [ContextMenu("Toggle Recording")]
     public void ToggleRecording()
@@ -460,14 +505,12 @@ IMPORTANT:
         recordingStartTime = Time.time;
         transcriptionResult = "";
         
-        // Clear the response text but don't permanently disable the chatbox
         if (responseTextOnObject != null) 
         {
             responseTextOnObject.text = "";
             Debug.Log("[SpeechRecorder] Cleared responseTextOnObject text for new recording");
         }
         
-        // Note: We're temporarily hiding the chatbox during recording, but it will be shown again after receiving a response
         if (chatboxOnObject != null) 
         {
             Debug.Log($"[SpeechRecorder] Setting chatboxOnObject inactive for recording. Current state before: {chatboxOnObject.activeSelf}");
@@ -689,9 +732,53 @@ IMPORTANT:
         string finalPrompt;
         bool isObjectMode = !string.IsNullOrEmpty(currentObjectLabel);
 
-        // If objectLevelRecordingToggle is true and we have a current object label,
-        // use the object context prompt template
-        if (isObjectMode)
+        // Check if we're pointing at a specific part of an object
+        bool isPointingAtPart = false;
+        string pointingPartName = "";
+        string pointingPartDescription = "";
+        
+        // First check if we have stored pointing information
+        if (!string.IsNullOrEmpty(currentPointingPartName))
+        {
+            isPointingAtPart = true;
+            pointingPartName = currentPointingPartName;
+            pointingPartDescription = currentPointingPartDescription ?? "";
+            Debug.Log($"[SpeechRecorder] Using stored pointing info: '{pointingPartName}' with description: '{pointingPartDescription}'");
+        }
+        // If not, try to get pointing information directly
+        else if (isObjectMode && pointingPlane != null && pointingPlane.activeSelf)
+        {
+            // Try to get the name of the part being pointed at
+            var pointingPlaneText = pointingPlane.GetComponentInChildren<TMPro.TextMeshPro>();
+            if (pointingPlaneText != null && !string.IsNullOrEmpty(pointingPlaneText.text) && pointingPlaneText.text != "none")
+            {
+                isPointingAtPart = true;
+                pointingPartName = pointingPlaneText.text;
+                
+                // Find description text using our helper method
+                TMPro.TextMeshPro descriptionTextInPlane = FindDescriptionTextInScene();
+                
+                if (descriptionTextInPlane != null && !string.IsNullOrEmpty(descriptionTextInPlane.text))
+                {
+                    pointingPartDescription = descriptionTextInPlane.text;
+                }
+                
+                // Store this information for future use
+                currentPointingPartName = pointingPartName;
+                currentPointingPartDescription = pointingPartDescription;
+                
+                Debug.Log($"[SpeechRecorder] Detected pointing at part: '{pointingPartName}' with description: '{pointingPartDescription}'");
+            }
+        }
+
+        // If pointing at a specific part of the object, use the pointing prompt template
+        if (isObjectMode && isPointingAtPart)
+        {
+            finalPrompt = string.Format(pointingPromptTemplate, currentObjectLabel, pointingPartName, pointingPartDescription, userQuery);
+            Debug.Log($"[SpeechRecorder] Using POINTING context prompt for '{pointingPartName}' part of '{currentObjectLabel}'");
+        }
+        // Otherwise, if in object mode, use the object context prompt template
+        else if (isObjectMode)
         {
             finalPrompt = string.Format(objectContextPromptTemplate, currentObjectLabel, userQuery);
             Debug.Log($"[SpeechRecorder] Using OBJECT context prompt with label '{currentObjectLabel}'");
@@ -759,12 +846,6 @@ IMPORTANT:
             string rawResponse = requestStatus.Result;
             geminiResponse = ParseGeminiRawResponse(rawResponse);
             Debug.Log($"Gemini response: {geminiResponse}");
-            
-            // Update UI if available
-            if (responseText != null && !string.IsNullOrEmpty(geminiResponse))
-            {
-                responseText.text = geminiResponse;
-            }
 
             // Update UI if available - now showing the user-friendly message
             if (responseTextOnObject != null && !string.IsNullOrEmpty(geminiResponse))
@@ -813,6 +894,18 @@ IMPORTANT:
                         canvas.enabled = false;
                         canvas.enabled = true;
                     }
+                }
+                
+                // Start the auto-hide timer if enabled
+                if (enableResponseAutoHide)
+                {
+                    // Cancel any existing hide coroutine to prevent multiple timers
+                    if (responseHideCoroutine != null)
+                    {
+                        StopCoroutine(responseHideCoroutine);
+                    }
+                    responseHideCoroutine = StartCoroutine(AutoHideResponseAfterDelay(responseDisplayDuration));
+                    Debug.Log($"[SpeechRecorder] Response UI will auto-hide in {responseDisplayDuration} seconds");
                 }
             }
             else
@@ -1213,10 +1306,10 @@ IMPORTANT:
         }
         
         // Update response text with the rationale if objects were highlighted
-        if (highlightedAnchors.Count > 0 && responseText != null)
+        if (highlightedAnchors.Count > 0 && responseTextOnObject != null)
         {
             string highlightMessage = $"Highlighted {highlightedAnchors.Count} objects: {highlightData.rationale}";
-            responseText.text = highlightMessage;
+            responseTextOnObject.text = highlightMessage;
         }
     }
 
@@ -1236,12 +1329,18 @@ IMPORTANT:
         public string rationale;
     }
 
-    // Add public methods to clear response text and hide chatbox
     public void ClearResponseText()
     {
         if (responseTextOnObject != null)
         {
             responseTextOnObject.text = "";
+        }
+        
+        // Cancel any existing hide timer when manually clearing
+        if (responseHideCoroutine != null)
+        {
+            StopCoroutine(responseHideCoroutine);
+            responseHideCoroutine = null;
         }
     }
 
@@ -1250,6 +1349,19 @@ IMPORTANT:
         if (chatboxOnObject != null)
         {
             chatboxOnObject.SetActive(false);
+        }
+        
+        // Also clear the request text when hiding the chatbox
+        if (requestText != null)
+        {
+            requestText.text = "";
+        }
+        
+        // Cancel any existing hide timer when manually hiding
+        if (responseHideCoroutine != null)
+        {
+            StopCoroutine(responseHideCoroutine);
+            responseHideCoroutine = null;
         }
     }
 
@@ -1274,6 +1386,34 @@ IMPORTANT:
         {
             Debug.LogWarning("[SpeechRecorder] Cannot force-show chatboxOnObject because reference is null");
         }
+    }
+
+    // New coroutine to auto-hide the response UI after a delay
+    private IEnumerator AutoHideResponseAfterDelay(float delay)
+    {
+        yield return new WaitForSeconds(delay);
+        
+        Debug.Log($"[SpeechRecorder] Auto-hiding response UI after {delay} seconds");
+        
+        // Hide the chatbox
+        if (chatboxOnObject != null)
+        {
+            chatboxOnObject.SetActive(false);
+        }
+        
+        // Clear the request text
+        if (requestText != null)
+        {
+            requestText.text = "";
+        }
+        
+        // Also clear the response text
+        if (responseTextOnObject != null)
+        {
+            responseTextOnObject.text = "";
+        }
+        
+        responseHideCoroutine = null;
     }
 }
 

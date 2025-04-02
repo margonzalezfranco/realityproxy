@@ -352,7 +352,6 @@ RectTransform:
   - {fileID: 1708249460}
   - {fileID: 1621109596}
   - {fileID: 1093593260}
-  - {fileID: 505788585}
   - {fileID: 581695958}
   - {fileID: 238637615}
   - {fileID: 1124912768}
@@ -2229,19 +2228,19 @@ PrefabInstance:
   serializedVersion: 2
   m_Modification:
     serializedVersion: 3
-    m_TransformParent: {fileID: 90799425}
+    m_TransformParent: {fileID: 0}
     m_Modifications:
     - target: {fileID: -8679921383154817045, guid: 9184914e7058e408db2f8b8c35bf442c, type: 3}
       propertyPath: m_LocalScale.x
-      value: 50
+      value: 0.025
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 9184914e7058e408db2f8b8c35bf442c, type: 3}
       propertyPath: m_LocalScale.y
-      value: 50
+      value: 0.025
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 9184914e7058e408db2f8b8c35bf442c, type: 3}
       propertyPath: m_LocalScale.z
-      value: 50
+      value: 0.025
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 9184914e7058e408db2f8b8c35bf442c, type: 3}
       propertyPath: m_LocalPosition.x
@@ -2301,7 +2300,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 919132149155446097, guid: 9184914e7058e408db2f8b8c35bf442c, type: 3}
       propertyPath: m_IsActive
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
@@ -4278,6 +4277,9 @@ PrefabInstance:
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects:
+    - targetCorrespondingSourceObject: {fileID: -8679921383154817045, guid: 9184914e7058e408db2f8b8c35bf442c, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1092430615}
     - targetCorrespondingSourceObject: {fileID: -8679921383154817045, guid: 9184914e7058e408db2f8b8c35bf442c, type: 3}
       insertIndex: -1
       addedObject: {fileID: 1208220119}
@@ -6341,7 +6343,7 @@ RectTransform:
   m_LocalScale: {x: 0.007118964, y: 0.007118965, z: 0.007118964}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 1781312573}
+  m_Father: {fileID: 779485461}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
@@ -10202,14 +10204,11 @@ MonoBehaviour:
     Avoid technical terms or JSON structure."
   useMiddlePinchControl: 0
   useLeftHand: 1
-  geminiHandSphere: {fileID: 1694838163}
   requestText: {fileID: 1092430616}
-  responseText: {fileID: 1879358953}
   responseTextOnObject: {fileID: 1669162734}
   onGeminiResponseReceived:
     m_PersistentCalls:
       m_Calls: []
-  chatbox: {fileID: 189891876}
   chatboxOnObject: {fileID: 1208220120}
   sceneObjectManager: {fileID: 0}
   relationshipLineManager: {fileID: 0}
@@ -10616,11 +10615,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9541d86e2fd84c1d9990edf0852d74ab, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
---- !u!1 &1694838163 stripped
-GameObject:
-  m_CorrespondingSourceObject: {fileID: 331860115575953182, guid: 98f73ce3e48f640b3938f1d3fe0611f1, type: 3}
-  m_PrefabInstance: {fileID: 1781312572}
-  m_PrefabAsset: {fileID: 0}
 --- !u!1 &1703431589
 GameObject:
   m_ObjectHideFlags: 0
@@ -11383,9 +11377,6 @@ PrefabInstance:
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects:
-    - targetCorrespondingSourceObject: {fileID: 4591238785489774912, guid: 98f73ce3e48f640b3938f1d3fe0611f1, type: 3}
-      insertIndex: -1
-      addedObject: {fileID: 1092430615}
     - targetCorrespondingSourceObject: {fileID: 4591238785489774912, guid: 98f73ce3e48f640b3938f1d3fe0611f1, type: 3}
       insertIndex: -1
       addedObject: {fileID: 189891880}
@@ -12171,17 +12162,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 5030769454512039458}
   m_LocalEulerAnglesHint: {x: 5, y: -7.9, z: 0}
---- !u!114 &1879358953 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 2699278113675105482, guid: ad99367dbb9c7405c9eb94fb9072dfaa, type: 3}
-  m_PrefabInstance: {fileID: 189891875}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 9541d86e2fd84c1d9990edf0852d74ab, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
 --- !u!1 &1889701423
 GameObject:
   m_ObjectHideFlags: 0
@@ -14003,3 +13983,4 @@ SceneRoots:
   - {fileID: 1828629622}
   - {fileID: 779485458}
   - {fileID: 387251131}
+  - {fileID: 505788584}
