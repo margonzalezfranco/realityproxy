@@ -453,10 +453,10 @@ IMPORTANT:
         
         // Only change parent if we're not already positioned relative to a pointing plane
         bool isAlreadyOnPointingPlane = transform.parent != null && transform.parent.name == "PointingPlane";
-        if (sphereToggle != null && !isAlreadyOnPointingPlane)
-        {
-            transform.SetParent(sphereToggle.transform);
-        }
+        // if (sphereToggle != null && !isAlreadyOnPointingPlane)
+        // {
+        //     transform.SetParent(sphereToggle.transform);
+        // }
         
         Debug.Log($"Recorder now associated with object: {label}");
     }
@@ -471,15 +471,7 @@ IMPORTANT:
         // Check if we are currently parented to a pointing plane
         bool wasOnPointingPlane = transform.parent != null && transform.parent.name == "PointingPlane";
         
-        // Restore original parent if it exists
-        if (originalRecorderParent != null)
-        {
-            transform.SetParent(originalRecorderParent.transform);
-        }
-        else
-        {
-            transform.SetParent(null);
-        }
+        transform.SetParent(null);
         
         Debug.Log($"Recorder object association cleared from {previousLabel}, was on pointing plane: {wasOnPointingPlane}");
     }

@@ -4305,6 +4305,12 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 9184914e7058e408db2f8b8c35bf442c, type: 3}
       insertIndex: -1
       addedObject: {fileID: 779485468}
+    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 9184914e7058e408db2f8b8c35bf442c, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 779485471}
+    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 9184914e7058e408db2f8b8c35bf442c, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 779485470}
   m_SourcePrefab: {fileID: 100100000, guid: 9184914e7058e408db2f8b8c35bf442c, type: 3}
 --- !u!1 &779485459 stripped
 GameObject:
@@ -4443,7 +4449,7 @@ MonoBehaviour:
   m_ToggleChanged:
     m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 1557741988}
+      - m_Target: {fileID: 0}
         m_TargetAssemblyTypeName: SpeechToTextRecorder, Assembly-CSharp
         m_MethodName: ToggleRecording
         m_Mode: 1
@@ -4540,6 +4546,102 @@ MonoBehaviour:
   m_MinAngleAllowed: 0.1
   m_MaxAngleAllowed: 5
   m_TimeUntilThresholdReachesMaxAngle: 3
+--- !u!114 &779485470
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 779485459}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f76c6af9c00f849748b452220e36ba28, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  geminiModelName: gemini-2.0-flash
+  geminiApiKey: AIzaSyBx5IRXG1FOUN3HdnKFMgsQA5zOcui7Mhc
+  cameraRenderTex: {fileID: 8400000, guid: 78e2b50f1cd8640efa61e2994d5eaec2, type: 2}
+  isRecording: 0
+  recordingFrequency: 16000
+  maxRecordingLength: 100
+  deviceName: 
+  systemPromptTemplate: 'You are a helpful AI assistant responding to the user''s
+    request. You can see what the user is currently looking at. Please respond concisely
+    and avoid using markdown formatting. User request: {0}'
+  objectContextPromptTemplate: 'You are a helpful AI assistant responding to the
+    user''s request about {0}. You can see what the user is currently looking at,
+    but you don''t have to only rely on that. You don''t have to wait to see the
+    object to respond. Only respond information about this object. Please respond
+    concisely and avoid using markdown formatting. User request: {1}'
+  pointingPromptTemplate: 'You are a helpful AI assistant responding to the user''s
+    request about a specific part of an object. The user is pointing at the ''{1}''
+    part of {0}. This part is described as: ''{2}''. Please provide specific information
+    about this part. Respond concisely and avoid using markdown formatting. User
+    request: {3}'
+  environmentLevelPromptTemplate: "You are analyzing a user's request within a scene.\nScene
+    context: {0}\nDetected objects: {1}\nUser request: {2}\n\nDetermine if the user
+    is asking about RELATIONSHIPS between objects or wants to HIGHLIGHT specific
+    objects:\n\nFor RELATIONSHIPS between objects (e.g., \"\"how are these objects
+    related?\"\" or \"\"show connections between items\"\"):\n1. Identify objects
+    in the scene that are related to each other based on the user's request.\n2.
+    Find meaningful relationships between objects in the detected list.\n3. Output
+    a JSON array of relationship objects with the following structure:\n```json\n{{\n 
+    \"\"type\"\": \"\"relationships\"\",\n  \"\"data\"\": [\n    {{\n      \"\"Source
+    Object\"\": \"\"name_of_source_object\"\",\n      \"\"Target Object\"\": \"\"name_of_target_object\"\",\n     
+    \"\"Relation Label\"\": \"\"brief relationship description (5 words max)\"\"\n   
+    }},\n    {{\n      \"\"Source Object\"\": \"\"name_of_another_source\"\",\n     
+    \"\"Target Object\"\": \"\"name_of_another_target\"\",\n      \"\"Relation Label\"\":
+    \"\"another relationship description\"\"\n    }}\n  ],\n  \"\"message\"\": \"\"Found
+    [number] relationships. [object1] is [brief relation] to [object2].\"\"\n}}\n```\n\nFor
+    HIGHLIGHT requests (e.g., \"\"show me all food items\"\" or \"\"highlight the
+    kitchen tools\"\"):\n1. Identify which objects from the detected list match the
+    user's criteria.\n2. Output a JSON object with the following structure:\n```json\n{{\n 
+    \"\"type\"\": \"\"highlight\"\",\n  \"\"data\"\": {{\n    \"\"objects\"\": [\n     
+    \"\"object1\"\",\n      \"\"object2\"\",\n      \"\"object3\"\"\n    ],\n   
+    \"\"rationale\"\": \"\"Brief explanation of why these objects were selected (1-2
+    sentences)\"\"\n  }},\n  \"\"message\"\": \"\"Highlighted [number] [category]
+    items.\"\"\n}}\n```\n\nIf no relevant objects or relationships can be identified,
+    return:\n```json\n{{\n  \"\"type\"\": \"\"none\"\",\n  \"\"message\"\": \"\"No
+    matching objects found. Try rephrasing.\"\"\n}}\n```\n\nIMPORTANT: \n1. Only
+    include objects that are in the detected objects list provided above.\n2. Keep
+    messages short and clear (max 15 words).\n3. Focus on key information only.\n4.
+    Avoid technical terms or JSON structure."
+  useMiddlePinchControl: 0
+  useLeftHand: 1
+  requestText: {fileID: 1092430616}
+  responseTextOnObject: {fileID: 1669162734}
+  onGeminiResponseReceived:
+    m_PersistentCalls:
+      m_Calls: []
+  chatboxOnObject: {fileID: 1208220120}
+  sceneObjectManager: {fileID: 1242229081}
+  relationshipLineManager: {fileID: 1083609192}
+  sceneContextManager: {fileID: 1242229078}
+  recordedAudio: {fileID: 0}
+  transcriptionResult: 
+  isProcessing: 0
+  geminiResponse: 
+  responseDisplayDuration: 10
+  enableResponseAutoHide: 1
+  pointingPlane: {fileID: 505788586}
+  objectLevelRecordingToggle: 1
+--- !u!114 &779485471
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 779485459}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8801e137921e94bd79a00777dab773b9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  speechApiKey: AIzaSyBt5kvN77OvM2edI0TPwVpsfUFQjF2Pq7o
+  languageCode: en-US
+  encoding: LINEAR16
+  sampleRateHertz: 16000
+  enableAutomaticPunctuation: 1
 --- !u!1 &780958558
 GameObject:
   m_ObjectHideFlags: 0
@@ -10002,8 +10104,6 @@ GameObject:
   - component: {fileID: 1557741984}
   - component: {fileID: 1557741986}
   - component: {fileID: 1557741985}
-  - component: {fileID: 1557741987}
-  - component: {fileID: 1557741988}
   m_Layer: 0
   m_Name: GEMINI
   m_TagString: Untagged
@@ -10130,94 +10230,6 @@ MonoBehaviour:
   onResponseReceived:
     m_PersistentCalls:
       m_Calls: []
---- !u!114 &1557741987
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1557741980}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 8801e137921e94bd79a00777dab773b9, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  speechApiKey: AIzaSyBt5kvN77OvM2edI0TPwVpsfUFQjF2Pq7o
-  languageCode: en-US
-  encoding: LINEAR16
-  sampleRateHertz: 16000
-  enableAutomaticPunctuation: 1
---- !u!114 &1557741988
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1557741980}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f76c6af9c00f849748b452220e36ba28, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  geminiModelName: gemini-2.0-flash
-  geminiApiKey: AIzaSyBx5IRXG1FOUN3HdnKFMgsQA5zOcui7Mhc
-  cameraRenderTex: {fileID: 8400000, guid: 78e2b50f1cd8640efa61e2994d5eaec2, type: 2}
-  isRecording: 0
-  recordingFrequency: 16000
-  maxRecordingLength: 100
-  deviceName: 
-  systemPromptTemplate: 'You are a helpful AI assistant responding to the user''s
-    request. You can see what the user is currently looking at. Please respond concisely
-    and avoid using markdown formatting. User request: {0}'
-  objectContextPromptTemplate: 'You are a helpful AI assistant responding to the
-    user''s request about {0}. You can see what the user is currently looking at,
-    but you don''t have to only rely on that. You don''t have to wait to see the
-    object to respond. Only respond information about this object. Please respond
-    concisely and avoid using markdown formatting. User request: {1}'
-  environmentLevelPromptTemplate: "You are analyzing a user's request within a scene.\nScene
-    context: {0}\nDetected objects: {1}\nUser request: {2}\n\nDetermine if the user
-    is asking about RELATIONSHIPS between objects or wants to HIGHLIGHT specific
-    objects:\n\nFor RELATIONSHIPS between objects (e.g., \"\"how are these objects
-    related?\"\" or \"\"show connections between items\"\"):\n1. Identify objects
-    in the scene that are related to each other based on the user's request.\n2.
-    Find meaningful relationships between objects in the detected list.\n3. Output
-    a JSON array of relationship objects with the following structure:\n```json\n{{\n 
-    \"\"type\"\": \"\"relationships\"\",\n  \"\"data\"\": [\n    {{\n      \"\"Source
-    Object\"\": \"\"name_of_source_object\"\",\n      \"\"Target Object\"\": \"\"name_of_target_object\"\",\n     
-    \"\"Relation Label\"\": \"\"brief relationship description (5 words max)\"\"\n   
-    }},\n    {{\n      \"\"Source Object\"\": \"\"name_of_another_source\"\",\n     
-    \"\"Target Object\"\": \"\"name_of_another_target\"\",\n      \"\"Relation Label\"\":
-    \"\"another relationship description\"\"\n    }}\n  ],\n  \"\"message\"\": \"\"Found
-    [number] relationships. [object1] is [brief relation] to [object2].\"\"\n}}\n```\n\nFor
-    HIGHLIGHT requests (e.g., \"\"show me all food items\"\" or \"\"highlight the
-    kitchen tools\"\"):\n1. Identify which objects from the detected list match the
-    user's criteria.\n2. Output a JSON object with the following structure:\n```json\n{{\n 
-    \"\"type\"\": \"\"highlight\"\",\n  \"\"data\"\": {{\n    \"\"objects\"\": [\n     
-    \"\"object1\"\",\n      \"\"object2\"\",\n      \"\"object3\"\"\n    ],\n   
-    \"\"rationale\"\": \"\"Brief explanation of why these objects were selected (1-2
-    sentences)\"\"\n  }},\n  \"\"message\"\": \"\"Highlighted [number] [category]
-    items.\"\"\n}}\n```\n\nIf no relevant objects or relationships can be identified,
-    return:\n```json\n{{\n  \"\"type\"\": \"\"none\"\",\n  \"\"message\"\": \"\"No
-    matching objects found. Try rephrasing.\"\"\n}}\n```\n\nIMPORTANT: \n1. Only
-    include objects that are in the detected objects list provided above.\n2. Keep
-    messages short and clear (max 15 words).\n3. Focus on key information only.\n4.
-    Avoid technical terms or JSON structure."
-  useMiddlePinchControl: 0
-  useLeftHand: 1
-  requestText: {fileID: 1092430616}
-  responseTextOnObject: {fileID: 1669162734}
-  onGeminiResponseReceived:
-    m_PersistentCalls:
-      m_Calls: []
-  chatboxOnObject: {fileID: 1208220120}
-  sceneObjectManager: {fileID: 0}
-  relationshipLineManager: {fileID: 0}
-  sceneContextManager: {fileID: 0}
-  recordedAudio: {fileID: 0}
-  transcriptionResult: 
-  isProcessing: 0
-  geminiResponse: 
-  objectLevelRecordingToggle: 1
 --- !u!1 &1579789970
 GameObject:
   m_ObjectHideFlags: 0
