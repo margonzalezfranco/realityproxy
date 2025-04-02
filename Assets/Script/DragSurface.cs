@@ -65,7 +65,9 @@ public class DragSurface : MonoBehaviour
         None,           // No surface is being created
         DrawingLength,  // First pinch - creating length
         DrawingHeight,  // Between pinches - creating height
-        Completed       // After second pinch - surface is complete
+        Completed,      // After second pinch - surface is complete
+        Cleared,        // Previous surface has been cleared, ready for new creation
+        AwaitingSecondPinch  // Waiting for second pinch in a double-pinch sequence
     }
     
     private SurfaceCreationState currentState = SurfaceCreationState.None;
@@ -87,6 +89,16 @@ public class DragSurface : MonoBehaviour
     private GameObject point2Visualizer;
     private GameObject point3Visualizer;
     private GameObject point4Visualizer;
+
+    // Variables for double-pinch detection
+    private float lastPinchTime = 0f;
+    private bool isAwaitingSecondPinch = false;
+    private float doublePinchTimeThreshold = 1.0f; // Time window for double-pinch detection (in seconds)
+    private bool lastPinchWasLeft = false; // Track which hand performed the last pinch
+    
+    // Additional variables for recovery mechanism
+    private float longTimeoutThreshold = 5.0f; // Time window for giving up completely and resetting
+    private bool hasLoggedTimeoutWarning = false;
 
     void Start()
     {
@@ -140,6 +152,42 @@ public class DragSurface : MonoBehaviour
                 
             UpdateLengthDrawing();
         }
+        
+        // Check for double-pinch timeout
+        if (isAwaitingSecondPinch)
+        {
+            float timeSinceLastPinch = Time.time - lastPinchTime;
+            
+            // First warning at normal timeout
+            if (timeSinceLastPinch >= doublePinchTimeThreshold && !hasLoggedTimeoutWarning)
+            {
+                Debug.Log($"Double-pinch window expired. Please use your {(lastPinchWasLeft ? "left" : "right")} hand to pinch again to retry, or wait for auto-reset.");
+                hasLoggedTimeoutWarning = true;
+                
+                // Immediately reset to None state if we were in AwaitingSecondPinch
+                // This prevents the bug where the system can proceed to height drawing after a failed double-pinch
+                if (currentState == SurfaceCreationState.AwaitingSecondPinch)
+                {
+                    currentState = SurfaceCreationState.None;
+                    isAwaitingSecondPinch = false;
+                    Debug.Log("Reset to None state after double-pinch timeout.");
+                }
+            }
+            
+            // Complete reset after long timeout (for any remaining cases)
+            if (timeSinceLastPinch >= longTimeoutThreshold)
+            {
+                isAwaitingSecondPinch = false;
+                hasLoggedTimeoutWarning = false;
+                
+                // If we were waiting to start drawing, revert to None state
+                if (currentState == SurfaceCreationState.AwaitingSecondPinch)
+                {
+                    currentState = SurfaceCreationState.None;
+                    Debug.Log("Auto-reset complete. Ready for new interaction.");
+                }
+            }
+        }
     }
     
     private void HandlePinchStarted(bool isLeft)
@@ -148,11 +196,44 @@ public class DragSurface : MonoBehaviour
         if (isLeft && !allowLeftHand)
             return;
             
+        float currentTime = Time.time;
+        
+        // Handle double-pinch detection - now more permissive
+        if (isAwaitingSecondPinch && (currentTime - lastPinchTime) < longTimeoutThreshold)
+        {
+            // This is a pinch during the waiting period - accept it even if from different hand
+            isAwaitingSecondPinch = false;
+            hasLoggedTimeoutWarning = false;
+            
+            switch (currentState)
+            {
+                case SurfaceCreationState.AwaitingSecondPinch:
+                    // Double-pinch to start drawing a new surface
+                    StartLengthDrawing(isLeft);
+                    break;
+                    
+                case SurfaceCreationState.Completed:
+                    // Double-pinch to clear the previous surface
+                    ClearCurrentSurface();
+                    currentState = SurfaceCreationState.None;
+                    Debug.Log("Previous surface cleared. Double-pinch to start drawing a new surface.");
+                    break;
+            }
+            
+            return;
+        }
+        
+        // Handle the first pinch of a potential double-pinch
         switch (currentState)
         {
             case SurfaceCreationState.None:
-                // Start drawing immediately with a single pinch
-                StartLengthDrawing(isLeft);
+                // Set up for potential double-pinch to start drawing
+                isAwaitingSecondPinch = true;
+                hasLoggedTimeoutWarning = false;
+                lastPinchTime = currentTime;
+                lastPinchWasLeft = isLeft;
+                currentState = SurfaceCreationState.AwaitingSecondPinch;
+                Debug.Log($"First pinch detected with {(isLeft ? "left" : "right")} hand. Pinch again within 1 second to start drawing.");
                 break;
                 
             case SurfaceCreationState.DrawingHeight:
@@ -160,8 +241,18 @@ public class DragSurface : MonoBehaviour
                 break;
                 
             case SurfaceCreationState.Completed:
-                currentState = SurfaceCreationState.None;
-                Debug.Log("Previous surface cleared. Ready for new interaction.");
+                // Set up for potential double-pinch to clear surface
+                isAwaitingSecondPinch = true;
+                hasLoggedTimeoutWarning = false;
+                lastPinchTime = currentTime;
+                lastPinchWasLeft = isLeft;
+                Debug.Log($"First pinch detected with {(isLeft ? "left" : "right")} hand. Pinch again within 1 second to clear the surface.");
+                break;
+                
+            default:
+                // Reset double-pinch detection for other states
+                isAwaitingSecondPinch = false;
+                hasLoggedTimeoutWarning = false;
                 break;
         }
     }
@@ -173,7 +264,8 @@ public class DragSurface : MonoBehaviour
             return;
             
         // Only process pinch end for the drawing hand when in drawing states
-        if (isLeft != isLeftHandDrawing || 
+        // Critically, check for valid drawing states to prevent proceeding from a failed initial sequence
+        if ((isLeft != isLeftHandDrawing && currentState != SurfaceCreationState.None) ||
             (currentState != SurfaceCreationState.DrawingLength && 
              currentState != SurfaceCreationState.DrawingHeight))
             return;
@@ -188,6 +280,10 @@ public class DragSurface : MonoBehaviour
             case SurfaceCreationState.DrawingHeight:
                 // End the height drawing and complete the surface
                 FinishHeightDrawing();
+                break;
+                
+            default:
+                // Ignore pinch end in other states
                 break;
         }
     }
@@ -244,6 +340,8 @@ public class DragSurface : MonoBehaviour
                 // Reset to None state
                 ClearCurrentSurface();
                 currentState = SurfaceCreationState.None;
+                isAwaitingSecondPinch = false;
+                hasLoggedTimeoutWarning = false;
                 
                 return;
             }
@@ -483,9 +581,9 @@ public class DragSurface : MonoBehaviour
     {
         yield return new WaitForSeconds(delay);
         
-        // Reset state and clear the surface automatically after delay
-        currentState = SurfaceCreationState.None;
-        Debug.Log("Ready for new interaction. Perform a pinch to start drawing.");
+        // Reset state to allow creating a new surface, but don't clear the surface yet
+        // This will happen on the next pinch
+        currentState = SurfaceCreationState.Completed;
     }
     
     private void InitializeDebugVisualizers()
@@ -542,6 +640,7 @@ public class DragSurface : MonoBehaviour
         switch (currentState)
         {
             case SurfaceCreationState.None:
+            case SurfaceCreationState.AwaitingSecondPinch:
                 SetDebugVisualizersActive(false);
                 break;
                 
@@ -650,5 +749,7 @@ public class DragSurface : MonoBehaviour
         
         // Reset state
         currentState = SurfaceCreationState.None;
+        isAwaitingSecondPinch = false;
+        hasLoggedTimeoutWarning = false;
     }
 } 
