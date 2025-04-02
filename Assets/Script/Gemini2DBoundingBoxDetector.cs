@@ -33,6 +33,7 @@ public class Gemini2DBoundingBoxDetector : GeminiGeneral
 
     private System.Collections.IEnumerator DetectBoxesRoutine()
     {
+        Debug.Log("Detecting bounding boxes...");
         // 1) Capture frame from RenderTexture
         Texture2D frameTex = CaptureFrame(cameraRenderTex);
 

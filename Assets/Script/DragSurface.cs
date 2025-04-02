@@ -161,7 +161,7 @@ public class DragSurface : MonoBehaviour
             // First warning at normal timeout
             if (timeSinceLastPinch >= doublePinchTimeThreshold && !hasLoggedTimeoutWarning)
             {
-                Debug.Log($"Double-pinch window expired. Please use your {(lastPinchWasLeft ? "left" : "right")} hand to pinch again to retry, or wait for auto-reset.");
+                // Debug.Log($"Double-pinch window expired. Please use your {(lastPinchWasLeft ? "left" : "right")} hand to pinch again to retry, or wait for auto-reset.");
                 hasLoggedTimeoutWarning = true;
                 
                 // Immediately reset to None state if we were in AwaitingSecondPinch
@@ -170,7 +170,7 @@ public class DragSurface : MonoBehaviour
                 {
                     currentState = SurfaceCreationState.None;
                     isAwaitingSecondPinch = false;
-                    Debug.Log("Reset to None state after double-pinch timeout.");
+                    // Debug.Log("Reset to None state after double-pinch timeout.");
                 }
             }
             
@@ -233,7 +233,7 @@ public class DragSurface : MonoBehaviour
                 lastPinchTime = currentTime;
                 lastPinchWasLeft = isLeft;
                 currentState = SurfaceCreationState.AwaitingSecondPinch;
-                Debug.Log($"First pinch detected with {(isLeft ? "left" : "right")} hand. Pinch again within 1 second to start drawing.");
+                // Debug.Log($"First pinch detected with {(isLeft ? "left" : "right")} hand. Pinch again within 1 second to start drawing.");
                 break;
                 
             case SurfaceCreationState.DrawingHeight:
@@ -246,7 +246,7 @@ public class DragSurface : MonoBehaviour
                 hasLoggedTimeoutWarning = false;
                 lastPinchTime = currentTime;
                 lastPinchWasLeft = isLeft;
-                Debug.Log($"First pinch detected with {(isLeft ? "left" : "right")} hand. Pinch again within 1 second to clear the surface.");
+                // Debug.Log($"First pinch detected with {(isLeft ? "left" : "right")} hand. Pinch again within 1 second to clear the surface.");
                 break;
                 
             default:

@@ -184,6 +184,17 @@ public class SphereToggleScript : MonoBehaviour
                     UpdateRecorderPositionOnPointing();
                 }
                 Debug.Log("Pointing event received: started");
+                
+                // Generate specialized questions for the part being pointed at
+                if (isOn && pointingPlaneText != null && !string.IsNullOrEmpty(pointingPlaneText.text) && 
+                    pointingPlaneText.text != "none" && labelUnderSphere != null) {
+                    string partName = pointingPlaneText.text;
+                    string partDescription = descriptionText != null ? descriptionText.text : "";
+                    string objectLabel = labelUnderSphere.text;
+                    
+                    // Generate specialized questions for this specific part
+                    StartCoroutine(GeneratePointingQuestionsRoutine(objectLabel, partName, partDescription));
+                }
             }
         } else {
             // Handle pointing ended
@@ -240,6 +251,12 @@ public class SphereToggleScript : MonoBehaviour
             // Reset the last recorded part
             lastRecordedPart = "";
             Debug.Log("Pointing event received: ended");
+            
+            // When pointing ends, regenerate the general questions for the whole object
+            if (isOn && labelUnderSphere != null) {
+                string labelContent = labelUnderSphere.text;
+                StartCoroutine(GenerateQuestionsRoutine(labelContent));
+            }
         }
     }
 
@@ -508,6 +525,9 @@ public class SphereToggleScript : MonoBehaviour
 
     private IEnumerator UpdateObjectDescriptionRoutine(string labelContent)
     {
+        // Keep track of the last part we pointed at to detect changes
+        string lastPointedPartName = "";
+        
         while (true)
         {
             // Check if hands are close enough to enable pointing detection
@@ -520,6 +540,7 @@ public class SphereToggleScript : MonoBehaviour
                 {
                     currentlyPointing = false;
                     OnPointingStateChanged?.Invoke(false);
+                    lastPointedPartName = ""; // Reset the last pointed part
                 }
                 yield return new WaitForSeconds(0.5f); // Check less frequently when hands are far apart
                 continue;
@@ -587,6 +608,17 @@ public class SphereToggleScript : MonoBehaviour
                     
                     if (isPointingNow)
                     {
+                        // Check if the user is pointing at a different part now
+                        bool partChanged = lastPointedPartName != pointingInfo.part && !string.IsNullOrEmpty(pointingInfo.part);
+                        
+                        // If the pointing part has changed, generate new questions for this part
+                        if (partChanged && isOn)
+                        {
+                            Debug.Log($"Pointing part changed from '{lastPointedPartName}' to '{pointingInfo.part}' - regenerating questions");
+                            StartCoroutine(GeneratePointingQuestionsRoutine(labelContent, pointingInfo.part, pointingInfo.description));
+                            lastPointedPartName = pointingInfo.part;
+                        }
+                        
                         // Get the current fingertip position to update the pointing plane
                         var handSubsystems = new List<XRHandSubsystem>();
                         SubsystemManager.GetSubsystems(handSubsystems);
@@ -724,6 +756,7 @@ public class SphereToggleScript : MonoBehaviour
                     {
                         // Reset the last recorded part when not pointing
                         lastRecordedPart = "";
+                        lastPointedPartName = ""; // Reset the last pointed part
                         
                         // Hide the pointing plane when not pointing
                         if (pointingPlane != null && pointingPlane.activeSelf)
@@ -2179,5 +2212,133 @@ public class SphereToggleScript : MonoBehaviour
         
         // Clean up auto-recording if active
         StopAutoRecordingIfActive();
+    }
+
+    /// <summary>
+    /// Specialized version of GenerateQuestionsRoutine that focuses on a specific part of an object
+    /// being pointed at by the user.
+    /// </summary>
+    private IEnumerator GeneratePointingQuestionsRoutine(string objectLabel, string partName, string partDescription)
+    {
+        // 1) Capture the camera frame -> Base64
+        Texture2D frameTex = CaptureFrame(cameraRenderTex);
+        string base64Image = ConvertTextureToBase64(frameTex);
+        Destroy(frameTex);  // free the temporary texture
+
+        // 2) Build a specialized prompt that references the specific part being pointed at
+        string prompt = $@"
+            Given the current scene context: {currentSceneContext},
+            and the potential tasks: {currentTaskContext},
+            and that the user is holding / selecting a '{objectLabel}',
+            and is SPECIFICALLY POINTING at the '{partName}' part of this object,
+            which is described as: '{partDescription}',
+
+            Please return a JSON list of possible user questions about this SPECIFIC PART of the object.
+            Focus on questions that are relevant to:
+            1. The specific functionality or purpose of this particular part
+            2. How this part relates to the overall object
+            3. How to use or interact with this specific part
+            4. Any issues or considerations specific to this part
+            5. How this part might be relevant to the current task context
+
+            Return only the most likely questions, up to 5 maximum.
+            Focus on questions that users would genuinely want answers to about this specific part.
+
+            In the format:
+            json
+            [
+            ""Question 1 about the {partName}"",
+            ""Question 2 about the {partName}"",
+            ...
+            ]
+            ";
+
+        // 3) Call Gemini using the MakeGeminiRequest method from GeminiGeneral for concurrent API calls
+        Debug.Log($"Generating specialized questions for '{partName}' part of '{objectLabel}'");
+        var request = geminiGeneral != null 
+            ? geminiGeneral.MakeGeminiRequest(prompt, base64Image)
+            : new GeminiGeneral.RequestStatus(geminiClient.GenerateContent(prompt, base64Image));
+
+        while (!request.IsCompleted)
+            yield return null;
+
+        string geminiResponse = request.Result;
+
+        // 4) Extract JSON
+        string extractedJson = TryExtractJson(geminiResponse);
+        Debug.Log($"Pointing-specific Questions Response - Extracted JSON:\n{extractedJson}");
+
+        if (string.IsNullOrEmpty(extractedJson))
+        {
+            Debug.LogWarning("Could not find valid JSON block in Gemini question response for pointing.");
+            yield break;
+        }
+
+        // This is our final array of question strings
+        List<string> questionsList = null;
+        try
+        {
+            questionsList = JsonConvert.DeserializeObject<List<string>>(extractedJson);
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"Failed to parse pointing-specific question array: {e}");
+            yield break;
+        }
+
+        // 5) Instantiate UI elements for each question
+        ClearPreviousQuestions();
+
+        if (questionsList != null && questionsList.Count > 0)
+        {
+            float currentY = -60f;  // Start at the top
+            float questionHeight = 54f;  // Height of each question block, adjust as needed
+            float spacing = 0f;  // Space between questions (reduced by 0.5x from 5f)
+
+            foreach (var q in questionsList)
+            {
+                // Instantiate your question prefab 
+                var go = Instantiate(questionPrefab, questionsParent);
+                go.name = "GeminiQuestion";
+
+                // Position 
+                Transform t = go.transform;
+                if (t != null)
+                {
+                    t.localPosition = new Vector3(0f, -currentY, 0f);
+                    currentY += questionHeight + spacing;
+                }
+
+                // Set the text inside
+                TextMeshPro txt = go.GetComponentInChildren<TextMeshPro>();
+                if (txt != null) txt.text = q;
+
+                // Add button press handling
+                var button = go.GetComponent<SpatialUIButton>();
+                if (button != null)
+                {
+                    string questionText = q; // closure
+                    button.WasPressed += (buttonText, renderer, index) =>
+                    {
+                        // clear the previous answer in the answer panel: set the text to "Generating..."
+                        answerPanel.GetComponentInChildren<TextMeshPro>().text = "Generating...";
+
+                        if (questionAnswerer != null)
+                        {
+                            questionAnswerer.RequestAnswer(questionText);
+                            answerPanel.SetActive(true);
+                        }
+                        else
+                        {
+                            Debug.LogWarning("No QuestionAnswerer reference set.");
+                        }
+                    };
+                }
+                else
+                {
+                    Debug.LogWarning("Question prefab is missing SpatialUIButton component.");
+                }
+            }
+        }
     }
 }
