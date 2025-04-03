@@ -31,6 +31,10 @@ public class DragSurface : MonoBehaviour
     public delegate void SurfaceCompletedHandler(Vector3 point1, Vector3 point2, Vector3 point3, Vector3 point4);
     public static event SurfaceCompletedHandler OnSurfaceCompleted;
 
+    // Delegate and event for surface clearing via double-pinch
+    public delegate void SurfaceClearedHandler();
+    public static event SurfaceClearedHandler OnSurfaceCleared;
+
     [Header("Dependencies")]
     [Tooltip("Reference to the hand tracking component")]
     public MyHandTracking handTracking;
@@ -199,7 +203,7 @@ public class DragSurface : MonoBehaviour
         float currentTime = Time.time;
         
         // Handle double-pinch detection - now more permissive
-        if (isAwaitingSecondPinch && (currentTime - lastPinchTime) < longTimeoutThreshold)
+        if (isAwaitingSecondPinch && (currentTime - lastPinchTime) < doublePinchTimeThreshold)
         {
             // This is a pinch during the waiting period - accept it even if from different hand
             isAwaitingSecondPinch = false;
@@ -217,6 +221,9 @@ public class DragSurface : MonoBehaviour
                     ClearCurrentSurface();
                     currentState = SurfaceCreationState.None;
                     Debug.Log("Previous surface cleared. Double-pinch to start drawing a new surface.");
+                    
+                    // Trigger the event for surface clearing
+                    OnSurfaceCleared?.Invoke();
                     break;
             }
             

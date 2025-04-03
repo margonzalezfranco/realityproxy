@@ -9625,6 +9625,11 @@ MonoBehaviour:
   semanticLineColor: {r: 0.19607843, g: 0.5764706, b: 0.78431374, a: 1}
   responseVerticalOffset: 0.02
   autoProcessSemanticLines: 1
+  menuCanvas: {fileID: 619207843}
+  questionsParent: {fileID: 90799425}
+  questionPrefab: {fileID: 8332209716421791987, guid: afb3b284441664fef8669ab537fb8b5f, type: 3}
+  answerPanel: {fileID: 1093593259}
+  questionAnswerer: {fileID: 1557741984}
 --- !u!1 &1490084817
 GameObject:
   m_ObjectHideFlags: 0

@@ -1,8 +1,14 @@
 using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
-using UnityEngine.UI; // Add for UI components
-using TMPro; // Add for TextMeshPro
+using UnityEngine.UI;
+using TMPro;
+using UnityEngine.XR.Interaction.Toolkit.UI;
+using PolySpatial.Template;
+using System;
+using Newtonsoft.Json;
+using UnityEngine.XR.Hands;
+using Unity.XR.CoreUtils;
 
 /// <summary>
 /// SurfaceScanOCR: Listens for surface drawing events and triggers OCR scanning
@@ -278,6 +284,25 @@ public class SurfaceScanOCR : GeminiGeneral
     // Reference to the currently active OCR line that triggered a response
     private GameObject activeResponseLine;
 
+    [Header("UI Integration")]
+    [Tooltip("The parent menu canvas containing the InfoPanel and other UI elements")]
+    public Transform menuCanvas;
+
+    [Tooltip("The transform that will hold the questions (typically the InfoPanel)")]
+    public Transform questionsParent;
+
+    [Tooltip("Prefab to use for question buttons")]
+    public GameObject questionPrefab;
+
+    [Tooltip("Answer panel to display responses to questions")]
+    public GameObject answerPanel;
+
+    [Tooltip("Reference to the GeminiQuestionAnswerer component")]
+    public GeminiQuestionAnswerer questionAnswerer;
+
+    // Add this field for tracking created questions
+    private List<GameObject> createdQuestions = new List<GameObject>();
+
     // Override the Awake method from GeminiGeneral
     protected override void Awake()
     {
@@ -343,6 +368,9 @@ public class SurfaceScanOCR : GeminiGeneral
         // Subscribe to OCR completed event
         ocrComponent.OnOCRComplete += HandleOCRComplete;
 
+        // Subscribe to surface clearing event
+        DragSurface.OnSurfaceCleared += HandleSurfaceCleared;
+
         // Find the TextMeshPro component in the response panel
         if (responsePanel != null)
         {
@@ -382,6 +410,9 @@ public class SurfaceScanOCR : GeminiGeneral
         {
             ocrComponent.OnOCRComplete -= HandleOCRComplete;
         }
+        
+        // Unsubscribe from surface clearing event
+        DragSurface.OnSurfaceCleared -= HandleSurfaceCleared;
         
         // Clean up any remaining visualizations
         ClearDebugVisualizations();
@@ -1962,6 +1993,12 @@ public class SurfaceScanOCR : GeminiGeneral
             createdSemanticLines.Add(semanticLine);
         }
         
+        // Generate questions about the semantic content
+        if (semanticLines != null && semanticLines.Count > 0 && questionsParent != null)
+        {
+            GenerateQuestionsAfterSemanticLines(semanticLines);
+        }
+        
         Debug.Log($"Finished creating {createdSemanticLines.Count} semantic lines. Check if they are visible in the scene.");
     }
     
@@ -2044,5 +2081,317 @@ public class SurfaceScanOCR : GeminiGeneral
         }
         
         createdOCRLines.Clear();
+    }
+
+    /// <summary>
+    /// Generate questions about the scanned content after semantic lines are created
+    /// </summary>
+    private void GenerateQuestionsAfterSemanticLines(List<SemanticLineData> semanticLines)
+    {
+        if (semanticLines == null || semanticLines.Count == 0)
+        {
+            Debug.LogWarning("No semantic lines to generate questions for");
+            return;
+        }
+        
+        // Extract all semantic line texts to create context
+        List<string> semanticTexts = new List<string>();
+        foreach (var line in semanticLines)
+        {
+            semanticTexts.Add(line.text);
+        }
+        
+        string semanticContext = string.Join(", ", semanticTexts);
+        Debug.Log($"Generating questions about semantic context: {semanticContext}");
+        
+        // Show the menu canvas if it's not already visible
+        if (menuCanvas != null)
+        {
+            menuCanvas.gameObject.SetActive(true);
+            
+            // Position it appropriately
+            PositionMenuCanvas();
+        }
+        
+        // Start the question generation routine
+        StartCoroutine(GenerateQuestionsRoutine(semanticContext));
+    }
+
+    /// <summary>
+    /// Positions the menu canvas appropriately in the scene
+    /// </summary>
+    private void PositionMenuCanvas()
+    {
+        if (menuCanvas == null) return;
+        
+        // Make sure it's not parented to anything
+        menuCanvas.SetParent(null);
+        
+        // Set up LazyFollow behavior to follow the camera
+        LazyFollow lazyFollow = menuCanvas.GetComponent<LazyFollow>();
+        if (lazyFollow != null)
+        {
+            lazyFollow.positionFollowMode = LazyFollow.PositionFollowMode.Follow;
+        }
+
+        questionsParent.gameObject.SetActive(true);
+        
+        // Activate the first three children if they exist
+        if (menuCanvas.childCount >= 3)
+        {
+            for (int i = 0; i < 3; i++)
+            {
+                if (menuCanvas.GetChild(i) != null)
+                    menuCanvas.GetChild(i).gameObject.SetActive(true);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Coroutine that generates questions about the semantic content using Gemini
+    /// </summary>
+    private IEnumerator GenerateQuestionsRoutine(string semanticContext)
+    {
+        Debug.Log("Starting question generation for semantic content...");
+        
+        // Clear any existing questions first
+        ClearPreviousQuestions();
+        
+        // Capture a frame of the current view if we have a camera render texture
+        string base64Image = null;
+        if (lastCroppedTexture != null)
+        {
+            base64Image = ConvertTextureToBase64(lastCroppedTexture);
+        }
+        
+        // Build a prompt for Gemini to generate questions about the semantic content
+        string prompt = $@"
+            From the image you can see the user is scanning a surface on an object.
+            
+            Based on this object and this scan of an object with the following semantic elements: {semanticContext},
+            
+            Please return a JSON list of possible user questions about these elements.
+            Focus on questions that are relevant to:
+            
+            1. Understanding the purpose and functionality of these elements
+            2. How these elements relate to each other
+            3. What the user might want to know about using or interacting with them
+            4. Common issues or considerations related to these elements
+            
+            Return only the most likely questions, up to 5 maximum.
+            Focus on questions that users would genuinely want answers to.
+            
+            In the format:
+            json
+            [
+            ""Question 1"",
+            ""Question 2"",
+            ...
+            ]
+        ";
+        
+        // Call Gemini
+        Debug.Log("Sending question generation request to Gemini...");
+        var request = MakeGeminiRequest(prompt, base64Image);
+        
+        // Wait for completion
+        while (!request.IsCompleted)
+            yield return null;
+        
+        string geminiResponse = request.Result;
+        Debug.Log($"Received response from Gemini: {geminiResponse}");
+        
+        // Extract JSON
+        string extractedJson = TryExtractJson(geminiResponse);
+        Debug.Log($"Extracted JSON: {extractedJson}");
+        
+        if (string.IsNullOrEmpty(extractedJson))
+        {
+            Debug.LogWarning("Could not find valid JSON block in Gemini question response.");
+            yield break;
+        }
+        
+        // Parse the JSON into a list of questions
+        List<string> questionsList = null;
+        try
+        {
+            questionsList = JsonConvert.DeserializeObject<List<string>>(extractedJson);
+            Debug.Log($"Successfully parsed {questionsList.Count} questions from JSON");
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"Failed to parse question array: {e}");
+            yield break;
+        }
+        
+        // Create UI elements for each question
+        if (questionsList != null && questionsList.Count > 0 && questionsParent != null)
+        {
+            float currentY = -60f;  // Start at the top
+            float questionHeight = 54f;  // Height of each question block, adjust as needed
+            float spacing = 0f;  // Space between questions
+            
+            foreach (var q in questionsList)
+            {
+                // Skip empty questions
+                if (string.IsNullOrWhiteSpace(q)) continue;
+                
+                // Instantiate the question prefab
+                GameObject go = Instantiate(questionPrefab, questionsParent);
+                go.name = "GeminiQuestion";
+                
+                // Position it correctly using the transform
+                Transform t = go.transform;
+                if (t != null)
+                {
+                    t.localPosition = new Vector3(0f, -currentY, 0f);
+                    currentY += questionHeight + spacing;
+                }
+                
+                // Set the text
+                TextMeshPro txt = go.GetComponentInChildren<TextMeshPro>();
+                if (txt != null) txt.text = q;
+                
+                // Add button functionality
+                var button = go.GetComponent<SpatialUIButton>();
+                if (button != null)
+                {
+                    string questionText = q;  // Capture for closure
+                    button.WasPressed += (buttonText, renderer, index) =>
+                    {
+                        // Clear previous answer and set "Generating..."
+                        if (answerPanel != null && answerPanel.GetComponentInChildren<TextMeshPro>() != null)
+                        {
+                            answerPanel.GetComponentInChildren<TextMeshPro>().text = "Generating...";
+                        }
+                        
+                        // Request answer if we have a question answerer
+                        if (questionAnswerer != null)
+                        {
+                            questionAnswerer.RequestAnswer(questionText);
+                            if (answerPanel != null) answerPanel.SetActive(true);
+                        }
+                        else
+                        {
+                            Debug.LogWarning("No GeminiQuestionAnswerer component assigned!");
+                        }
+                    };
+                }
+                else
+                {
+                    Debug.LogWarning("Question prefab is missing SpatialUIButton component.");
+                }
+                
+                // Store the created question object for cleanup later
+                createdQuestions.Add(go);
+            }
+            
+            Debug.Log($"Created {createdQuestions.Count} question UI elements");
+        }
+    }
+
+    /// <summary>
+    /// Clears any previously created question UI elements
+    /// </summary>
+    private void ClearPreviousQuestions()
+    {
+        foreach (GameObject question in createdQuestions)
+        {
+            if (question != null)
+            {
+                Destroy(question);
+            }
+        }
+        
+        createdQuestions.Clear();
+    }
+
+    /// <summary>
+    /// Helper method to extract JSON from Gemini's response which might be wrapped in a code block
+    /// </summary>
+    private string TryExtractJson(string fullResponse)
+    {
+        try
+        {
+            var root = JsonConvert.DeserializeObject<GeminiRoot>(fullResponse);
+            if (root?.candidates == null || root.candidates.Count == 0)
+                return null;
+
+            string rawText = root.candidates[0].content.parts[0].text;
+            if (string.IsNullOrEmpty(rawText)) 
+                return null;
+
+            if (rawText.Contains("```json"))
+            {
+                var splitted = rawText.Split(new[] { "```json" }, StringSplitOptions.None);
+                if (splitted.Length > 1)
+                {
+                    var splitted2 = splitted[1].Split(new[] { "```" }, StringSplitOptions.None);
+                    rawText = splitted2[0].Trim();
+                }
+            }
+            return rawText;
+        }
+        catch
+        {
+            // fallback: raw entire text as-is
+            return fullResponse;
+        }
+    }
+
+    /// <summary>
+    /// Classes to deserialize the Gemini API response structure
+    /// </summary>
+    [Serializable]
+    public class GeminiRoot
+    {
+        public List<Candidate> candidates;
+    }
+
+    [Serializable]
+    public class Candidate
+    {
+        public Content content;
+    }
+
+    [Serializable]
+    public class Content
+    {
+        public List<Part> parts;
+    }
+
+    [Serializable]
+    public class Part
+    {
+        public string text;
+    }
+
+    /// <summary>
+    /// Handles the event when a surface is cleared via double-pinch
+    /// </summary>
+    private void HandleSurfaceCleared()
+    {
+        Debug.Log("Surface cleared via double-pinch - Cleaning up semantic lines and UI elements");
+        
+        // Clear semantic lines
+        ClearSemanticLines();
+        
+        // Clear OCR lines
+        ClearOCRLines();
+        
+        // Hide the questions panel
+        if (questionsParent != null)
+        {
+            questionsParent.gameObject.SetActive(false);
+        }
+        
+        // Hide any preview panel
+        HidePreview();
+        
+        // Hide response panel
+        HideResponsePanel();
+        
+        // Clear any created questions
+        ClearPreviousQuestions();
     }
 } 
