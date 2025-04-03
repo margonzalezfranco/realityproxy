@@ -4449,7 +4449,7 @@ MonoBehaviour:
   m_ToggleChanged:
     m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 0}
+      - m_Target: {fileID: 779485470}
         m_TargetAssemblyTypeName: SpeechToTextRecorder, Assembly-CSharp
         m_MethodName: ToggleRecording
         m_Mode: 1
@@ -4614,6 +4614,11 @@ MonoBehaviour:
     m_PersistentCalls:
       m_Calls: []
   chatboxOnObject: {fileID: 1208220120}
+  menuCanvas: {fileID: 619207843}
+  questionsParent: {fileID: 90799425}
+  questionPrefab: {fileID: 8332209716421791987, guid: afb3b284441664fef8669ab537fb8b5f, type: 3}
+  answerPanel: {fileID: 1093593259}
+  questionAnswerer: {fileID: 1557741984}
   sceneObjectManager: {fileID: 1242229081}
   relationshipLineManager: {fileID: 1083609192}
   sceneContextManager: {fileID: 1242229078}

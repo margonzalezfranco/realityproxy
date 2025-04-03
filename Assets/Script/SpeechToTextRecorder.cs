@@ -11,6 +11,7 @@ using Newtonsoft.Json; // Added for JSON parsing
 using Newtonsoft.Json.Linq; // Added for JObject
 using PolySpatial.Template; // Added for SceneObjectManager etc.
 using System.Linq;
+using UnityEngine.XR.Interaction.Toolkit.UI;
 
 [RequireComponent(typeof(SpeechToTextGeneral))]
 public class SpeechToTextRecorder : GeminiGeneral
@@ -108,6 +109,21 @@ IMPORTANT:
     [SerializeField] private TMPro.TextMeshPro responseTextOnObject;
     [SerializeField] private UnityEngine.Events.UnityEvent<string> onGeminiResponseReceived;
     [SerializeField] private GameObject chatboxOnObject;
+
+    [Header("UI Integration")]
+    [Tooltip("The parent menu canvas containing the InfoPanel and other UI elements")]
+    public Transform menuCanvas;
+    [Tooltip("The transform that will hold the questions (typically the InfoPanel)")]
+    public Transform questionsParent;
+    [Tooltip("Prefab to use for question buttons")]
+    public GameObject questionPrefab;
+    [Tooltip("Answer panel to display responses to questions")]
+    public GameObject answerPanel;
+    [Tooltip("Reference to the GeminiQuestionAnswerer component")]
+    public GeminiQuestionAnswerer questionAnswerer;
+    
+    // List to track created question objects
+    private List<GameObject> createdQuestions = new List<GameObject>();
 
     [Header("Scene Dependencies")] // Added Header
     [Tooltip("Manager that tracks all recognized objects in the scene.")]
@@ -815,10 +831,10 @@ IMPORTANT:
         var request = MakeGeminiRequest(finalPrompt, null); // Assuming no image needed for these prompts
 
         // Start the coroutine to wait for the response and handle it
-        StartCoroutine(GeminiQueryRoutine(request, isObjectMode));
+        StartCoroutine(GeminiQueryRoutine(request, isObjectMode, userQuery));
     }
 
-    private IEnumerator GeminiQueryRoutine(RequestStatus requestStatus, bool isObjectMode)
+    private IEnumerator GeminiQueryRoutine(RequestStatus requestStatus, bool isObjectMode, string originalQuery)
     {
         Debug.Log("[SpeechRecorder] Waiting for Gemini response...");
         // Wait until the transcription task is completed
@@ -944,14 +960,14 @@ IMPORTANT:
                                         // Convert the data object to a JSON string first, then deserialize to the proper type
                                         string relationshipsJson = JsonConvert.SerializeObject(responseWrapper.data);
                                         List<RelationshipInfo> relationships = JsonConvert.DeserializeObject<List<RelationshipInfo>>(relationshipsJson);
-                                        ProcessRelationships(relationships, sceneObjectManager.GetAllAnchors());
+                                        ProcessRelationships(relationships, sceneObjectManager.GetAllAnchors(), originalQuery);
                                         break;
                                         
                                     case "highlight":
                                         // Convert the data object to a JSON string first, then deserialize to the proper type
                                         string highlightJson = JsonConvert.SerializeObject(responseWrapper.data);
                                         HighlightData highlightData = JsonConvert.DeserializeObject<HighlightData>(highlightJson);
-                                        ProcessHighlights(highlightData, sceneObjectManager.GetAllAnchors());
+                                        ProcessHighlights(highlightData, sceneObjectManager.GetAllAnchors(), originalQuery);
                                         break;
                                         
                                     case "none":
@@ -972,14 +988,14 @@ IMPORTANT:
                                     if (jsonContent.Trim().StartsWith("["))
                                     {
                                         List<RelationshipInfo> relationships = JsonConvert.DeserializeObject<List<RelationshipInfo>>(jsonContent);
-                                        ProcessRelationships(relationships, sceneObjectManager.GetAllAnchors());
+                                        ProcessRelationships(relationships, sceneObjectManager.GetAllAnchors(), originalQuery);
                                     }
                                     else if (jsonContent.Trim().StartsWith("{"))
                                     {
                                         var singleRelationship = JsonConvert.DeserializeObject<RelationshipInfo>(jsonContent);
                                         if (singleRelationship != null)
                                         {
-                                            ProcessRelationships(new List<RelationshipInfo> { singleRelationship }, sceneObjectManager.GetAllAnchors());
+                                            ProcessRelationships(new List<RelationshipInfo> { singleRelationship }, sceneObjectManager.GetAllAnchors(), originalQuery);
                                         }
                                     }
                                 }
@@ -994,7 +1010,7 @@ IMPORTANT:
                                 try
                                 {
                                     HighlightData highlightData = JsonConvert.DeserializeObject<HighlightData>(jsonContent);
-                                    ProcessHighlights(highlightData, sceneObjectManager.GetAllAnchors());
+                                    ProcessHighlights(highlightData, sceneObjectManager.GetAllAnchors(), originalQuery);
                                 }
                                 catch (JsonException je)
                                 {
@@ -1012,7 +1028,7 @@ IMPORTANT:
                                         Debug.Log("[SpeechRecorder] Found old format dictionary, converting to new format");
                                         List<RelationshipInfo> relationships;
                                         ConvertOldFormatToNewFormat(oldFormatDict, out relationships);
-                                        ProcessRelationships(relationships, sceneObjectManager.GetAllAnchors());
+                                        ProcessRelationships(relationships, sceneObjectManager.GetAllAnchors(), originalQuery);
                                     }
                                 }
                                 catch (Exception ex)
@@ -1159,7 +1175,7 @@ IMPORTANT:
     }
 
     // New method to process relationships data
-    private void ProcessRelationships(List<RelationshipInfo> relationships, List<SceneObjectAnchor> allAnchors)
+    private void ProcessRelationships(List<RelationshipInfo> relationships, List<SceneObjectAnchor> allAnchors, string originalQuery)
     {
         if (relationships == null || relationships.Count == 0)
         {
@@ -1188,6 +1204,12 @@ IMPORTANT:
         // Call the bidirectional relationship visualization with timeout enabled for LLM-generated relationships
         relationshipLineManager.ShowBidirectionalRelationships(relationshipLineInfos, allAnchors, true);
         Debug.Log($"[SpeechRecorder] Visualized {relationships.Count} bidirectional relationships with auto-timeout enabled");
+        
+        // Generate follow-up questions based on the relationships
+        if (relationships.Count > 0)
+        {
+            GenerateQuestionsAfterProcessJSON(originalQuery, relationships);
+        }
     }
 
     // Helper method to find all matching anchors for a given label
@@ -1231,7 +1253,7 @@ IMPORTANT:
     }
 
     // New method to process highlight data
-    private void ProcessHighlights(HighlightData highlightData, List<SceneObjectAnchor> allAnchors)
+    private void ProcessHighlights(HighlightData highlightData, List<SceneObjectAnchor> allAnchors, string originalQuery)
     {
         if (highlightData == null || highlightData.objects == null || highlightData.objects.Count == 0)
         {
@@ -1302,6 +1324,300 @@ IMPORTANT:
             string highlightMessage = $"Highlighted {highlightedAnchors.Count} objects: {highlightData.rationale}";
             responseTextOnObject.text = highlightMessage;
         }
+        
+        // Generate follow-up questions based on the highlight results
+        if (highlightData.objects.Count > 0)
+        {
+            GenerateQuestionsAfterProcessJSON(originalQuery, highlightData);
+        }
+    }
+
+    /// <summary>
+    /// Generates follow-up questions after processing a JSON response from Gemini
+    /// </summary>
+    private void GenerateQuestionsAfterProcessJSON(string userQuery, object processedData)
+    {
+        Debug.Log($"[SpeechRecorder] Generating follow-up questions for query: {userQuery}");
+        
+        // Show the menu canvas if it's not already visible
+        if (menuCanvas != null)
+        {
+            menuCanvas.gameObject.SetActive(true);
+            
+            // Position it appropriately
+            PositionMenuCanvas();
+        }
+        else
+        {
+            Debug.LogWarning("[SpeechRecorder] menuCanvas is null, cannot display questions");
+            return;
+        }
+        
+        // Determine the context based on data type
+        string context = "";
+        string additionalContext = "";
+        
+        if (processedData is HighlightData highlightData)
+        {
+            // For highlight data, use the highlighted objects and rationale
+            string highlightedObjects = string.Join(", ", highlightData.objects);
+            context = $"The system has highlighted: {highlightedObjects}";
+            additionalContext = $"Reason: {highlightData.rationale}";
+            
+            // For highlights, include information about the object
+            if (highlightData.objects.Count == 1)
+            {
+                // Single object highlight - likely user is interested in this specific item
+                additionalContext += $"\nUser appears to be interested in '{highlightData.objects[0]}'";
+            }
+            else
+            {
+                // Multiple highlights - might be comparing or searching
+                additionalContext += $"\nUser may be comparing or looking for relationships between {highlightedObjects}";
+            }
+        }
+        else if (processedData is List<RelationshipInfo> relationships)
+        {
+            // For relationships, provide clearer structure
+            List<string> relationshipPairs = new List<string>();
+            HashSet<string> involvedObjects = new HashSet<string>();
+            
+            foreach (var rel in relationships)
+            {
+                relationshipPairs.Add($"'{rel.SourceObject}' is {rel.RelationLabel} to '{rel.TargetObject}'");
+                involvedObjects.Add(rel.SourceObject);
+                involvedObjects.Add(rel.TargetObject);
+            }
+            
+            context = $"The system has shown relationships between {string.Join(", ", involvedObjects)}:";
+            additionalContext = string.Join("\n", relationshipPairs);
+            
+            // For relationships, include info about the connection type
+            if (relationships.Count == 1)
+            {
+                // Single relationship - user probably wants to know more about this connection
+                additionalContext += $"\nUser is interested in how '{relationships[0].SourceObject}' relates to '{relationships[0].TargetObject}'";
+            }
+            else
+            {
+                // Multiple relationships - might want a summary or overview
+                additionalContext += $"\nUser may want to understand the overall connections between these objects";
+            }
+        }
+        else
+        {
+            // Generic case if data type is unknown
+            context = "The system has responded to the user's query";
+            additionalContext = "The user may want to learn more about what they're seeing";
+        }
+        
+        // Start the question generation routine
+        StartCoroutine(GenerateQuestionsRoutine(userQuery, context, additionalContext));
+    }
+    
+    /// <summary>
+    /// Coroutine that generates questions about the processed result using Gemini
+    /// </summary>
+    private IEnumerator GenerateQuestionsRoutine(string userQuery, string context, string additionalContext = "")
+    {
+        Debug.Log($"[SpeechRecorder] Starting question generation for: {userQuery} with context: {context}");
+        
+        // Clear any existing questions first
+        ClearPreviousQuestions();
+        
+        // Build a prompt for Gemini to generate questions based on the user query and result context
+        string prompt = $@"
+            Given that the user just asked: ""{userQuery}""
+            
+            And the system just showed this result: {context}
+            
+            {additionalContext}
+            
+            Please predict what the user might genuinely want to ask next.
+            
+            Return a JSON list of possible follow-up questions FROM THE USER'S PERSPECTIVE.
+            The user has seen the result of their query, and now would likely want to know more.
+            
+            Focus on questions that:
+            1. Are genuinely valuable to the user in their current context
+            2. Reflect the user's likely motivation for their original query
+            3. Help the user learn more about what they just discovered
+            4. Represent what a real person would naturally ask next
+            5. Are practical and directly relevant to the object(s) in focus
+            
+            IMPORTANT: Each question MUST be very concise - less than 10 words total.
+            Make each question as short as possible while still being clear.
+            Focus on brevity and directness.
+            
+            Return only the most likely questions, up to 5 maximum.
+            
+            In the format:
+            json
+            [
+            ""Short question 1?"",
+            ""Short question 2?"",
+            ...
+            ]
+        ";
+        
+        // Call Gemini
+        Debug.Log("[SpeechRecorder] Sending question generation request to Gemini...");
+        var request = MakeGeminiRequest(prompt, null);
+        
+        // Wait for completion
+        while (!request.IsCompleted)
+            yield return null;
+        
+        string geminiResponse = request.Result;
+        Debug.Log($"[SpeechRecorder] Received response from Gemini: {geminiResponse}");
+        
+        // Extract JSON
+        string extractedJson = TryExtractQuestionJson(geminiResponse);
+        Debug.Log($"[SpeechRecorder] Extracted JSON: {extractedJson}");
+        
+        if (string.IsNullOrEmpty(extractedJson))
+        {
+            Debug.LogWarning("[SpeechRecorder] Could not find valid JSON block in Gemini question response.");
+            yield break;
+        }
+        
+        // Parse the JSON into a list of questions
+        List<string> questionsList = null;
+        try
+        {
+            questionsList = JsonConvert.DeserializeObject<List<string>>(extractedJson);
+            Debug.Log($"[SpeechRecorder] Successfully parsed {questionsList.Count} questions from JSON");
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[SpeechRecorder] Failed to parse question array: {e.Message}");
+            
+            // Fallback parsing - try to manually extract the strings
+            try
+            {
+                Debug.Log("[SpeechRecorder] Attempting fallback parsing...");
+                questionsList = new List<string>();
+                
+                // Look for string patterns in the format: "Question text"
+                string pattern = "\"([^\"]+)\"";
+                var matches = System.Text.RegularExpressions.Regex.Matches(extractedJson, pattern);
+                
+                foreach (System.Text.RegularExpressions.Match match in matches)
+                {
+                    if (match.Groups.Count > 1)
+                    {
+                        string question = match.Groups[1].Value.Trim();
+                        questionsList.Add(question);
+                    }
+                }
+                
+                if (questionsList.Count > 0)
+                {
+                    Debug.Log($"[SpeechRecorder] Fallback parsing extracted {questionsList.Count} questions");
+                }
+                else
+                {
+                    Debug.LogWarning("[SpeechRecorder] Fallback parsing also failed to extract questions");
+                    
+                    // Last resort - create a generic question list
+                    questionsList = new List<string>
+                    {
+                        "What's this used for?",
+                        "Why is this important?",
+                        "Show me similar items?",
+                        "How does this work?",
+                        "Where can I find more?"
+                    };
+                    Debug.Log("[SpeechRecorder] Using generic fallback questions");
+                }
+            }
+            catch (Exception fallbackEx)
+            {
+                Debug.LogError($"[SpeechRecorder] Fallback parsing also failed: {fallbackEx.Message}");
+                yield break;
+            }
+        }
+        
+        // Create UI elements for each question
+        if (questionsList != null && questionsList.Count > 0 && questionsParent != null)
+        {
+            float currentY = -60f;  // Start at the top
+            float questionHeight = 54f;  // Height of each question block, adjust as needed
+            float spacing = 0f;  // Space between questions
+            
+            foreach (var q in questionsList)
+            {
+                // Skip empty questions
+                if (string.IsNullOrWhiteSpace(q)) continue;
+                
+                // Instantiate the question prefab
+                GameObject go = Instantiate(questionPrefab, questionsParent);
+                go.name = "GeminiQuestion";
+                
+                // Position it correctly using the transform
+                Transform t = go.transform;
+                if (t != null)
+                {
+                    t.localPosition = new Vector3(0f, -currentY, 0f);
+                    currentY += questionHeight + spacing;
+                }
+                
+                // Set the text
+                TMPro.TextMeshPro txt = go.GetComponentInChildren<TMPro.TextMeshPro>();
+                if (txt != null) txt.text = q;
+                
+                // Add button functionality
+                var button = go.GetComponent<SpatialUIButton>();
+                if (button != null)
+                {
+                    string questionText = q;  // Capture for closure
+                    button.WasPressed += (buttonText, renderer, index) =>
+                    {
+                        // Clear previous answer and set "Generating..."
+                        if (answerPanel != null && answerPanel.GetComponentInChildren<TMPro.TextMeshPro>() != null)
+                        {
+                            answerPanel.GetComponentInChildren<TMPro.TextMeshPro>().text = "Generating...";
+                        }
+                        
+                        // Request answer if we have a question answerer
+                        if (questionAnswerer != null)
+                        {
+                            questionAnswerer.RequestAnswer(questionText);
+                            if (answerPanel != null) answerPanel.SetActive(true);
+                        }
+                        else
+                        {
+                            Debug.LogWarning("[SpeechRecorder] No GeminiQuestionAnswerer component assigned!");
+                        }
+                    };
+                }
+                else
+                {
+                    Debug.LogWarning("[SpeechRecorder] Question prefab is missing SpatialUIButton component.");
+                }
+                
+                // Store the created question object for cleanup later
+                createdQuestions.Add(go);
+            }
+            
+            Debug.Log($"[SpeechRecorder] Created {createdQuestions.Count} question UI elements");
+        }
+    }
+
+    /// <summary>
+    /// Clears any previously created question UI elements
+    /// </summary>
+    private void ClearPreviousQuestions()
+    {
+        foreach (GameObject question in createdQuestions)
+        {
+            if (question != null)
+            {
+                Destroy(question);
+            }
+        }
+        
+        createdQuestions.Clear();
     }
 
     // Additional classes to support the new response format
@@ -1346,6 +1662,21 @@ IMPORTANT:
         if (requestText != null)
         {
             requestText.text = "";
+        }
+        
+        // Hide the questions panel
+        if (questionsParent != null)
+        {
+            questionsParent.gameObject.SetActive(false);
+        }
+        
+        // Clear any created questions
+        ClearPreviousQuestions();
+        
+        // Hide the answer panel if it exists
+        if (answerPanel != null)
+        {
+            answerPanel.SetActive(false);
         }
         
         // Cancel any existing hide timer when manually hiding
@@ -1404,7 +1735,141 @@ IMPORTANT:
             responseTextOnObject.text = "";
         }
         
+        // Hide the questions panel
+        if (questionsParent != null)
+        {
+            questionsParent.gameObject.SetActive(false);
+        }
+        
+        // Clear any created questions
+        ClearPreviousQuestions();
+        
+        // Hide the answer panel if it exists
+        if (answerPanel != null)
+        {
+            answerPanel.SetActive(false);
+        }
+        
         responseHideCoroutine = null;
+    }
+
+    /// <summary>
+    /// Positions the menu canvas appropriately in the scene, similar to SurfaceScanOCR
+    /// </summary>
+    private void PositionMenuCanvas()
+    {
+        if (menuCanvas == null) return;
+        
+        // Make sure it's not parented to anything
+        menuCanvas.SetParent(null);
+        
+        // Set up LazyFollow behavior to follow the camera
+        LazyFollow lazyFollow = menuCanvas.GetComponent<LazyFollow>();
+        if (lazyFollow != null)
+        {
+            lazyFollow.positionFollowMode = LazyFollow.PositionFollowMode.Follow;
+        }
+
+        if (questionsParent != null)
+        {
+            questionsParent.gameObject.SetActive(true);
+        }
+        
+        // Activate the first three children if they exist
+        if (menuCanvas.childCount >= 3)
+        {
+            for (int i = 0; i < 3; i++)
+            {
+                if (menuCanvas.GetChild(i) != null)
+                    menuCanvas.GetChild(i).gameObject.SetActive(true);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Specialized version of TryExtractJson for question arrays, with better handling of newlines
+    /// </summary>
+    private string TryExtractQuestionJson(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return null;
+            
+        Debug.Log($"[SpeechRecorder] Raw question response: {text}");
+            
+        // Extract from Gemini root structure if present
+        try
+        {
+            var root = JsonConvert.DeserializeObject<GeminiRoot>(text);
+            if (root?.candidates != null && root.candidates.Count > 0)
+            {
+                string rawText = root.candidates[0].content.parts[0].text;
+                text = rawText; // Update text to the extracted content
+                Debug.Log($"[SpeechRecorder] Extracted from Gemini response: {text}");
+            }
+        }
+        catch
+        {
+            // Continue with the text as-is if we can't parse the root structure
+        }
+            
+        // Check for ```json blocks
+        if (text.Contains("```json"))
+        {
+            var parts = text.Split(new[] { "```json" }, StringSplitOptions.None);
+            if (parts.Length > 1)
+            {
+                var codeBlock = parts[1].Split(new[] { "```" }, StringSplitOptions.None)[0];
+                text = codeBlock;
+                Debug.Log($"[SpeechRecorder] Extracted from code block: {text}");
+            }
+        }
+        // Check for general code blocks
+        else if (text.Contains("```"))
+        {
+            var parts = text.Split(new[] { "```" }, StringSplitOptions.None);
+            if (parts.Length > 1)
+            {
+                text = parts[1];
+                Debug.Log($"[SpeechRecorder] Extracted from general code block: {text}");
+            }
+        }
+            
+        // Find array brackets if present
+        int startBracket = text.IndexOf('[');
+        int endBracket = text.LastIndexOf(']');
+        if (startBracket >= 0 && endBracket > startBracket)
+        {
+            text = text.Substring(startBracket, endBracket - startBracket + 1);
+            Debug.Log($"[SpeechRecorder] Extracted array content: {text}");
+        }
+            
+        // Clean the text - remove any leading/trailing whitespace and handle escaped newlines
+        text = text.Trim();
+        
+        // Remove all escaped newlines and replace with spaces where needed
+        text = text.Replace("\\n", " ");
+        
+        // Remove any literal newlines that might be in the JSON string
+        text = text.Replace("\n", "").Replace("\r", "");
+        
+        Debug.Log($"[SpeechRecorder] Final cleaned JSON: {text}");
+        
+        // Validate by attempting to deserialize
+        try
+        {
+            var testParse = JsonConvert.DeserializeObject<List<string>>(text);
+            if (testParse != null)
+            {
+                Debug.Log($"[SpeechRecorder] Successfully validated JSON with {testParse.Count} items");
+                return text;
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning($"[SpeechRecorder] Validation failed: {ex.Message}");
+        }
+        
+        return text; // Return the processed text even if validation failed - sometimes the parser is too strict
     }
 }
 
