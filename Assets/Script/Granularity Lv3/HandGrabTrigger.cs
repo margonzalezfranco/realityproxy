@@ -133,6 +133,15 @@ public class HandGrabTrigger : MonoBehaviour
 
     private float lastDetectionStartTime = 0f;
 
+    [Header("Proximity Selection Settings")]
+    [Tooltip("Hysteresis threshold to prevent switching between similarly distanced objects")]
+    public float proximityHysteresis = 0.05f; // 5cm default
+
+    // Track the currently active relationship anchor
+    private SceneObjectAnchor currentRelationshipAnchor = null;
+    private float timeStartedRelationship = 0f;
+    private float minRelationshipDuration = 1.5f; // Minimum time to keep a relationship before switching
+
     private void Start()
     {
         // Auto-detect which hand this is based on the GameObject name if not set
@@ -835,6 +844,10 @@ public class HandGrabTrigger : MonoBehaviour
         // Reset state
         _grabbedAnchor = null;
         labelObj = null;
+
+        // Reset relationship tracking
+        currentRelationshipAnchor = null;
+        timeStartedRelationship = 0f;
     }
 
     /// <summary>
@@ -898,7 +911,11 @@ public class HandGrabTrigger : MonoBehaviour
         HashSet<SceneObjectAnchor> stillHighlighted = new HashSet<SceneObjectAnchor>();
         HashSet<SceneObjectAnchor> toDeselect = new HashSet<SceneObjectAnchor>(recentlyHighlighted);
         
-        // Check distance to each other anchor
+        // First find the closest anchor within the proximity threshold
+        SceneObjectAnchor closestAnchor = null;
+        float closestDistance = float.MaxValue;
+        
+        // Check distance to each other anchor and find the closest one
         foreach (var otherAnchor in allAnchors)
         {
             // Skip if it's the same anchor we're grabbing
@@ -910,30 +927,112 @@ public class HandGrabTrigger : MonoBehaviour
             // Calculate distance
             float distance = Vector3.Distance(grabbedAnchorPos, otherAnchor.sphereObj.transform.position);
             
-            // If within threshold, generate relationship
+            // If within threshold, consider it as a candidate
             if (distance <= proximityThreshold)
             {
-                // Skip if we recently highlighted this anchor
-                if (recentlyHighlighted.Contains(otherAnchor))
+                // If this is closer than the current closest, update
+                if (distance < closestDistance)
                 {
-                    // Keep track that this anchor is still within range
-                    stillHighlighted.Add(otherAnchor);
-                    toDeselect.Remove(otherAnchor);
-                    continue;
+                    closestDistance = distance;
+                    closestAnchor = otherAnchor;
                 }
+            }
+            else if (distance > deselectThreshold && recentlyHighlighted.Contains(otherAnchor))
+            {
+                // This anchor was previously highlighted but is now well outside the range
+                // Reset its appearance immediately
+                ResetAnchorHighlight(otherAnchor);
+                Debug.Log($"Anchor '{otherAnchor.label}' moved far outside proximity range ({distance}m), clearing relationship");
                 
-                // Add to recently highlighted set
-                recentlyHighlighted.Add(otherAnchor);
-                stillHighlighted.Add(otherAnchor);
-                toDeselect.Remove(otherAnchor);
+                // Clear the relationship line explicitly if this was our active relationship
+                if (otherAnchor == currentRelationshipAnchor)
+                {
+                    if (sphereToggleScript == null)
+                    {
+                        sphereToggleScript = _grabbedAnchor.sphereObj.GetComponent<SphereToggleScript>();
+                    }
+                    
+                    if (sphereToggleScript != null && sphereToggleScript.relationLineManager != null)
+                    {
+                        // Clear relationship specifically with this anchor
+                        sphereToggleScript.ClearSpecificRelationship(otherAnchor.label);
+                        currentRelationshipAnchor = null;
+                        timeStartedRelationship = 0f;
+                    }
+                }
+            }
+        }
+        
+        // Now determine if we should establish a new relationship or maintain the current one
+        if (closestAnchor != null)
+        {
+            // Calculate distance to closest anchor
+            float distanceToClosest = Vector3.Distance(grabbedAnchorPos, closestAnchor.sphereObj.transform.position);
+            
+            // Always add closest to stillHighlighted
+            stillHighlighted.Add(closestAnchor);
+            toDeselect.Remove(closestAnchor);
+            
+            bool shouldEstablishNewRelationship = false;
+            
+            // Case 1: No current relationship exists
+            if (currentRelationshipAnchor == null)
+            {
+                shouldEstablishNewRelationship = true;
+                Debug.Log($"Establishing new relationship with closest anchor: '{closestAnchor.label}' at distance {distanceToClosest}m");
+            }
+            // Case 2: Current relationship anchor is no longer within threshold
+            else if (!allAnchors.Contains(currentRelationshipAnchor) || 
+                    Vector3.Distance(grabbedAnchorPos, currentRelationshipAnchor.sphereObj.transform.position) > proximityThreshold)
+            {
+                shouldEstablishNewRelationship = true;
+                Debug.Log($"Current relationship anchor '{currentRelationshipAnchor.label}' no longer in range, switching to '{closestAnchor.label}'");
+            }
+            // Case 3: We have a relationship, but found a significantly closer anchor AND minimum duration has passed
+            else if (currentRelationshipAnchor != closestAnchor && 
+                    Time.time - timeStartedRelationship > minRelationshipDuration)
+            {
+                float distanceToCurrent = Vector3.Distance(grabbedAnchorPos, currentRelationshipAnchor.sphereObj.transform.position);
                 
-                Debug.Log($"Proximity detected between '{grabbedLabel}' and '{otherAnchor.label}' (distance: {distance}m)");
+                // Only switch if the new anchor is significantly closer (beyond hysteresis threshold)
+                if (distanceToCurrent - distanceToClosest > proximityHysteresis)
+                {
+                    shouldEstablishNewRelationship = true;
+                    Debug.Log($"Found closer anchor '{closestAnchor.label}' ({distanceToClosest}m) than current '{currentRelationshipAnchor.label}' ({distanceToCurrent}m), switching");
+                    
+                    // Clear the old relationship first
+                    if (sphereToggleScript != null && sphereToggleScript.relationLineManager != null)
+                    {
+                        sphereToggleScript.ClearSpecificRelationship(currentRelationshipAnchor.label);
+                    }
+                }
+                else
+                {
+                    // Not significantly closer, maintain current relationship
+                    stillHighlighted.Add(currentRelationshipAnchor);
+                    toDeselect.Remove(currentRelationshipAnchor);
+                    Debug.Log($"Maintaining relationship with '{currentRelationshipAnchor.label}' as new anchor '{closestAnchor.label}' is not significantly closer");
+                }
+            }
+            
+            // If we should establish a new relationship and the closest anchor is not the same as our current relationship
+            if (shouldEstablishNewRelationship && (currentRelationshipAnchor != closestAnchor))
+            {
+                // Update our current relationship anchor
+                currentRelationshipAnchor = closestAnchor;
+                timeStartedRelationship = Time.time;
                 
-                // Highlight the nearby object
-                StartCoroutine(HighlightAnchorBriefly(otherAnchor));
-                
-                // Play proximity sound
-                PlayProximitySound();
+                // Highlight the nearby object if it's not already highlighted
+                if (!recentlyHighlighted.Contains(closestAnchor))
+                {
+                    StartCoroutine(HighlightAnchorBriefly(closestAnchor));
+                    
+                    // Play proximity sound
+                    PlayProximitySound();
+                    
+                    // Add to recently highlighted
+                    recentlyHighlighted.Add(closestAnchor);
+                }
                 
                 // Get SphereToggleScript if we don't have it yet
                 if (sphereToggleScript == null)
@@ -947,30 +1046,18 @@ public class HandGrabTrigger : MonoBehaviour
                 }
                 
                 // Generate relationship between the two objects
-                sphereToggleScript.GenerateProximityRelationship(otherAnchor.label);
-                
-                // Only generate one relationship at a time to avoid overwhelming the user
-                // and to prevent multiple concurrent API calls
-                break;
+                sphereToggleScript.GenerateProximityRelationship(closestAnchor.label);
             }
-            else if (distance > deselectThreshold && recentlyHighlighted.Contains(otherAnchor))
+        }
+        else if (currentRelationshipAnchor != null)
+        {
+            // No anchors in range now, clear current relationship
+            if (sphereToggleScript != null && sphereToggleScript.relationLineManager != null)
             {
-                // This anchor was previously highlighted but is now well outside the range
-                // Reset its appearance immediately
-                ResetAnchorHighlight(otherAnchor);
-                Debug.Log($"Anchor '{otherAnchor.label}' moved far outside proximity range ({distance}m), clearing relationship");
-                
-                // Clear the relationship line explicitly
-                if (sphereToggleScript == null)
-                {
-                    sphereToggleScript = _grabbedAnchor.sphereObj.GetComponent<SphereToggleScript>();
-                }
-                
-                if (sphereToggleScript != null && sphereToggleScript.relationLineManager != null)
-                {
-                    // Clear relationship specifically with this anchor
-                    sphereToggleScript.ClearSpecificRelationship(otherAnchor.label);
-                }
+                Debug.Log($"No anchors in range, clearing current relationship with '{currentRelationshipAnchor.label}'");
+                sphereToggleScript.ClearSpecificRelationship(currentRelationshipAnchor.label);
+                currentRelationshipAnchor = null;
+                timeStartedRelationship = 0f;
             }
         }
         
@@ -980,17 +1067,7 @@ public class HandGrabTrigger : MonoBehaviour
         {
             ResetAnchorHighlight(anchorToDeselect);
             
-            // Clear the relationship line explicitly
-            if (sphereToggleScript == null)
-            {
-                sphereToggleScript = _grabbedAnchor.sphereObj.GetComponent<SphereToggleScript>();
-            }
-            
-            if (sphereToggleScript != null && sphereToggleScript.relationLineManager != null)
-            {
-                // Clear relationship specifically with this anchor
-                sphereToggleScript.ClearSpecificRelationship(anchorToDeselect.label);
-            }
+            // Don't clear relationships here as we already handle that in the main logic
         }
         
         // Update the recently highlighted set to only include anchors still within range

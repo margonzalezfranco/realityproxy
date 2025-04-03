@@ -584,6 +584,44 @@ public class RelationshipLineManager : MonoBehaviour
         return false;
     }
 
+    /// <summary>
+    /// Checks if a relationship already exists between two anchors
+    /// </summary>
+    /// <param name="sourceAnchor">First anchor</param>
+    /// <param name="targetAnchor">Second anchor</param>
+    /// <returns>The relationship text if found, null otherwise</returns>
+    public string GetExistingRelationship(SceneObjectAnchor sourceAnchor, SceneObjectAnchor targetAnchor)
+    {
+        if (sourceAnchor == null || targetAnchor == null)
+        {
+            Debug.LogWarning("Cannot check relationship: Invalid anchor reference");
+            return null;
+        }
+
+        // Find the line connecting these two anchors
+        foreach (var connection in activeLines)
+        {
+            if ((connection.source == sourceAnchor && connection.target == targetAnchor) ||
+                (connection.source == targetAnchor && connection.target == sourceAnchor))
+            {
+                // Found a connection, return its label text
+                if (connection.labelObject != null)
+                {
+                    var textComponent = connection.labelObject.GetComponentInChildren<TextMeshPro>();
+                    if (textComponent != null)
+                    {
+                        return textComponent.text;
+                    }
+                }
+                // Found a connection but no text available
+                return "";
+            }
+        }
+        
+        // No connection found
+        return null;
+    }
+
     private class LineConnection
     {
         public LineRenderer lineRenderer;

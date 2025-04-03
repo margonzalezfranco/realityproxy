@@ -171,6 +171,10 @@ public class SphereToggleScript : MonoBehaviour
     private string lastRecordedPart = "";
     private Material originalRecorderMaterial;
 
+    // Add these fields at an appropriate place in the class
+    private Coroutine activeQuestionGenerationCoroutine;
+    private Coroutine activeRelationshipQuestionCoroutine;
+
     // Define a handler for pointing state changes to avoid recursion
     private void OnPointingStateHandler(bool isPointing)
     {
@@ -359,6 +363,20 @@ public class SphereToggleScript : MonoBehaviour
         if (pointingPlane != null)
         {
             pointingPlane.SetActive(false);
+        }
+        
+        // Clean up auto-recording if active
+        StopAutoRecordingIfActive();
+        
+        // Stop any active coroutines
+        if (activeQuestionGenerationCoroutine != null)
+        {
+            StopCoroutine(activeQuestionGenerationCoroutine);
+        }
+        
+        if (activeRelationshipQuestionCoroutine != null)
+        {
+            StopCoroutine(activeRelationshipQuestionCoroutine);
         }
     }
 
@@ -1017,13 +1035,18 @@ public class SphereToggleScript : MonoBehaviour
             Focus on questions that are relevant to the current scene context and tasks.
             Return only the most likely questions, up to 5 maximum.
 
-            Please predict the questions that the user truly wants to know in the current context, rather than providing irrelevant questions. Only offer questions that are genuinely valuable to the user, which means questions that they might actually want to understand.
+            IMPORTANT: Each question MUST be very concise - less than 10 words total.
+            Make each question as short as possible while still being clear.
+            Focus on brevity and directness.
+
+            Please predict the questions that the user truly wants to know in the current context.
+            Only offer questions that are genuinely valuable to the user.
 
             In the format:
             json
             [
-            ""Question 1"",
-            ""Question 2"",
+            ""Short question 1?"",
+            ""Short question 2?"",
             ...
             ]
             ";
@@ -1578,7 +1601,15 @@ public class SphereToggleScript : MonoBehaviour
                 menuScript.SetMenuTitle(labelContent);
 
                 // 1) Generate possible user questions for this object (Granularity Lv1-style)
-                StartCoroutine(GenerateQuestionsRoutine(labelContent));
+                // Stop any existing question generation coroutine
+                if (activeQuestionGenerationCoroutine != null)
+                {
+                    StopCoroutine(activeQuestionGenerationCoroutine);
+                }
+                // Clear any existing questions first to prevent overlap
+                ClearPreviousQuestions();
+                // Start a new coroutine and track it
+                activeQuestionGenerationCoroutine = StartCoroutine(GenerateQuestionsRoutine(labelContent));
 
                 // 2) Also generate relationships with other items (Granularity Lv2)
                 if (!baselineModeController.baselineMode)
@@ -1601,6 +1632,19 @@ public class SphereToggleScript : MonoBehaviour
             answerPanel.SetActive(false);
             UpdateRecorderToggle(false);
             UpdateObjectTrackingToggle(false);
+            
+            // Stop any active coroutines
+            if (activeQuestionGenerationCoroutine != null)
+            {
+                StopCoroutine(activeQuestionGenerationCoroutine);
+                activeQuestionGenerationCoroutine = null;
+            }
+            
+            if (activeRelationshipQuestionCoroutine != null)
+            {
+                StopCoroutine(activeRelationshipQuestionCoroutine);
+                activeRelationshipQuestionCoroutine = null;
+            }
 
             // Clear the current active anchor when toggle is turned off
             HandGrabTrigger.SetCurrentActiveAnchor(null);
@@ -1700,6 +1744,19 @@ public class SphereToggleScript : MonoBehaviour
     /// </summary>
     private IEnumerator GenerateSpecificRelationshipRoutine(string objectA, string objectB)
     {
+        // Stop any existing coroutines to prevent multiple question generation
+        if (activeQuestionGenerationCoroutine != null)
+        {
+            StopCoroutine(activeQuestionGenerationCoroutine);
+            activeQuestionGenerationCoroutine = null;
+        }
+        
+        if (activeRelationshipQuestionCoroutine != null)
+        {
+            StopCoroutine(activeRelationshipQuestionCoroutine);
+            activeRelationshipQuestionCoroutine = null;
+        }
+        
         // Update scene context to ensure we have the latest context
         UpdateSceneContext();
         
@@ -1717,6 +1774,21 @@ public class SphereToggleScript : MonoBehaviour
         {
             Debug.LogWarning($"No anchor found for nearby object '{objectB}'!");
             yield break;
+        }
+
+        // Check if a relationship already exists
+        string previousRelationship = null;
+        bool isUpdatingExistingRelationship = false;
+        
+        if (relationLineManager != null)
+        {
+            previousRelationship = relationLineManager.GetExistingRelationship(myAnchor, otherAnchor);
+            isUpdatingExistingRelationship = (previousRelationship != null);
+            
+            if (isUpdatingExistingRelationship)
+            {
+                Debug.Log($"Updating existing relationship '{previousRelationship}' between '{objectA}' and '{objectB}'");
+            }
         }
 
         // Clear any existing relationship lines to focus on this new relationship
@@ -1827,8 +1899,27 @@ public class SphereToggleScript : MonoBehaviour
             yield break;
         }
 
+        // Get the current relationship
+        string currentRelationship = relationshipDict[objectB];
+        
         // Show the final relationship with proper text
         relationLineManager.ShowRelationships(myAnchor, relationshipDict, allAnchors);
+
+        // Check if we should generate new questions based on the relationship
+        // Only generate new questions if:
+        // 1. This is a new relationship (not updating an existing one)
+        // 2. Or the relationship text has changed
+        if (!isUpdatingExistingRelationship || 
+            (previousRelationship != null && currentRelationship != previousRelationship))
+        {
+            // After showing relationship line, generate questions about the relationship
+            Vector3 midpoint = (myAnchor.sphereObj.transform.position + otherAnchor.sphereObj.transform.position) * 0.5f;
+            GenerateRelationshipQuestionsAndPositionMenu(objectA, objectB, currentRelationship, midpoint);
+        }
+        else
+        {
+            Debug.Log($"Relationship unchanged, reusing existing questions for '{objectA}' and '{objectB}'");
+        }
     }
 
     /// <summary>
@@ -1861,6 +1952,29 @@ public class SphereToggleScript : MonoBehaviour
         
         // Clear just the line between these two anchors
         relationLineManager.ClearSpecificLine(myAnchor, targetAnchor);
+        
+        // Stop any active relationship question coroutine
+        if (activeRelationshipQuestionCoroutine != null)
+        {
+            StopCoroutine(activeRelationshipQuestionCoroutine);
+            activeRelationshipQuestionCoroutine = null;
+        }
+        
+        // Reset the menu canvas to original position and hide the questions
+        if (menuScript != null && menuScript.transform.parent != null && questionsParent != null)
+        {
+            // Hide the questions panel
+            questionsParent.gameObject.SetActive(false);
+            
+            // Hide answer panel if it exists
+            if (answerPanel != null)
+            {
+                answerPanel.SetActive(false);
+            }
+            
+            // Clear any questions
+            ClearPreviousQuestions();
+        }
         
         Debug.Log($"Cleared relationship line between '{labelUnderSphere.text}' and '{targetObjectLabel}'");
     }
@@ -2241,14 +2355,18 @@ public class SphereToggleScript : MonoBehaviour
             4. Any issues or considerations specific to this part
             5. How this part might be relevant to the current task context
 
+            IMPORTANT: Each question MUST be very concise - less than 10 words total.
+            Make each question as short as possible while still being clear.
+            Focus on brevity and directness.
+
             Return only the most likely questions, up to 5 maximum.
             Focus on questions that users would genuinely want answers to about this specific part.
 
             In the format:
             json
             [
-            ""Question 1 about the {partName}"",
-            ""Question 2 about the {partName}"",
+            ""Short question about {partName}?"",
+            ""Another brief question?"",
             ...
             ]
             ";
@@ -2339,6 +2457,198 @@ public class SphereToggleScript : MonoBehaviour
                     Debug.LogWarning("Question prefab is missing SpatialUIButton component.");
                 }
             }
+        }
+    }
+
+    /// <summary>
+    /// Generates questions based on the relationship between two objects and positions the menu
+    /// at the side of the relationship line's midpoint.
+    /// </summary>
+    private void GenerateRelationshipQuestionsAndPositionMenu(string objectA, string objectB, string relationshipDesc, Vector3 midpoint)
+    {
+        // Make sure we have a menu canvas and questions parent
+        if (menuScript == null || menuScript.transform.parent == null || questionsParent == null)
+        {
+            Debug.LogWarning("Cannot generate relationship questions: menuScript or questionsParent is null");
+            return;
+        }
+
+        // Get menu canvas transform
+        Transform menuCanvas = menuScript.transform.parent;
+        
+        // Position menu canvas near the midpoint of the relationship line, but offset to the side
+        Vector3 cameraPos = Camera.main.transform.position;
+        Vector3 directionToCamera = (cameraPos - midpoint).normalized;
+        
+        // Create a perpendicular vector (side offset direction)
+        Vector3 perpendicularDir = Vector3.Cross(Vector3.up, directionToCamera).normalized;
+        
+        // Position the menu to the side of the relationship line
+        // Reduced perpendicular offset by 50% (from 0.3f to 0.15f)
+        Vector3 menuPosition = midpoint + perpendicularDir * 0.15f + Vector3.up * 0.1f;
+        
+        // Set menu canvas position and make sure it's not parented to anything
+        menuCanvas.SetParent(null);
+        menuCanvas.position = menuPosition;
+        
+        // Look at camera
+        menuCanvas.LookAt(cameraPos);
+        
+        // Activate the menu canvas and questions parent
+        menuCanvas.gameObject.SetActive(true);
+        questionsParent.gameObject.SetActive(true);
+        
+        // Clear previous questions using the existing method
+        ClearPreviousQuestions();
+        
+        // Stop any existing relationship question coroutine
+        if (activeRelationshipQuestionCoroutine != null)
+        {
+            StopCoroutine(activeRelationshipQuestionCoroutine);
+        }
+        
+        // Start generating questions about the relationship and track the coroutine
+        activeRelationshipQuestionCoroutine = StartCoroutine(GenerateRelationshipQuestionsRoutine(objectA, objectB, relationshipDesc));
+    }
+
+    /// <summary>
+    /// Coroutine to generate questions about the relationship between two objects
+    /// </summary>
+    private IEnumerator GenerateRelationshipQuestionsRoutine(string objectA, string objectB, string relationshipDesc)
+    {
+        Debug.Log($"Generating questions about relationship between '{objectA}' and '{objectB}': '{relationshipDesc}'");
+        
+        // Build a prompt for Gemini to generate questions about the relationship
+        string prompt = $@"
+            Given this scene context: {currentSceneContext},
+            the potential tasks: {currentTaskContext},
+            
+            The user has brought two objects close together:
+            1. {objectA}
+            2. {objectB}
+            
+            Their relationship is: ""{relationshipDesc}""
+            
+            Please return a JSON list of possible user questions about this relationship.
+            Focus on questions that are relevant to:
+            
+            1. How these objects are used together
+            2. Why this relationship is important in the current context
+            3. What the user might want to know about this specific interaction
+            4. Safety or compatibility considerations
+            5. Practical advice about using these items together
+            
+            IMPORTANT: Each question MUST be very concise - less than 10 words total.
+            Make each question as short as possible while still being clear.
+            Focus on brevity and directness.
+            
+            Return only the most likely questions, up to 5 maximum.
+            Focus on questions that users would genuinely want answers to.
+            
+            In the format:
+            json
+            [
+            ""Short question 1?"",
+            ""Short question 2?"",
+            ...
+            ]
+        ";
+        
+        // Call Gemini using the appropriate method for this class
+        var request = geminiGeneral != null 
+            ? geminiGeneral.MakeGeminiRequest(prompt, null)
+            : new GeminiGeneral.RequestStatus(geminiClient.GenerateContent(prompt, null));
+        
+        // Wait for completion
+        while (!request.IsCompleted)
+            yield return null;
+        
+        string geminiResponse = request.Result;
+        Debug.Log($"Received response from Gemini for relationship questions: {geminiResponse}");
+        
+        // Extract JSON
+        string extractedJson = TryExtractJson(geminiResponse);
+        Debug.Log($"Extracted JSON for relationship questions: {extractedJson}");
+        
+        if (string.IsNullOrEmpty(extractedJson))
+        {
+            Debug.LogWarning("Could not find valid JSON block in Gemini relationship questions response.");
+            yield break;
+        }
+        
+        // Parse the JSON into a list of questions
+        List<string> questionsList = null;
+        try
+        {
+            questionsList = JsonConvert.DeserializeObject<List<string>>(extractedJson);
+            Debug.Log($"Successfully parsed {questionsList.Count} relationship questions from JSON");
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"Failed to parse relationship question array: {e}");
+            yield break;
+        }
+        
+        // Create UI elements for each question
+        if (questionsList != null && questionsList.Count > 0 && questionsParent != null)
+        {
+            float currentY = -60f;  // Start at the top
+            float questionHeight = 54f;  // Height of each question block
+            float spacing = 0f;  // Space between questions
+            
+            foreach (var q in questionsList)
+            {
+                // Skip empty questions
+                if (string.IsNullOrWhiteSpace(q)) continue;
+                
+                // Instantiate the question prefab
+                GameObject go = Instantiate(questionPrefab, questionsParent);
+                go.name = "GeminiQuestion";
+                
+                // Position it correctly using the transform
+                Transform t = go.transform;
+                if (t != null)
+                {
+                    t.localPosition = new Vector3(0f, -currentY, 0f);
+                    currentY += questionHeight + spacing;
+                }
+                
+                // Set the text
+                TextMeshPro txt = go.GetComponentInChildren<TextMeshPro>();
+                if (txt != null) txt.text = q;
+                
+                // Add button functionality
+                var button = go.GetComponent<SpatialUIButton>();
+                if (button != null)
+                {
+                    string questionText = q;  // Capture for closure
+                    button.WasPressed += (buttonText, renderer, index) =>
+                    {
+                        // Clear previous answer and set "Generating..."
+                        if (answerPanel != null && answerPanel.GetComponentInChildren<TextMeshPro>() != null)
+                        {
+                            answerPanel.GetComponentInChildren<TextMeshPro>().text = "Generating...";
+                        }
+                        
+                        // Request answer if we have a question answerer
+                        if (questionAnswerer != null)
+                        {
+                            questionAnswerer.RequestAnswer(questionText);
+                            if (answerPanel != null) answerPanel.SetActive(true);
+                        }
+                        else
+                        {
+                            Debug.LogWarning("No GeminiQuestionAnswerer reference set.");
+                        }
+                    };
+                }
+                else
+                {
+                    Debug.LogWarning("Question prefab is missing SpatialUIButton component.");
+                }
+            }
+            
+            Debug.Log($"Created {questionsList.Count} question UI elements for relationship");
         }
     }
 }
