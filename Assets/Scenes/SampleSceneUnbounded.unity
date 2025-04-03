@@ -1942,7 +1942,7 @@ MonoBehaviour:
   m_AudioSource: {fileID: 473670906}
   m_ScaleBackground: 1
   m_SelectedColor: {r: 0.1882353, g: 0.5372549, b: 0.8117647, a: 1}
-  m_UnselectedColor: {r: 0.68235296, g: 0.68235296, b: 0.68235296, a: 1}
+  m_UnselectedColor: {r: 0.43529412, g: 0.43529412, b: 0.43529412, a: 1}
   m_PressStart:
     m_PersistentCalls:
       m_Calls: []
@@ -4439,7 +4439,7 @@ MonoBehaviour:
   m_AudioSource: {fileID: 779485462}
   m_ScaleBackground: 1
   m_SelectedColor: {r: 0.1882353, g: 0.5372549, b: 0.8117647, a: 1}
-  m_UnselectedColor: {r: 0.68235296, g: 0.68235296, b: 0.68235296, a: 1}
+  m_UnselectedColor: {r: 0.43529412, g: 0.43529412, b: 0.43529412, a: 1}
   m_PressStart:
     m_PersistentCalls:
       m_Calls: []
@@ -4580,31 +4580,41 @@ MonoBehaviour:
     request: {3}'
   environmentLevelPromptTemplate: "You are analyzing a user's request within a scene.\nScene
     context: {0}\nDetected objects: {1}\nUser request: {2}\n\nDetermine if the user
-    is asking about RELATIONSHIPS between objects or wants to HIGHLIGHT specific
-    objects:\n\nFor RELATIONSHIPS between objects (e.g., \"\"how are these objects
-    related?\"\" or \"\"show connections between items\"\"):\n1. Identify objects
-    in the scene that are related to each other based on the user's request.\n2.
-    Find meaningful relationships between objects in the detected list.\n3. Output
-    a JSON array of relationship objects with the following structure:\n```json\n{{\n 
-    \"\"type\"\": \"\"relationships\"\",\n  \"\"data\"\": [\n    {{\n      \"\"Source
-    Object\"\": \"\"name_of_source_object\"\",\n      \"\"Target Object\"\": \"\"name_of_target_object\"\",\n     
-    \"\"Relation Label\"\": \"\"brief relationship description (5 words max)\"\"\n   
-    }},\n    {{\n      \"\"Source Object\"\": \"\"name_of_another_source\"\",\n     
-    \"\"Target Object\"\": \"\"name_of_another_target\"\",\n      \"\"Relation Label\"\":
-    \"\"another relationship description\"\"\n    }}\n  ],\n  \"\"message\"\": \"\"Found
-    [number] relationships. [object1] is [brief relation] to [object2].\"\"\n}}\n```\n\nFor
-    HIGHLIGHT requests (e.g., \"\"show me all food items\"\" or \"\"highlight the
-    kitchen tools\"\"):\n1. Identify which objects from the detected list match the
-    user's criteria.\n2. Output a JSON object with the following structure:\n```json\n{{\n 
-    \"\"type\"\": \"\"highlight\"\",\n  \"\"data\"\": {{\n    \"\"objects\"\": [\n     
-    \"\"object1\"\",\n      \"\"object2\"\",\n      \"\"object3\"\"\n    ],\n   
-    \"\"rationale\"\": \"\"Brief explanation of why these objects were selected (1-2
-    sentences)\"\"\n  }},\n  \"\"message\"\": \"\"Highlighted [number] [category]
-    items.\"\"\n}}\n```\n\nIf no relevant objects or relationships can be identified,
-    return:\n```json\n{{\n  \"\"type\"\": \"\"none\"\",\n  \"\"message\"\": \"\"No
-    matching objects found. Try rephrasing.\"\"\n}}\n```\n\nIMPORTANT: \n1. Only
-    include objects that are in the detected objects list provided above.\n2. Keep
-    messages short and clear (max 15 words).\n3. Focus on key information only.\n4.
+    is asking about RELATIONSHIPS between objects, wants to HIGHLIGHT specific objects,
+    or needs INSTRUCTIONS for completing a task:\n\nFor RELATIONSHIPS between objects
+    (e.g., \"\"how are these objects related?\"\" or \"\"show connections between
+    items\"\"):\n1. Identify objects in the scene that are related to each other
+    based on the user's request.\n2. Find meaningful relationships between objects
+    in the detected list.\n3. Output a JSON array of relationship objects with the
+    following structure:\n```json\n{{\n  \"\"type\"\": \"\"relationships\"\",\n 
+    \"\"data\"\": [\n    {{\n      \"\"Source Object\"\": \"\"name_of_source_object\"\",\n     
+    \"\"Target Object\"\": \"\"name_of_target_object\"\",\n      \"\"Relation Label\"\":
+    \"\"brief relationship description (5 words max)\"\"\n    }},\n    {{\n     
+    \"\"Source Object\"\": \"\"name_of_another_source\"\",\n      \"\"Target Object\"\":
+    \"\"name_of_another_target\"\",\n      \"\"Relation Label\"\": \"\"another relationship
+    description\"\"\n    }}\n  ],\n  \"\"message\"\": \"\"Found [number] relationships.
+    [object1] is [brief relation] to [object2].\"\"\n}}\n```\n\nFor HIGHLIGHT requests
+    (e.g., \"\"show me all food items\"\" or \"\"highlight the kitchen tools\"\"):\n1.
+    Identify which objects from the detected list match the user's criteria.\n2.
+    Output a JSON object with the following structure:\n```json\n{{\n  \"\"type\"\":
+    \"\"highlight\"\",\n  \"\"data\"\": {{\n    \"\"objects\"\": [\n      \"\"object1\"\",\n     
+    \"\"object2\"\",\n      \"\"object3\"\"\n    ],\n    \"\"rationale\"\": \"\"Brief
+    explanation of why these objects were selected (1-2 sentences)\"\"\n  }},\n 
+    \"\"message\"\": \"\"Highlighted [number] [category] items.\"\"\n}}\n```\n\nFor
+    INSTRUCTION requests (e.g., \"\"how do I make a cake?\"\" or \"\"show me the
+    steps to assemble this\"\"):\n1. Identify a sequence of objects from the detected
+    list needed to complete the task.\n2. Order them in the correct sequence for
+    completing the task.\n3. Output a JSON object with the following structure:\n```json\n{{\n 
+    \"\"type\"\": \"\"instruction\"\",\n  \"\"data\"\": [\n    {{\n      \"\"order\"\":
+    1,\n      \"\"object\"\": \"\"first_object_name\"\"\n    }},\n    {{\n      \"\"order\"\":
+    2,\n      \"\"object\"\": \"\"second_object_name\"\"\n    }},\n    {{\n     
+    \"\"order\"\": 3,\n      \"\"object\"\": \"\"third_object_name\"\"\n    }}\n 
+    ],\n  \"\"message\"\": \"\"Step 1: Use [first_object]. Step 2: Use [second_object].
+    Step 3: Use [third_object].\"\"\n}}\n```\n\nIf no relevant objects or relationships
+    can be identified, return:\n```json\n{{\n  \"\"type\"\": \"\"none\"\",\n  \"\"message\"\":
+    \"\"No matching objects found. Try rephrasing.\"\"\n}}\n```\n\nIMPORTANT: \n1.
+    Only include objects that are in the detected objects list provided above.\n2.
+    Keep messages short and clear (max 15 words).\n3. Focus on key information only.\n4.
     Avoid technical terms or JSON structure."
   useMiddlePinchControl: 0
   useLeftHand: 1

@@ -2,6 +2,7 @@ using System;
 using System.Threading.Tasks;
 using UnityEngine;
 using Newtonsoft.Json;
+using System.Text;
 
 /// <summary>
 /// MonoBehaviour that wraps our GoogleSpeechToTextAPI usage.
@@ -79,7 +80,31 @@ public class SpeechToTextGeneral : MonoBehaviour
             if (data?.results == null || data.results.Length == 0)
                 return null;
 
-            return data.results[0].alternatives[0].transcript;
+            // Google Speech API can split responses into multiple "results" segments
+            // We need to concatenate all of them to get the full transcription
+            StringBuilder fullTranscript = new StringBuilder();
+            
+            foreach (var result in data.results)
+            {
+                if (result.alternatives != null && result.alternatives.Length > 0)
+                {
+                    // Use the alternative with the highest confidence (always the first one)
+                    string transcript = result.alternatives[0].transcript;
+                    
+                    // Only add a space between segments if needed
+                    if (fullTranscript.Length > 0 && 
+                        !fullTranscript.ToString().EndsWith(" ") && 
+                        !transcript.StartsWith(" "))
+                    {
+                        fullTranscript.Append(" ");
+                    }
+                    
+                    fullTranscript.Append(transcript);
+                }
+            }
+            
+            Debug.Log($"Parsed transcript with {data.results.Length} segments: \"{fullTranscript}\"");
+            return fullTranscript.ToString().Trim();
         }
         catch (Exception ex)
         {

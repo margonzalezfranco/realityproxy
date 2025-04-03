@@ -26,6 +26,9 @@ public class RelationshipLineManager : MonoBehaviour
 
     // We'll store active lines so we can remove them later
     private List<LineConnection> activeLines = new List<LineConnection>();
+    
+    // Store step indicators for instruction steps
+    private List<GameObject> activeStepIndicators = new List<GameObject>();
 
     private void Awake()
     {
@@ -57,6 +60,9 @@ public class RelationshipLineManager : MonoBehaviour
         
         // First, clear all existing relationship lines and their associated highlights
         ClearAllLines();
+        
+        // Clear any step indicators from instruction steps
+        ClearAllStepIndicators();
         
         // Then, find and reset ALL scene anchors (in case some were highlighted but not connected by lines)
         if (sceneObjectManager != null)
@@ -95,7 +101,7 @@ public class RelationshipLineManager : MonoBehaviour
             speechRecorder.HideChatbox();
         }
         
-        Debug.Log("Cleared all highlights, relationship lines, and response text");
+        Debug.Log("Cleared all highlights, relationship lines, step indicators, and response text");
     }
 
     /// <summary>
@@ -137,10 +143,10 @@ public class RelationshipLineManager : MonoBehaviour
 
         // Define relationship line color (hex: #3089CF)
         Color lineColor = new Color(
-            r: 0.188f,  // 48/255
-            g: 0.537f,  // 137/255
-            b: 0.812f,  // 207/255
-            a: 0.2f     // Changed back to original alpha
+            r: 0.125f,  // 32/255
+            g: 0.588f,  // 150/255
+            b: 0.953f,  // 243/255
+            a: 0.7f     // Changed back to original alpha
         );
 
         // Color for source anchor highlight (hex: #2096F3 with 100% alpha)
@@ -285,10 +291,14 @@ public class RelationshipLineManager : MonoBehaviour
             
             // Create a new material instance to avoid shared material issues
             lr.material = new Material(lineMaterial);
-            lr.material.color = lineColor; // Explicitly set color
+            lr.material.color = lineColor; // Keep original line color for the material
             lr.useWorldSpace = true;
-            lr.startColor = lineColor;
-            lr.endColor = lineColor;
+            
+            // Set start color to white with 0% alpha (transparent)
+            lr.startColor = new Color(1f, 1f, 1f, 0f); // FFFFFF with 0% alpha
+            
+            // Set end color to white with 100% alpha (opaque)
+            lr.endColor = new Color(1f, 1f, 1f, 1f);  // FFFFFF with 100% alpha
 
             Debug.Log($"Created line from '{sourceAnchor.label}' to '{targetAnchor.label}'");
 
@@ -685,6 +695,36 @@ public class RelationshipLineManager : MonoBehaviour
         
         // No connection found
         return null;
+    }
+
+    /// <summary>
+    /// Adds a step indicator to track for later cleanup
+    /// </summary>
+    /// <param name="indicator">The step indicator GameObject to track</param>
+    public void AddStepIndicator(GameObject indicator)
+    {
+        if (indicator != null && !activeStepIndicators.Contains(indicator))
+        {
+            activeStepIndicators.Add(indicator);
+            Debug.Log($"Added step indicator to tracking: {indicator.name}");
+        }
+    }
+
+    /// <summary>
+    /// Clears all step indicators used for instruction steps
+    /// </summary>
+    public void ClearAllStepIndicators()
+    {
+        foreach (var indicator in activeStepIndicators)
+        {
+            if (indicator != null)
+            {
+                Destroy(indicator);
+            }
+        }
+        
+        Debug.Log($"Cleared {activeStepIndicators.Count} step indicators");
+        activeStepIndicators.Clear();
     }
 
     private class LineConnection

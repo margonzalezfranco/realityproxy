@@ -12,6 +12,7 @@ using Newtonsoft.Json.Linq; // Added for JObject
 using PolySpatial.Template; // Added for SceneObjectManager etc.
 using System.Linq;
 using UnityEngine.XR.Interaction.Toolkit.UI;
+using System.Text;
 
 [RequireComponent(typeof(SpeechToTextGeneral))]
 public class SpeechToTextRecorder : GeminiGeneral
@@ -42,7 +43,7 @@ Scene context: {0}
 Detected objects: {1}
 User request: {2}
 
-Determine if the user is asking about RELATIONSHIPS between objects or wants to HIGHLIGHT specific objects:
+Determine if the user is asking about RELATIONSHIPS between objects, wants to HIGHLIGHT specific objects, or needs INSTRUCTIONS for completing a task:
 
 For RELATIONSHIPS between objects (e.g., ""how are these objects related?"" or ""show connections between items""):
 1. Identify objects in the scene that are related to each other based on the user's request.
@@ -82,6 +83,31 @@ For HIGHLIGHT requests (e.g., ""show me all food items"" or ""highlight the kitc
     ""rationale"": ""Brief explanation of why these objects were selected (1-2 sentences)""
   }},
   ""message"": ""Highlighted [number] [category] items.""
+}}
+```
+
+For INSTRUCTION requests (e.g., ""how do I make a cake?"" or ""show me the steps to assemble this""):
+1. Identify a sequence of objects from the detected list needed to complete the task.
+2. Order them in the correct sequence for completing the task.
+3. Output a JSON object with the following structure:
+```json
+{{
+  ""type"": ""instruction"",
+  ""data"": [
+    {{
+      ""order"": 1,
+      ""object"": ""first_object_name""
+    }},
+    {{
+      ""order"": 2,
+      ""object"": ""second_object_name""
+    }},
+    {{
+      ""order"": 3,
+      ""object"": ""third_object_name""
+    }}
+  ],
+  ""message"": ""Step 1: Use [first_object]. Step 2: Use [second_object]. Step 3: Use [third_object].""
 }}
 ```
 
@@ -145,6 +171,10 @@ IMPORTANT:
     [Tooltip("Enable/disable auto-hiding of response UI")]
     [SerializeField] private bool enableResponseAutoHide = true;
     private Coroutine responseHideCoroutine;
+
+    [Header("Step Indicators")]
+    [Tooltip("Prefab to use for step number indicators in instructions")]
+    [SerializeField] private GameObject stepIndicatorPrefab;
 
     [Header("Pointing Reference")]
     [Tooltip("Reference to the pointing plane used for part-specific interactions")]
@@ -334,8 +364,23 @@ IMPORTANT:
             Debug.Log($"Middle finger pinch ended on {(isLeft ? "left" : "right")} hand - stopping recording");
             if (isRecording)
             {
-                ToggleRecording();
+                // Add a small delay before stopping recording
+                // This helps prevent cutting off the end of speech
+                StartCoroutine(DelayedStopRecording(0.5f));
             }
+        }
+    }
+
+    private IEnumerator DelayedStopRecording(float delay)
+    {
+        // Wait for the specified delay
+        yield return new WaitForSeconds(delay);
+        
+        // Only stop if we're still recording
+        if (isRecording)
+        {
+            Debug.Log($"Delayed stop recording after {delay}s");
+            ToggleRecording();
         }
     }
 
@@ -552,9 +597,15 @@ IMPORTANT:
     {
         try
         {
-            // Create a float array for the audio data
+            // Create a float array for the entire audio clip, not just up to the current position
+            // This ensures we don't truncate the recording prematurely
+            int totalSamples = recordedAudio.samples;
+            float[] fullAudioData = new float[totalSamples * recordedAudio.channels];
+            recordedAudio.GetData(fullAudioData, 0);
+            
+            // Only use up to the recorded position (which is where the microphone stopped)
             float[] audioData = new float[position * recordedAudio.channels];
-            recordedAudio.GetData(audioData, 0);
+            Array.Copy(fullAudioData, audioData, audioData.Length);
 
             // Check if audio data has adequate volume
             float maxVolume = 0;
@@ -703,6 +754,73 @@ IMPORTANT:
 
     private byte[] ConvertAudioDataToBytes(float[] audioData)
     {
+        // Normalize audio to improve speech recognition
+        float maxAbs = 0.01f; // Set minimum threshold to avoid division by zero
+        
+        // Find maximum amplitude for normalization
+        for (int i = 0; i < audioData.Length; i++)
+        {
+            float absValue = Mathf.Abs(audioData[i]);
+            if (absValue > maxAbs)
+            {
+                maxAbs = absValue;
+            }
+        }
+        
+        // Apply some light normalization if volume is low
+        if (maxAbs < 0.3f)
+        {
+            float normalizationFactor = Mathf.Min(0.7f / maxAbs, 3.0f); // Cap amplification to 3x
+            Debug.Log($"Normalizing audio by factor: {normalizationFactor}");
+            
+            for (int i = 0; i < audioData.Length; i++)
+            {
+                audioData[i] *= normalizationFactor;
+                // Clamp to valid range to prevent clipping
+                audioData[i] = Mathf.Clamp(audioData[i], -0.99f, 0.99f);
+            }
+        }
+        
+        // Find actual content range (trim silence from beginning and end)
+        int startIndex = 0;
+        int endIndex = audioData.Length - 1;
+        float silenceThreshold = 0.01f;
+        
+        // Find start of speech (skip silence at beginning)
+        for (int i = 0; i < audioData.Length; i++)
+        {
+            if (Mathf.Abs(audioData[i]) > silenceThreshold)
+            {
+                startIndex = Mathf.Max(0, i - 1600); // Include a small buffer before speech (100ms at 16kHz)
+                break;
+            }
+        }
+        
+        // Find end of speech (skip silence at end)
+        for (int i = audioData.Length - 1; i >= 0; i--)
+        {
+            if (Mathf.Abs(audioData[i]) > silenceThreshold)
+            {
+                endIndex = Mathf.Min(audioData.Length - 1, i + 1600); // Include a small buffer after speech
+                break;
+            }
+        }
+        
+        // Create a trimmed version if we found meaningful boundaries and it would save significant space
+        if (startIndex < endIndex && (endIndex - startIndex) < audioData.Length * 0.95f)
+        {
+            int trimmedLength = endIndex - startIndex + 1;
+            Debug.Log($"Trimming audio from {audioData.Length} to {trimmedLength} samples (removing silence)");
+            
+            float[] trimmedData = new float[trimmedLength];
+            Array.Copy(audioData, startIndex, trimmedData, 0, trimmedLength);
+            audioData = trimmedData;
+        }
+        else
+        {
+            Debug.Log("Using full audio without trimming");
+        }
+        
         // Convert float array (-1.0f to 1.0f) to Int16 PCM (LINEAR16)
         byte[] byteData = new byte[audioData.Length * 2]; // 16-bit = 2 bytes per sample
 
@@ -912,8 +1030,26 @@ IMPORTANT:
                     {
                         StopCoroutine(responseHideCoroutine);
                     }
+                    
+                    // Set up the auto-hide for both UI elements and visual highlights
+                    if (relationshipLineManager != null)
+                    {
+                        // Reset the relationship manager's timer to ensure synchronization
+                        relationshipLineManager.highlightTimer = 0f;
+                        relationshipLineManager.hasActiveHighlights = true;
+                    }
+                    
+                    // Start our own auto-hide coroutine
                     responseHideCoroutine = StartCoroutine(AutoHideResponseAfterDelay(responseDisplayDuration));
                     Debug.Log($"[SpeechRecorder] Response UI will auto-hide in {responseDisplayDuration} seconds");
+                }
+                else
+                {
+                    // If auto-hide is disabled, make sure the relationship manager knows not to auto-hide
+                    if (relationshipLineManager != null)
+                    {
+                        relationshipLineManager.hasActiveHighlights = false;
+                    }
                 }
             }
             else
@@ -960,14 +1096,30 @@ IMPORTANT:
                                         // Convert the data object to a JSON string first, then deserialize to the proper type
                                         string relationshipsJson = JsonConvert.SerializeObject(responseWrapper.data);
                                         List<RelationshipInfo> relationships = JsonConvert.DeserializeObject<List<RelationshipInfo>>(relationshipsJson);
-                                        ProcessRelationships(relationships, sceneObjectManager.GetAllAnchors(), originalQuery);
+                                        
+                                        // Store the original message to use in UI
+                                        string relationshipsMessage = responseWrapper.message;
+                                        ProcessRelationships(relationships, sceneObjectManager.GetAllAnchors(), originalQuery, relationshipsMessage);
                                         break;
                                         
                                     case "highlight":
                                         // Convert the data object to a JSON string first, then deserialize to the proper type
                                         string highlightJson = JsonConvert.SerializeObject(responseWrapper.data);
                                         HighlightData highlightData = JsonConvert.DeserializeObject<HighlightData>(highlightJson);
-                                        ProcessHighlights(highlightData, sceneObjectManager.GetAllAnchors(), originalQuery);
+                                        
+                                        // Store the original message to use in UI
+                                        string highlightMessage = responseWrapper.message;
+                                        ProcessHighlights(highlightData, sceneObjectManager.GetAllAnchors(), originalQuery, highlightMessage);
+                                        break;
+                                        
+                                    case "instruction":
+                                        // Convert the data object to a JSON string first, then deserialize to the proper type
+                                        string instructionJson = JsonConvert.SerializeObject(responseWrapper.data);
+                                        List<InstructionStep> instructionSteps = JsonConvert.DeserializeObject<List<InstructionStep>>(instructionJson);
+                                        
+                                        // Store the original message to use in UI
+                                        string instructionMessage = responseWrapper.message;
+                                        ProcessInstructions(instructionSteps, sceneObjectManager.GetAllAnchors(), originalQuery, instructionMessage);
                                         break;
                                         
                                     case "none":
@@ -988,14 +1140,16 @@ IMPORTANT:
                                     if (jsonContent.Trim().StartsWith("["))
                                     {
                                         List<RelationshipInfo> relationships = JsonConvert.DeserializeObject<List<RelationshipInfo>>(jsonContent);
-                                        ProcessRelationships(relationships, sceneObjectManager.GetAllAnchors(), originalQuery);
+                                        // For legacy format, we don't have a message field, so pass null or empty string
+                                        ProcessRelationships(relationships, sceneObjectManager.GetAllAnchors(), originalQuery, "");
                                     }
                                     else if (jsonContent.Trim().StartsWith("{"))
                                     {
                                         var singleRelationship = JsonConvert.DeserializeObject<RelationshipInfo>(jsonContent);
                                         if (singleRelationship != null)
                                         {
-                                            ProcessRelationships(new List<RelationshipInfo> { singleRelationship }, sceneObjectManager.GetAllAnchors(), originalQuery);
+                                            // For legacy format, we don't have a message field, so pass null or empty string
+                                            ProcessRelationships(new List<RelationshipInfo> { singleRelationship }, sceneObjectManager.GetAllAnchors(), originalQuery, "");
                                         }
                                     }
                                 }
@@ -1010,11 +1164,26 @@ IMPORTANT:
                                 try
                                 {
                                     HighlightData highlightData = JsonConvert.DeserializeObject<HighlightData>(jsonContent);
-                                    ProcessHighlights(highlightData, sceneObjectManager.GetAllAnchors(), originalQuery);
+                                    // For legacy format, we don't have a message field, so pass null or empty string
+                                    ProcessHighlights(highlightData, sceneObjectManager.GetAllAnchors(), originalQuery, "");
                                 }
                                 catch (JsonException je)
                                 {
                                     Debug.LogWarning($"[SpeechRecorder] Failed to parse as highlight data: {je.Message}");
+                                }
+                            }
+                            // Check if it could be instruction format
+                            else if (jsonContent.Contains("order") && jsonContent.Contains("object"))
+                            {
+                                try
+                                {
+                                    List<InstructionStep> instructionSteps = JsonConvert.DeserializeObject<List<InstructionStep>>(jsonContent);
+                                    // For legacy format, we don't have a message field, so pass null or empty string
+                                    ProcessInstructions(instructionSteps, sceneObjectManager.GetAllAnchors(), originalQuery, "");
+                                }
+                                catch (JsonException je)
+                                {
+                                    Debug.LogWarning($"[SpeechRecorder] Failed to parse as instruction steps: {je.Message}");
                                 }
                             }
                             // Legacy dictionary format
@@ -1028,7 +1197,9 @@ IMPORTANT:
                                         Debug.Log("[SpeechRecorder] Found old format dictionary, converting to new format");
                                         List<RelationshipInfo> relationships;
                                         ConvertOldFormatToNewFormat(oldFormatDict, out relationships);
-                                        ProcessRelationships(relationships, sceneObjectManager.GetAllAnchors(), originalQuery);
+                                        // For old format, we don't have a message field, create a simple one
+                                        string oldFormatMessage = $"Found {relationships.Count} relationships between objects";
+                                        ProcessRelationships(relationships, sceneObjectManager.GetAllAnchors(), originalQuery, oldFormatMessage);
                                     }
                                 }
                                 catch (Exception ex)
@@ -1175,7 +1346,7 @@ IMPORTANT:
     }
 
     // New method to process relationships data
-    private void ProcessRelationships(List<RelationshipInfo> relationships, List<SceneObjectAnchor> allAnchors, string originalQuery)
+    private void ProcessRelationships(List<RelationshipInfo> relationships, List<SceneObjectAnchor> allAnchors, string originalQuery, string relationshipsMessage)
     {
         if (relationships == null || relationships.Count == 0)
         {
@@ -1205,10 +1376,38 @@ IMPORTANT:
         relationshipLineManager.ShowBidirectionalRelationships(relationshipLineInfos, allAnchors, true);
         Debug.Log($"[SpeechRecorder] Visualized {relationships.Count} bidirectional relationships with auto-timeout enabled");
         
+        // Create a response message for display
+        if (relationships.Count > 0)
+        {
+            // Use the original message from Gemini instead of constructing a new one
+            if (responseTextOnObject != null)
+            {
+                responseTextOnObject.text = relationshipsMessage;
+            }
+            
+            // Make sure chatbox is shown
+            if (chatboxOnObject != null && !chatboxOnObject.activeSelf)
+            {
+                Debug.Log("[SpeechRecorder] Activating chatbox to show relationship message from Gemini");
+                chatboxOnObject.SetActive(true);
+                
+                // Force update to ensure the object is visible
+                if (chatboxOnObject.transform.parent != null)
+                {
+                    Canvas canvas = chatboxOnObject.GetComponentInParent<Canvas>();
+                    if (canvas != null)
+                    {
+                        canvas.enabled = false;
+                        canvas.enabled = true;
+                    }
+                }
+            }
+        }
+        
         // Generate follow-up questions based on the relationships
         if (relationships.Count > 0)
         {
-            GenerateQuestionsAfterProcessJSON(originalQuery, relationships);
+            GenerateQuestionsAfterProcessJSON(originalQuery, relationships, relationshipsMessage);
         }
     }
 
@@ -1253,7 +1452,7 @@ IMPORTANT:
     }
 
     // New method to process highlight data
-    private void ProcessHighlights(HighlightData highlightData, List<SceneObjectAnchor> allAnchors, string originalQuery)
+    private void ProcessHighlights(HighlightData highlightData, List<SceneObjectAnchor> allAnchors, string originalQuery, string highlightMessage)
     {
         if (highlightData == null || highlightData.objects == null || highlightData.objects.Count == 0)
         {
@@ -1321,21 +1520,39 @@ IMPORTANT:
         // Update response text with the rationale if objects were highlighted
         if (highlightedAnchors.Count > 0 && responseTextOnObject != null)
         {
-            string highlightMessage = $"Highlighted {highlightedAnchors.Count} objects: {highlightData.rationale}";
+            // Use the original message from Gemini instead of constructing a new one
             responseTextOnObject.text = highlightMessage;
+            
+            // Make sure chatbox is shown
+            if (chatboxOnObject != null && !chatboxOnObject.activeSelf)
+            {
+                Debug.Log("[SpeechRecorder] Activating chatbox to show highlight message from Gemini");
+                chatboxOnObject.SetActive(true);
+                
+                // Force update to ensure the object is visible
+                if (chatboxOnObject.transform.parent != null)
+                {
+                    Canvas canvas = chatboxOnObject.GetComponentInParent<Canvas>();
+                    if (canvas != null)
+                    {
+                        canvas.enabled = false;
+                        canvas.enabled = true;
+                    }
+                }
+            }
         }
         
         // Generate follow-up questions based on the highlight results
         if (highlightData.objects.Count > 0)
         {
-            GenerateQuestionsAfterProcessJSON(originalQuery, highlightData);
+            GenerateQuestionsAfterProcessJSON(originalQuery, highlightData, highlightMessage);
         }
     }
 
     /// <summary>
     /// Generates follow-up questions after processing a JSON response from Gemini
     /// </summary>
-    private void GenerateQuestionsAfterProcessJSON(string userQuery, object processedData)
+    private void GenerateQuestionsAfterProcessJSON(string userQuery, object processedData, string geminiMessage = "")
     {
         Debug.Log($"[SpeechRecorder] Generating follow-up questions for query: {userQuery}");
         
@@ -1355,25 +1572,25 @@ IMPORTANT:
         
         // Determine the context based on data type
         string context = "";
-        string additionalContext = "";
+        string contextDetails = "";
         
         if (processedData is HighlightData highlightData)
         {
             // For highlight data, use the highlighted objects and rationale
             string highlightedObjects = string.Join(", ", highlightData.objects);
             context = $"The system has highlighted: {highlightedObjects}";
-            additionalContext = $"Reason: {highlightData.rationale}";
+            contextDetails = $"Reason: {highlightData.rationale}";
             
             // For highlights, include information about the object
             if (highlightData.objects.Count == 1)
             {
                 // Single object highlight - likely user is interested in this specific item
-                additionalContext += $"\nUser appears to be interested in '{highlightData.objects[0]}'";
+                contextDetails += $"\nUser appears to be interested in '{highlightData.objects[0]}'";
             }
             else
             {
                 // Multiple highlights - might be comparing or searching
-                additionalContext += $"\nUser may be comparing or looking for relationships between {highlightedObjects}";
+                contextDetails += $"\nUser may be comparing or looking for relationships between {highlightedObjects}";
             }
         }
         else if (processedData is List<RelationshipInfo> relationships)
@@ -1390,29 +1607,44 @@ IMPORTANT:
             }
             
             context = $"The system has shown relationships between {string.Join(", ", involvedObjects)}:";
-            additionalContext = string.Join("\n", relationshipPairs);
+            contextDetails = string.Join("\n", relationshipPairs);
             
             // For relationships, include info about the connection type
             if (relationships.Count == 1)
             {
                 // Single relationship - user probably wants to know more about this connection
-                additionalContext += $"\nUser is interested in how '{relationships[0].SourceObject}' relates to '{relationships[0].TargetObject}'";
+                contextDetails += $"\nUser is interested in how '{relationships[0].SourceObject}' relates to '{relationships[0].TargetObject}'";
             }
             else
             {
                 // Multiple relationships - might want a summary or overview
-                additionalContext += $"\nUser may want to understand the overall connections between these objects";
+                contextDetails += $"\nUser may want to understand the overall connections between these objects";
             }
+        }
+        else if (processedData is List<InstructionStep> instructionSteps)
+        {
+            // For instructions, provide context about the steps
+            List<string> stepDescriptions = new List<string>();
+            foreach (var step in instructionSteps)
+            {
+                stepDescriptions.Add($"Step {step.order}: Use {step.@object}");
+            }
+            
+            context = $"The system has shown a sequence of {instructionSteps.Count} steps:";
+            contextDetails = string.Join("\n", stepDescriptions);
+            
+            // Add specific context for instruction questions
+            contextDetails += $"\nUser appears to be asking about a procedure or task involving {instructionSteps.Count} steps.";
         }
         else
         {
             // Generic case if data type is unknown
             context = "The system has responded to the user's query";
-            additionalContext = "The user may want to learn more about what they're seeing";
+            contextDetails = "The user may want to learn more about what they're seeing";
         }
         
         // Start the question generation routine
-        StartCoroutine(GenerateQuestionsRoutine(userQuery, context, additionalContext));
+        StartCoroutine(GenerateQuestionsRoutine(userQuery, context, contextDetails));
     }
     
     /// <summary>
@@ -1717,6 +1949,16 @@ IMPORTANT:
         
         Debug.Log($"[SpeechRecorder] Auto-hiding response UI after {delay} seconds");
         
+        // Explicitly clear all visual elements first
+        if (relationshipLineManager != null)
+        {
+            relationshipLineManager.ClearAllHighlightsAndLines();
+            relationshipLineManager.ClearAllStepIndicators();
+            // Reset the internal state
+            relationshipLineManager.hasActiveHighlights = false;
+            relationshipLineManager.highlightTimer = 0f;
+        }
+        
         // Hide the chatbox
         if (chatboxOnObject != null)
         {
@@ -1871,6 +2113,214 @@ IMPORTANT:
         
         return text; // Return the processed text even if validation failed - sometimes the parser is too strict
     }
+
+    // Add a new class for instruction steps
+    [System.Serializable]
+    private class InstructionStep
+    {
+        public int order;
+        public string @object;
+    }
+
+    // New method to process instructions
+    private void ProcessInstructions(List<InstructionStep> instructionSteps, List<SceneObjectAnchor> allAnchors, string originalQuery, string instructionMessage)
+    {
+        if (instructionSteps == null || instructionSteps.Count == 0)
+        {
+            Debug.Log("[SpeechRecorder] No instruction steps to process");
+            return;
+        }
+        
+        Debug.Log($"[SpeechRecorder] Processing {instructionSteps.Count} instruction steps");
+        
+        // Sort the steps by order to ensure correct sequence
+        instructionSteps = instructionSteps.OrderBy(step => step.order).ToList();
+        
+        // Log details of each step for debugging
+        for (int i = 0; i < instructionSteps.Count; i++)
+        {
+            var step = instructionSteps[i];
+            Debug.Log($"[SpeechRecorder] Step {step.order}: {step.@object}");
+        }
+        
+        // Clear any existing highlights or relationship lines
+        relationshipLineManager.ClearAllHighlightsAndLines();
+        
+        // Keep track of anchors we find for each step in the proper sequence
+        List<SceneObjectAnchor> stepAnchors = new List<SceneObjectAnchor>();
+        
+        // Find and process each object in the instruction steps
+        foreach (var step in instructionSteps)
+        {
+            // Find matching anchors for this object
+            List<SceneObjectAnchor> matchingAnchors = FindMatchingAnchors(step.@object, allAnchors);
+            
+            foreach (var anchor in matchingAnchors)
+            {
+                if (anchor != null && anchor.sphereObj != null)
+                {
+                    // Create a step number indicator above the object
+                    CreateStepNumberIndicator(anchor, step.order);
+                    
+                    // Also highlight the object
+                    HighlightObject(anchor);
+                    
+                    // Store this anchor for line connections
+                    stepAnchors.Add(anchor);
+                    
+                    Debug.Log($"[SpeechRecorder] Added step {step.order} indicator to {anchor.label}");
+                    
+                    // We only need one matching anchor per step
+                    break;
+                }
+            }
+            
+            if (matchingAnchors.Count == 0)
+            {
+                Debug.LogWarning($"[SpeechRecorder] Could not find any objects matching: {step.@object} for step {step.order}");
+            }
+        }
+        
+        // Draw lines between the steps to show the sequence
+        if (stepAnchors.Count >= 2 && relationshipLineManager != null)
+        {
+            // Create lines to connect each step to the next one in sequence
+            for (int i = 0; i < stepAnchors.Count - 1; i++)
+            {
+                var sourceAnchor = stepAnchors[i];
+                var targetAnchor = stepAnchors[i + 1];
+                
+                // Create line between these two steps
+                Dictionary<string, string> connection = new Dictionary<string, string>
+                {
+                    { targetAnchor.label, "" } // Empty string for no text on the line
+                };
+                
+                // Draw the connection line
+                relationshipLineManager.ShowRelationships(sourceAnchor, connection, allAnchors, true);
+                
+                Debug.Log($"[SpeechRecorder] Connected step {i+1} ({sourceAnchor.label}) to step {i+2} ({targetAnchor.label})");
+            }
+        }
+        
+        // Create a response message for display
+        if (instructionSteps.Count > 0)
+        {
+            // Use the original message from Gemini instead of constructing a new one
+            if (responseTextOnObject != null)
+            {
+                responseTextOnObject.text = instructionMessage;
+            }
+            
+            // Make sure chatbox is shown
+            if (chatboxOnObject != null && !chatboxOnObject.activeSelf)
+            {
+                Debug.Log("[SpeechRecorder] Activating chatbox to show instruction message from Gemini");
+                chatboxOnObject.SetActive(true);
+                
+                // Force update to ensure the object is visible
+                if (chatboxOnObject.transform.parent != null)
+                {
+                    Canvas canvas = chatboxOnObject.GetComponentInParent<Canvas>();
+                    if (canvas != null)
+                    {
+                        canvas.enabled = false;
+                        canvas.enabled = true;
+                    }
+                }
+            }
+        }
+        
+        // Generate follow-up questions based on the instructions
+        GenerateQuestionsAfterProcessJSON(originalQuery, instructionSteps, instructionMessage);
+    }
+
+    // Helper method to create a step number indicator above an object
+    private void CreateStepNumberIndicator(SceneObjectAnchor anchor, int stepNumber)
+    {
+        if (stepIndicatorPrefab == null)
+        {
+            Debug.LogError("[SpeechRecorder] Cannot create step indicator: Missing step indicator prefab");
+            return;
+        }
+
+        // Use the dedicated step indicator prefab
+        GameObject stepIndicator = Instantiate(stepIndicatorPrefab);
+        stepIndicator.name = $"StepIndicator_{stepNumber}";
+        
+        // Position it slightly above the anchor object
+        stepIndicator.transform.SetParent(anchor.sphereObj.transform);
+        stepIndicator.transform.localPosition = new Vector3(0f, 2.5f, 0f);
+        stepIndicator.transform.localRotation = Quaternion.identity;
+        
+        // Get the TextMeshPro component and update its text to show the step number
+        TMPro.TextMeshPro tmpText = stepIndicator.GetComponentInChildren<TMPro.TextMeshPro>();
+        if (tmpText != null)
+        {
+            // Just change the text content, don't modify font size or other properties
+            tmpText.text = stepNumber.ToString();
+            
+            // Use the consistent blue highlight color (hex: #2096F3 with 100% alpha)
+            Color highlightColor = new Color(
+                r: 0.125f,  // 32/255
+                g: 0.588f,  // 150/255
+                b: 0.953f,  // 243/255
+                a: 1.0f     // 100% alpha
+            );
+            
+            // Try to find and update the background if it exists
+            Renderer bgRenderer = stepIndicator.GetComponent<Renderer>();
+            if (bgRenderer != null && bgRenderer.material != null)
+            {
+                bgRenderer.material.color = highlightColor;
+            }
+        }
+        else
+        {
+            Debug.LogWarning($"[SpeechRecorder] Could not find TextMeshPro component in step indicator prefab");
+        }
+        
+        // Add the step indicator to the relationship line manager to track and clean up later
+        if (relationshipLineManager != null)
+        {
+            relationshipLineManager.AddStepIndicator(stepIndicator);
+        }
+        
+        Debug.Log($"[SpeechRecorder] Added step {stepNumber} indicator to {anchor.label}");
+    }
+
+    // Helper method to highlight an object
+    private void HighlightObject(SceneObjectAnchor anchor)
+    {
+        if (anchor == null || anchor.sphereObj == null)
+            return;
+        
+        // Use the consistent blue highlight color (hex: #2096F3 with 100% alpha)
+        Color highlightColor = new Color(
+            r: 0.125f,  // 32/255
+            g: 0.588f,  // 150/255
+            b: 0.953f,  // 243/255
+            a: 1.0f     // 100% alpha
+        );
+        
+        // Highlight the sphere with the blue color
+        var renderer = anchor.sphereObj.GetComponent<Renderer>();
+        if (renderer != null && renderer.material != null)
+        {
+            renderer.material.color = highlightColor;
+        }
+
+        // Highlight the child label object with the same blue color
+        var labelObj = anchor.sphereObj.transform.GetChild(0)?.gameObject;
+        if (labelObj != null)
+        {
+            var labelRenderer = labelObj.GetComponent<Renderer>();
+            if (labelRenderer != null && labelRenderer.material != null)
+            {
+                labelRenderer.material.color = highlightColor;
+            }
+        }
+    }
 }
 
 // Helper class to save AudioClip as WAV file
@@ -1945,4 +2395,4 @@ public static class SavWav
             writer.Write(samples * channels * 2);
         }
     }
-} 
+}
