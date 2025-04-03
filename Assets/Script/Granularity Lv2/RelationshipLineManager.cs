@@ -101,14 +101,19 @@ public class RelationshipLineManager : MonoBehaviour
     /// <summary>
     /// Shows relationships from 'sourceAnchor' to each 'targetAnchor', with a text label describing the relationship.
     /// </summary>
+    /// <param name="sourceAnchor">The source anchor for the relationship</param>
+    /// <param name="relationships">Dictionary mapping target labels to relationship descriptions</param>
+    /// <param name="allAnchors">List of all available anchors in the scene</param>
+    /// <param name="enableTimeout">Whether to enable the auto-timeout for this relationship (default: true)</param>
     public void ShowRelationships(
         SceneObjectAnchor sourceAnchor, 
         Dictionary<string, string> relationships, 
-        List<SceneObjectAnchor> allAnchors)
+        List<SceneObjectAnchor> allAnchors,
+        bool enableTimeout = true)
     {
         // Reset the highlight timer when showing new relationships
         highlightTimer = 0f;
-        hasActiveHighlights = true;
+        hasActiveHighlights = enableTimeout; // Only set to true if timeout is enabled
 
         if (sourceAnchor == null)
         {
@@ -127,6 +132,8 @@ public class RelationshipLineManager : MonoBehaviour
             Debug.LogWarning("ShowRelationships: No anchors provided!");
             return;
         }
+
+        Debug.Log($"ShowRelationships: Timeout {(enableTimeout ? "enabled" : "disabled")}");
 
         // Define relationship line color (hex: #3089CF)
         Color lineColor = new Color(
@@ -342,7 +349,8 @@ public class RelationshipLineManager : MonoBehaviour
     /// </summary>
     /// <param name="relationships">List of relationships with explicit source and target objects</param>
     /// <param name="allAnchors">List of all available anchors in the scene</param>
-    public void ShowBidirectionalRelationships(List<RelationshipInfo> relationships, List<SceneObjectAnchor> allAnchors)
+    /// <param name="enableTimeout">Whether to enable auto-timeout for these relationships (default: true)</param>
+    public void ShowBidirectionalRelationships(List<RelationshipInfo> relationships, List<SceneObjectAnchor> allAnchors, bool enableTimeout = true)
     {
         if (relationships == null || relationships.Count == 0)
         {
@@ -356,6 +364,7 @@ public class RelationshipLineManager : MonoBehaviour
             return;
         }
 
+        Debug.Log($"ShowBidirectionalRelationships: Timeout {(enableTimeout ? "enabled" : "disabled")}");
         Debug.Log($"ShowBidirectionalRelationships: Processing {relationships.Count} relationships with {allAnchors.Count} available anchors");
         
         // Log all available anchors for debugging
@@ -402,7 +411,7 @@ public class RelationshipLineManager : MonoBehaviour
             if (sourceAnchor != null)
             {
                 Debug.Log($"Visualizing relationships from {sourceObjectLabel} to {targetRelationships.Count} other objects");
-                ShowRelationships(sourceAnchor, targetRelationships, allAnchors);
+                ShowRelationships(sourceAnchor, targetRelationships, allAnchors, enableTimeout);
             }
             else
             {
@@ -555,6 +564,14 @@ public class RelationshipLineManager : MonoBehaviour
             return false;
         }
 
+        // Define default color to restore anchors to when clearing relationship
+        Color defaultSphereColor = new Color(
+            r: 0.369f,  // 94/255
+            g: 0.369f,  // 94/255
+            b: 0.369f,  // 94/255
+            a: 1.0f     // 100% alpha
+        );
+
         // Find the line connecting these two anchors
         LineConnection lineToRemove = null;
         foreach (var connection in activeLines)
@@ -567,9 +584,57 @@ public class RelationshipLineManager : MonoBehaviour
             }
         }
         
-        // If found, remove it
+        // If found, remove it and reset the colors of both anchors
         if (lineToRemove != null)
         {
+            // Reset both anchor colors
+            // First, reset the source anchor color
+            if (lineToRemove.source != null && lineToRemove.source.sphereObj != null)
+            {
+                // Reset sphere color
+                var renderer = lineToRemove.source.sphereObj.GetComponent<Renderer>();
+                if (renderer != null && renderer.material != null)
+                {
+                    renderer.material.color = defaultSphereColor;
+                }
+
+                // Reset label color
+                var sourceLabelObj = lineToRemove.source.sphereObj.transform.GetChild(0)?.gameObject;
+                if (sourceLabelObj != null)
+                {
+                    var labelRenderer = sourceLabelObj.GetComponent<Renderer>();
+                    if (labelRenderer != null && labelRenderer.material != null)
+                    {
+                        labelRenderer.material.color = defaultSphereColor;
+                    }
+                }
+                Debug.Log($"Reset color for source anchor: {lineToRemove.source.label}");
+            }
+            
+            // Then, reset the target anchor color
+            if (lineToRemove.target != null && lineToRemove.target.sphereObj != null)
+            {
+                // Reset sphere color
+                var renderer = lineToRemove.target.sphereObj.GetComponent<Renderer>();
+                if (renderer != null && renderer.material != null)
+                {
+                    renderer.material.color = defaultSphereColor;
+                }
+
+                // Reset label color
+                var targetLabelObj = lineToRemove.target.sphereObj.transform.GetChild(0)?.gameObject;
+                if (targetLabelObj != null)
+                {
+                    var labelRenderer = targetLabelObj.GetComponent<Renderer>();
+                    if (labelRenderer != null && labelRenderer.material != null)
+                    {
+                        labelRenderer.material.color = defaultSphereColor;
+                    }
+                }
+                Debug.Log($"Reset color for target anchor: {lineToRemove.target.label}");
+            }
+
+            // Finally, destroy the line renderer object
             if (lineToRemove.lineRenderer != null)
             {
                 Destroy(lineToRemove.lineRenderer.gameObject);

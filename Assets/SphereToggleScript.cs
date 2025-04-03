@@ -1805,7 +1805,7 @@ public class SphereToggleScript : MonoBehaviour
         
         // Show initial connection line with loading text
         var allAnchors = sceneObjManager.GetAllAnchors();
-        relationLineManager.ShowRelationships(myAnchor, loadingDict, allAnchors);
+        relationLineManager.ShowRelationships(myAnchor, loadingDict, allAnchors, false); // Disable timeout for proximity relationships
         
         // Build prompt specifically for these two objects
         string prompt = $@"
@@ -1862,7 +1862,7 @@ public class SphereToggleScript : MonoBehaviour
             {
                 { objectB, "Relationship undefined" }
             };
-            relationLineManager.ShowRelationships(myAnchor, fallbackDict, allAnchors);
+            relationLineManager.ShowRelationships(myAnchor, fallbackDict, allAnchors, false); // Disable timeout
             yield break;
         }
 
@@ -1881,7 +1881,7 @@ public class SphereToggleScript : MonoBehaviour
             {
                 { objectB, "Error identifying relationship" }
             };
-            relationLineManager.ShowRelationships(myAnchor, errorDict, allAnchors);
+            relationLineManager.ShowRelationships(myAnchor, errorDict, allAnchors, false); // Disable timeout
             yield break;
         }
 
@@ -1895,7 +1895,7 @@ public class SphereToggleScript : MonoBehaviour
             {
                 { objectB, "No relationship found" }
             };
-            relationLineManager.ShowRelationships(myAnchor, noRelationDict, allAnchors);
+            relationLineManager.ShowRelationships(myAnchor, noRelationDict, allAnchors, false); // Disable timeout
             yield break;
         }
 
@@ -1903,7 +1903,7 @@ public class SphereToggleScript : MonoBehaviour
         string currentRelationship = relationshipDict[objectB];
         
         // Show the final relationship with proper text
-        relationLineManager.ShowRelationships(myAnchor, relationshipDict, allAnchors);
+        relationLineManager.ShowRelationships(myAnchor, relationshipDict, allAnchors, false); // Disable timeout for proximity relationships
 
         // Check if we should generate new questions based on the relationship
         // Only generate new questions if:

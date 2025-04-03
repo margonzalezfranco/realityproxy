@@ -100,11 +100,11 @@ public class HandGrabTrigger : MonoBehaviour
     }
 
     [Header("Proximity Relationship Detection")]
-    [Tooltip("Distance threshold for detecting proximity to other anchors")]
-    public float proximityThreshold = 0.3f; // 30cm default
+    [Tooltip("Distance threshold for detecting proximity to other anchors (activation distance)")]
+    public float proximityThreshold = 0.5f; // 50cm default - activation distance
 
-    [Tooltip("Distance threshold for explicitly removing relationship lines (should be larger than proximityThreshold)")]
-    public float deselectThreshold = 0.5f; // 50cm default
+    [Tooltip("Distance threshold for maintaining an already established relationship (deactivation distance)")]
+    public float maintainRelationshipThreshold = 0.8f; // 80cm default - larger than activation to create hysteresis
 
     [Tooltip("Minimum time between proximity relationship checks")]
     public float proximityCheckInterval = 1.0f; // 1 second default
@@ -911,11 +911,11 @@ public class HandGrabTrigger : MonoBehaviour
         HashSet<SceneObjectAnchor> stillHighlighted = new HashSet<SceneObjectAnchor>();
         HashSet<SceneObjectAnchor> toDeselect = new HashSet<SceneObjectAnchor>(recentlyHighlighted);
         
-        // First find the closest anchor within the proximity threshold
+        // First find the closest anchor that satisfies our proximity conditions
         SceneObjectAnchor closestAnchor = null;
         float closestDistance = float.MaxValue;
         
-        // Check distance to each other anchor and find the closest one
+        // Check distance to each other anchor and find potential candidates
         foreach (var otherAnchor in allAnchors)
         {
             // Skip if it's the same anchor we're grabbing
@@ -927,22 +927,42 @@ public class HandGrabTrigger : MonoBehaviour
             // Calculate distance
             float distance = Vector3.Distance(grabbedAnchorPos, otherAnchor.sphereObj.transform.position);
             
-            // If within threshold, consider it as a candidate
-            if (distance <= proximityThreshold)
+            // Check if this anchor could be a candidate for relationship
+            bool isCandidate = false;
+            
+            // Use different thresholds depending on whether we already have a relationship with this anchor
+            if (otherAnchor == currentRelationshipAnchor)
             {
-                // If this is closer than the current closest, update
-                if (distance < closestDistance)
+                // If this is our current relationship, use the maintain threshold (larger)
+                isCandidate = distance <= maintainRelationshipThreshold;
+                
+                // Even if it's not a candidate anymore, add it to highlighted if still within threshold
+                if (distance <= maintainRelationshipThreshold)
                 {
-                    closestDistance = distance;
-                    closestAnchor = otherAnchor;
+                    stillHighlighted.Add(otherAnchor);
+                    toDeselect.Remove(otherAnchor);
                 }
             }
-            else if (distance > deselectThreshold && recentlyHighlighted.Contains(otherAnchor))
+            else
+            {
+                // For new potential relationships, use the activation threshold (smaller)
+                isCandidate = distance <= proximityThreshold;
+            }
+            
+            // If it's a candidate and closer than current closest, update closest
+            if (isCandidate && distance < closestDistance)
+            {
+                closestDistance = distance;
+                closestAnchor = otherAnchor;
+            }
+            
+            // If this anchor is beyond the maintain threshold and was highlighted, reset it immediately
+            if (distance > maintainRelationshipThreshold && recentlyHighlighted.Contains(otherAnchor))
             {
                 // This anchor was previously highlighted but is now well outside the range
                 // Reset its appearance immediately
                 ResetAnchorHighlight(otherAnchor);
-                Debug.Log($"Anchor '{otherAnchor.label}' moved far outside proximity range ({distance}m), clearing relationship");
+                Debug.Log($"Anchor '{otherAnchor.label}' moved outside maintenance range ({distance}m), clearing relationship");
                 
                 // Clear the relationship line explicitly if this was our active relationship
                 if (otherAnchor == currentRelationshipAnchor)
@@ -981,12 +1001,12 @@ public class HandGrabTrigger : MonoBehaviour
                 shouldEstablishNewRelationship = true;
                 Debug.Log($"Establishing new relationship with closest anchor: '{closestAnchor.label}' at distance {distanceToClosest}m");
             }
-            // Case 2: Current relationship anchor is no longer within threshold
+            // Case 2: Current relationship anchor is no longer within maintain threshold
             else if (!allAnchors.Contains(currentRelationshipAnchor) || 
-                    Vector3.Distance(grabbedAnchorPos, currentRelationshipAnchor.sphereObj.transform.position) > proximityThreshold)
+                    Vector3.Distance(grabbedAnchorPos, currentRelationshipAnchor.sphereObj.transform.position) > maintainRelationshipThreshold)
             {
                 shouldEstablishNewRelationship = true;
-                Debug.Log($"Current relationship anchor '{currentRelationshipAnchor.label}' no longer in range, switching to '{closestAnchor.label}'");
+                Debug.Log($"Current relationship anchor '{currentRelationshipAnchor.label}' beyond maintain threshold, switching to '{closestAnchor.label}'");
             }
             // Case 3: We have a relationship, but found a significantly closer anchor AND minimum duration has passed
             else if (currentRelationshipAnchor != closestAnchor && 

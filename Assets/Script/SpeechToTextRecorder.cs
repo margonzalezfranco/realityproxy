@@ -1185,9 +1185,9 @@ IMPORTANT:
                 RelationLabel = r.RelationLabel
             }).ToList();
         
-        // Call the bidirectional relationship visualization
-        relationshipLineManager.ShowBidirectionalRelationships(relationshipLineInfos, allAnchors);
-        Debug.Log($"[SpeechRecorder] Visualized {relationships.Count} bidirectional relationships");
+        // Call the bidirectional relationship visualization with timeout enabled for LLM-generated relationships
+        relationshipLineManager.ShowBidirectionalRelationships(relationshipLineInfos, allAnchors, true);
+        Debug.Log($"[SpeechRecorder] Visualized {relationships.Count} bidirectional relationships with auto-timeout enabled");
     }
 
     // Helper method to find all matching anchors for a given label
@@ -1245,9 +1245,8 @@ IMPORTANT:
         // Clear all previous highlights before starting new ones
         relationshipLineManager.ClearAllHighlightsAndLines();
         
-        // Reset the highlight timer when showing new highlights
-        relationshipLineManager.highlightTimer = 0f;
-        relationshipLineManager.hasActiveHighlights = true;
+        // Note: We don't need to manually set these anymore as the ShowRelationships method will handle it
+        // Keep using auto-timeout for LLM-generated highlights (timeout = true)
         
         // Use the same highlight color as RelationshipLineManager (hex: #2096F3 with 100% alpha)
         Color highlightColor = new Color(
