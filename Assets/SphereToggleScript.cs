@@ -2484,8 +2484,7 @@ public class SphereToggleScript : MonoBehaviour
         Vector3 perpendicularDir = Vector3.Cross(Vector3.up, directionToCamera).normalized;
         
         // Position the menu to the side of the relationship line
-        // Reduced perpendicular offset by 50% (from 0.3f to 0.15f)
-        Vector3 menuPosition = midpoint + perpendicularDir * 0.15f + Vector3.up * 0.1f;
+        Vector3 menuPosition = midpoint + perpendicularDir * 0.1f + Vector3.up * 0.05f;
         
         // Set menu canvas position and make sure it's not parented to anything
         menuCanvas.SetParent(null);
