@@ -142,6 +142,9 @@ public class HandGrabTrigger : MonoBehaviour
     private float timeStartedRelationship = 0f;
     private float minRelationshipDuration = 1.5f; // Minimum time to keep a relationship before switching
 
+    [Header("User Study Logging")]
+    [SerializeField] private bool enableUserStudyLogging = true;
+
     private void Start()
     {
         // Auto-detect which hand this is based on the GameObject name if not set
@@ -362,7 +365,6 @@ public class HandGrabTrigger : MonoBehaviour
                 sphereMeshRenderer.enabled = false;
             }
 
-
             // Generate twin object
             if (objectMeshGenerator != null)
             {
@@ -372,6 +374,9 @@ public class HandGrabTrigger : MonoBehaviour
                     UpdateTwinPosition();
                 }));
             }
+            
+            // Log the auto-grab event for user study
+            LogUserStudy($"AUTO_GRAB: Hand=\"{handType}\", Object=\"{anchorToGrab.label}\", Confidence={grabbingInfo.confidence:F2}");
 
             // Invoke the grab event
             OnAnchorGrabbed?.Invoke(_grabbedAnchor);
@@ -465,6 +470,9 @@ public class HandGrabTrigger : MonoBehaviour
                 UpdateTwinPosition();
             }));
         }
+        
+        // Log the manual grab event for user study
+        LogUserStudy($"MANUAL_GRAB: Hand=\"{handType}\", Object=\"{_currentActiveAnchor.label}\"");
 
         // Invoke the grab event
         OnAnchorGrabbed?.Invoke(_grabbedAnchor);
@@ -546,6 +554,10 @@ public class HandGrabTrigger : MonoBehaviour
         if (_grabbedAnchor != null)
         {
             Debug.Log($"HandGrabTrigger: {handType} hand releasing anchor '{_grabbedAnchor.label}' because Gemini explicitly detected release event");
+            
+            // Log the auto-release event for user study
+            LogUserStudy($"AUTO_RELEASE: Hand=\"{handType}\", Object=\"{_grabbedAnchor.label}\", DetectionType=\"explicit\"");
+            
             ReleaseAnchor(true); // Use manual release for explicit Gemini release detection
         }
     }
@@ -776,6 +788,20 @@ public class HandGrabTrigger : MonoBehaviour
         }
 
         Debug.Log($"HandGrabTrigger: {handType} hand released anchor '{_grabbedAnchor.label}'{(isManualRelease ? " (manual release)" : "")}");
+        
+        // Log the release event for user study
+        if (isManualRelease && _isManualGrab)
+        {
+            LogUserStudy($"MANUAL_RELEASE: Hand=\"{handType}\", Object=\"{_grabbedAnchor.label}\"");
+        }
+        else if (isManualRelease && !_isManualGrab)
+        {
+            LogUserStudy($"FORCED_RELEASE: Hand=\"{handType}\", Object=\"{_grabbedAnchor.label}\"");
+        }
+        else
+        {
+            LogUserStudy($"AUTO_RELEASE: Hand=\"{handType}\", Object=\"{_grabbedAnchor.label}\", DetectionType=\"timeout\"");
+        }
 
         // If this is a manual release, prevent auto grabbing until explicitly allowed
         if (isManualRelease)
@@ -964,6 +990,9 @@ public class HandGrabTrigger : MonoBehaviour
                 ResetAnchorHighlight(otherAnchor);
                 Debug.Log($"Anchor '{otherAnchor.label}' moved outside maintenance range ({distance}m), clearing relationship");
                 
+                // Log the relationship end for user study
+                LogUserStudy($"PROXIMITY_RELATIONSHIP_ENDED: Held=\"{_grabbedAnchor.label}\", Other=\"{otherAnchor.label}\", Distance={distance:F3}m, Reason=\"distance_exceeded\"");
+                
                 // Clear the relationship line explicitly if this was our active relationship
                 if (otherAnchor == currentRelationshipAnchor)
                 {
@@ -1000,6 +1029,9 @@ public class HandGrabTrigger : MonoBehaviour
             {
                 shouldEstablishNewRelationship = true;
                 Debug.Log($"Establishing new relationship with closest anchor: '{closestAnchor.label}' at distance {distanceToClosest}m");
+                
+                // Log proximity relationship start for user study
+                LogUserStudy($"PROXIMITY_RELATIONSHIP_STARTED: Held=\"{_grabbedAnchor.label}\", Other=\"{closestAnchor.label}\", Distance={distanceToClosest:F3}m");
             }
             // Case 2: Current relationship anchor is no longer within maintain threshold
             else if (!allAnchors.Contains(currentRelationshipAnchor) || 
@@ -1007,6 +1039,9 @@ public class HandGrabTrigger : MonoBehaviour
             {
                 shouldEstablishNewRelationship = true;
                 Debug.Log($"Current relationship anchor '{currentRelationshipAnchor.label}' beyond maintain threshold, switching to '{closestAnchor.label}'");
+                
+                // Log switching proximity relationship for user study
+                LogUserStudy($"PROXIMITY_RELATIONSHIP_SWITCHED: Held=\"{_grabbedAnchor.label}\", OldTarget=\"{currentRelationshipAnchor.label}\", NewTarget=\"{closestAnchor.label}\", Distance={distanceToClosest:F3}m, Reason=\"distance_exceeded\"");
             }
             // Case 3: We have a relationship, but found a significantly closer anchor AND minimum duration has passed
             else if (currentRelationshipAnchor != closestAnchor && 
@@ -1019,6 +1054,9 @@ public class HandGrabTrigger : MonoBehaviour
                 {
                     shouldEstablishNewRelationship = true;
                     Debug.Log($"Found closer anchor '{closestAnchor.label}' ({distanceToClosest}m) than current '{currentRelationshipAnchor.label}' ({distanceToCurrent}m), switching");
+                    
+                    // Log switching proximity relationship for user study
+                    LogUserStudy($"PROXIMITY_RELATIONSHIP_SWITCHED: Held=\"{_grabbedAnchor.label}\", OldTarget=\"{currentRelationshipAnchor.label}\", NewTarget=\"{closestAnchor.label}\", Distance={distanceToClosest:F3}m, Reason=\"closer_object\"");
                     
                     // Clear the old relationship first
                     if (sphereToggleScript != null && sphereToggleScript.relationLineManager != null)
@@ -1075,6 +1113,10 @@ public class HandGrabTrigger : MonoBehaviour
             if (sphereToggleScript != null && sphereToggleScript.relationLineManager != null)
             {
                 Debug.Log($"No anchors in range, clearing current relationship with '{currentRelationshipAnchor.label}'");
+                
+                // Log relationship ending for user study
+                LogUserStudy($"PROXIMITY_RELATIONSHIP_ENDED: Held=\"{_grabbedAnchor.label}\", Other=\"{currentRelationshipAnchor.label}\", Reason=\"no_objects_in_range\"");
+                
                 sphereToggleScript.ClearSpecificRelationship(currentRelationshipAnchor.label);
                 currentRelationshipAnchor = null;
                 timeStartedRelationship = 0f;
@@ -1222,5 +1264,13 @@ public class HandGrabTrigger : MonoBehaviour
         
         // Play the sound
         audioSource.Play();
+    }
+
+    // Helper method for creating timestamped user study logs
+    private void LogUserStudy(string message)
+    {
+        if (!enableUserStudyLogging) return;
+        string timestamp = System.DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
+        Debug.Log($"[USER_STUDY_LOG][{timestamp}] {message}");
     }
 }

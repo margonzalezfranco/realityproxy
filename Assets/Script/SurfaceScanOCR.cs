@@ -303,6 +303,9 @@ public class SurfaceScanOCR : GeminiGeneral
     // Add this field for tracking created questions
     private List<GameObject> createdQuestions = new List<GameObject>();
 
+    [Header("User Study Logging")]
+    [SerializeField] private bool enableUserStudyLogging = true;
+
     // Override the Awake method from GeminiGeneral
     protected override void Awake()
     {
@@ -594,6 +597,15 @@ public class SurfaceScanOCR : GeminiGeneral
     {
         Debug.Log($"Surface fully completed with corners at {point1}, {point2}, {point3}, {point4} - Preparing to scan with OCR");
         
+        // Log surface completion for user study
+        Vector3 surfaceCenter = (point1 + point2 + point3 + point4) / 4f;
+        Vector3 dimensions = new Vector3(
+            Vector3.Distance(point1, point2),
+            Vector3.Distance(point2, point3),
+            Vector3.Distance(point3, point4)
+        );
+        LogUserStudy($"SURFACE_COMPLETED: Center=\"{surfaceCenter}\", Dimensions=\"{dimensions}\", Points=4");
+        
         // Store the surface corners for later use
         surfacePoint1 = point1;
         surfacePoint2 = point2;
@@ -769,6 +781,9 @@ public class SurfaceScanOCR : GeminiGeneral
         
         int cropWidth = Mathf.FloorToInt(maxX - minX);
         int cropHeight = Mathf.FloorToInt(maxY - minY);
+        
+        // Log the crop operation for user study
+        LogUserStudy($"SURFACE_CROP: Size=\"{cropWidth}x{cropHeight}\", Position=\"({Mathf.FloorToInt(minX)},{Mathf.FloorToInt(minY)})\"");
         
         // Ensure non-zero dimensions with a minimum reasonable size
         cropWidth = Mathf.Max(10, cropWidth);
@@ -1257,6 +1272,9 @@ public class SurfaceScanOCR : GeminiGeneral
     {
         Debug.Log($"OCR completed with {lines.Count} lines of text");
         
+        // Log OCR completion for user study
+        LogUserStudy($"OCR_COMPLETE: LinesDetected={lines.Count}, TextLength={fullText?.Length ?? 0}");
+        
         // Store the OCR results for potential Gemini processing
         lastOcrFullText = fullText;
         lastOcrLines = lines;
@@ -1409,10 +1427,14 @@ public class SurfaceScanOCR : GeminiGeneral
                 // Add to created lines list for cleanup
                 createdOCRLines.Add(ocrLine);
             }
+            
+            // After creating OCR lines
+            LogUserStudy($"OCR_LINES_CREATED: Count={createdOCRLines.Count}");
         }
         else
         {
             Debug.Log("OCR did not detect any text lines. Will proceed with semantic analysis to identify visual elements.");
+            LogUserStudy("OCR_NO_TEXT_DETECTED");
         }
         
         // Modified approach: If we need to process semantic lines AND clear the surface,
@@ -1487,10 +1509,12 @@ public class SurfaceScanOCR : GeminiGeneral
             if (elapsed >= timeout)
             {
                 Debug.LogError("Semantic line processing timed out");
+                LogUserStudy("SEMANTIC_PROCESSING_TIMEOUT");
             }
             else if (request.Error != null)
             {
                 Debug.LogError($"Semantic line processing failed: {request.Error}");
+                LogUserStudy($"SEMANTIC_PROCESSING_ERROR: Error=\"{request.Error.Message}\"");
             }
             else
             {
@@ -1505,21 +1529,25 @@ public class SurfaceScanOCR : GeminiGeneral
                     {
                         CreateSemanticLines(semanticLines);
                         Debug.Log($"Created {semanticLines.Count} semantic lines before clearing surface");
+                        LogUserStudy($"SEMANTIC_LINES_CREATED: Count={semanticLines.Count}");
                     }
                     else
                     {
                         Debug.Log("No semantic lines extracted from Gemini response");
+                        LogUserStudy("SEMANTIC_NO_LINES_EXTRACTED");
                     }
                 }
                 else
                 {
                     Debug.LogWarning("Empty response from Gemini for semantic line processing");
+                    LogUserStudy("SEMANTIC_EMPTY_RESPONSE");
                 }
             }
         }
         else
         {
             Debug.LogError("Cannot process semantic lines: No cropped texture available");
+            LogUserStudy("SEMANTIC_NO_TEXTURE_AVAILABLE");
         }
         
         // Now clear the surface
@@ -1556,6 +1584,7 @@ public class SurfaceScanOCR : GeminiGeneral
         if (lastCroppedTexture == null)
         {
             Debug.LogError("No cropped texture available for semantic line processing");
+            LogUserStudy("SEMANTIC_PROCESSING_FAILED: Reason=\"No cropped texture available\"");
             return;
         }
         
@@ -1570,6 +1599,9 @@ public class SurfaceScanOCR : GeminiGeneral
         {
             Debug.Log($"ProcessSemanticLines - OCR lines count: {lastOcrLines.Count}");
         }
+        
+        // Log semantic line processing initiation for user study
+        LogUserStudy($"SEMANTIC_PROCESSING_STARTED: OCRLineCount={lastOcrLines.Count}, TextureSize=\"{lastCroppedTexture.width}x{lastCroppedTexture.height}\"");
         
         try {
             // Convert the OCR lines to a string format for the prompt
@@ -1599,6 +1631,7 @@ public class SurfaceScanOCR : GeminiGeneral
         catch (System.Exception ex) {
             Debug.LogError($"Exception in ProcessSemanticLines: {ex.GetType().Name} - {ex.Message}");
             Debug.LogError($"Stack trace: {ex.StackTrace}");
+            LogUserStudy($"SEMANTIC_PROCESSING_EXCEPTION: Exception=\"{ex.GetType().Name}\", Message=\"{ex.Message}\"");
         }
     }
     
@@ -1682,6 +1715,7 @@ public class SurfaceScanOCR : GeminiGeneral
         if (elapsed >= timeout)
         {
             Debug.LogError("Gemini request timed out after 30 seconds");
+            LogUserStudy("SEMANTIC_GEMINI_TIMEOUT: Duration=30s");
             yield break;
         }
         
@@ -1693,6 +1727,7 @@ public class SurfaceScanOCR : GeminiGeneral
             if (request.Error != null)
             {
                 Debug.LogError($"Gemini request failed: {request.Error}");
+                LogUserStudy($"SEMANTIC_GEMINI_ERROR: Error=\"{request.Error.Message}\"");
                 yield break;
             }
             
@@ -1703,6 +1738,7 @@ public class SurfaceScanOCR : GeminiGeneral
             if (string.IsNullOrEmpty(response))
             {
                 Debug.LogError("Received empty response from Gemini");
+                LogUserStudy("SEMANTIC_GEMINI_EMPTY_RESPONSE");
                 yield break;
             }
             
@@ -1711,6 +1747,7 @@ public class SurfaceScanOCR : GeminiGeneral
             if (string.IsNullOrEmpty(parsedResponse))
             {
                 Debug.LogError("Failed to parse Gemini response");
+                LogUserStudy("SEMANTIC_GEMINI_PARSING_FAILED");
                 yield break;
             }
             
@@ -1720,6 +1757,7 @@ public class SurfaceScanOCR : GeminiGeneral
             List<SemanticLineData> semanticLines = ExtractSemanticLinesFromResponse(parsedResponse);
             
             Debug.Log($"Extracted {semanticLines.Count} semantic lines from Gemini response");
+            LogUserStudy($"SEMANTIC_LINES_EXTRACTED: Count={semanticLines.Count}");
             
             // Process semantic lines
             if (semanticLines.Count > 0)
@@ -1730,12 +1768,14 @@ public class SurfaceScanOCR : GeminiGeneral
             else
             {
                 Debug.LogWarning("No semantic lines extracted from Gemini response");
+                LogUserStudy("SEMANTIC_NO_LINES_EXTRACTED");
             }
         }
         catch (System.Exception e)
         {
             Debug.LogError($"Error processing semantic lines: {e.GetType().Name} - {e.Message}");
             Debug.LogError($"Stack trace: {e.StackTrace}");
+            LogUserStudy($"SEMANTIC_PROCESSING_EXCEPTION: Exception=\"{e.GetType().Name}\", Message=\"{e.Message}\"");
         }
     }
     
@@ -1993,6 +2033,9 @@ public class SurfaceScanOCR : GeminiGeneral
             createdSemanticLines.Add(semanticLine);
         }
         
+        // Log semantic line creation completion for user study
+        LogUserStudy($"SEMANTIC_LINES_CREATED: Count={createdSemanticLines.Count}");
+        
         // Generate questions about the semantic content
         if (semanticLines != null && semanticLines.Count > 0 && questionsParent != null)
         {
@@ -2007,6 +2050,7 @@ public class SurfaceScanOCR : GeminiGeneral
     /// </summary>
     public void ClearSemanticLines()
     {
+        int count = createdSemanticLines.Count;
         foreach (GameObject semanticLine in createdSemanticLines)
         {
             if (semanticLine != null)
@@ -2016,6 +2060,12 @@ public class SurfaceScanOCR : GeminiGeneral
         }
         
         createdSemanticLines.Clear();
+        
+        // Log semantic line clearing for user study
+        if (count > 0)
+        {
+            LogUserStudy($"SEMANTIC_LINES_CLEARED: Count={count}");
+        }
     }
     
     /// <summary>
@@ -2049,6 +2099,11 @@ public class SurfaceScanOCR : GeminiGeneral
         
         // Make the panel visible
         responsePanel.SetActive(true);
+        
+        // Log response panel display for user study
+        string lineType = createdOCRLines.Contains(ocrLine) ? "OCR" : "Semantic";
+        string lineText = ocrLine.name.Replace("OCRLine_", "").Replace("SemanticLine_", "");
+        LogUserStudy($"RESPONSE_DISPLAYED: LineType=\"{lineType}\", Text=\"{lineText}\", ResponseLength={response?.Length ?? 0}");
     }
     
     /// <summary>
@@ -2072,6 +2127,7 @@ public class SurfaceScanOCR : GeminiGeneral
         // First hide the response panel
         HideResponsePanel();
         
+        int count = createdOCRLines.Count;
         foreach (GameObject ocrLine in createdOCRLines)
         {
             if (ocrLine != null)
@@ -2081,6 +2137,12 @@ public class SurfaceScanOCR : GeminiGeneral
         }
         
         createdOCRLines.Clear();
+        
+        // Log OCR line clearing for user study
+        if (count > 0)
+        {
+            LogUserStudy($"OCR_LINES_CLEARED: Count={count}");
+        }
     }
 
     /// <summary>
@@ -2153,6 +2215,9 @@ public class SurfaceScanOCR : GeminiGeneral
     private IEnumerator GenerateQuestionsRoutine(string semanticContext)
     {
         Debug.Log("Starting question generation for semantic content...");
+        
+        // Log question generation initiation for user study
+        LogUserStudy($"QUESTIONS_GENERATION_STARTED: Context=\"{(semanticContext.Length > 50 ? semanticContext.Substring(0, 50) + "..." : semanticContext)}\"");
         
         // Clear any existing questions first
         ClearPreviousQuestions();
@@ -2288,6 +2353,16 @@ public class SurfaceScanOCR : GeminiGeneral
             
             Debug.Log($"Created {createdQuestions.Count} question UI elements");
         }
+        
+        // Log questions generated for user study after successful parsing
+        if (questionsList != null && questionsList.Count > 0)
+        {
+            LogUserStudy($"QUESTIONS_GENERATED: Count={questionsList.Count}, Questions=\"{string.Join(" | ", questionsList)}\"");
+        }
+        else
+        {
+            LogUserStudy("QUESTIONS_GENERATION_FAILED");
+        }
     }
 
     /// <summary>
@@ -2373,6 +2448,9 @@ public class SurfaceScanOCR : GeminiGeneral
     {
         Debug.Log("Surface cleared via double-pinch - Cleaning up semantic lines and UI elements");
         
+        // Log surface clearing for user study
+        LogUserStudy("SURFACE_CLEARED: Method=\"user_initiated\"");
+        
         // Clear semantic lines
         ClearSemanticLines();
         
@@ -2393,5 +2471,13 @@ public class SurfaceScanOCR : GeminiGeneral
         
         // Clear any created questions
         ClearPreviousQuestions();
+    }
+    
+    // Helper method for creating timestamped user study logs
+    private void LogUserStudy(string message)
+    {
+        if (!enableUserStudyLogging) return;
+        string timestamp = System.DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
+        Debug.Log($"[USER_STUDY_LOG][{timestamp}] {message}");
     }
 } 

@@ -193,6 +193,9 @@ IMPORTANT:
     private string currentObjectLabel = null;
     private GameObject originalRecorderParent = null;
 
+    [Header("User Study Logging")]
+    [SerializeField] private bool enableUserStudyLogging = true;
+
     protected override void Awake()
     {
         base.Awake(); // Call GeminiGeneral's Awake to initialize the Gemini client
@@ -739,6 +742,10 @@ IMPORTANT:
                 {
                     transcriptionResult = parsedResult;
                     requestText.text = transcriptionResult;
+                    
+                    // Log the user query for user study
+                    LogUserStudy($"USER_QUERY: \"{transcriptionResult}\"");
+                    
                     TalkToGemini(transcriptionResult);
                 }
                 else
@@ -857,6 +864,7 @@ IMPORTANT:
     {
         string finalPrompt;
         bool isObjectMode = !string.IsNullOrEmpty(currentObjectLabel);
+        string contextType = "UNKNOWN";
 
         // Check if we're pointing at a specific part of an object
         bool isPointingAtPart = false;
@@ -902,16 +910,27 @@ IMPORTANT:
         {
             finalPrompt = string.Format(pointingPromptTemplate, currentObjectLabel, pointingPartName, pointingPartDescription, userQuery);
             Debug.Log($"[SpeechRecorder] Using POINTING context prompt for '{pointingPartName}' part of '{currentObjectLabel}'");
+            contextType = "PART_SPECIFIC";
+            
+            // Log context for user study
+            LogUserStudy($"CONTEXT_TYPE: {contextType}");
+            LogUserStudy($"CONTEXT_DETAILS: Object=\"{currentObjectLabel}\", Part=\"{pointingPartName}\", PartDescription=\"{pointingPartDescription}\"");
         }
         // Otherwise, if in object mode, use the object context prompt template
         else if (isObjectMode)
         {
             finalPrompt = string.Format(objectContextPromptTemplate, currentObjectLabel, userQuery);
             Debug.Log($"[SpeechRecorder] Using OBJECT context prompt with label '{currentObjectLabel}'");
+            contextType = "OBJECT_LEVEL";
+            
+            // Log context for user study
+            LogUserStudy($"CONTEXT_TYPE: {contextType}");
+            LogUserStudy($"CONTEXT_DETAILS: Object=\"{currentObjectLabel}\"");
         }
         else // Global Mode
         {
              // --- Prepare context for Global Mode Prompt ---
+            contextType = "ENVIRONMENT_LEVEL";
             string currentSceneContext = "unknown environment";
             List<string> itemLabels = new List<string>();
             string objectListString = "none";
@@ -937,6 +956,11 @@ IMPORTANT:
                     objectListString = string.Join(", ", itemLabels);
                 }
             }
+            
+            // Log context for user study
+            LogUserStudy($"CONTEXT_TYPE: {contextType}");
+            LogUserStudy($"CONTEXT_DETAILS: SceneType=\"{currentSceneContext}\", Objects=\"{objectListString}\"");
+            
              // --- Format the Global Prompt ---
             finalPrompt = string.Format(environmentLevelPromptTemplate, currentSceneContext, objectListString, userQuery);
             Debug.Log($"[SpeechRecorder] Using ENVIRONMENT context prompt.");
@@ -966,12 +990,18 @@ IMPORTANT:
         {
             Debug.LogError($"Gemini API error: {requestStatus.Error.Message}");
             geminiResponse = "Error communicating with Gemini.";
+            
+            // Log error for user study
+            LogUserStudy($"GEMINI_ERROR: {requestStatus.Error.Message}");
         }
         else
         {
             string rawResponse = requestStatus.Result;
             geminiResponse = ParseGeminiRawResponse(rawResponse);
             Debug.Log($"Gemini response: {geminiResponse}");
+            
+            // Log Gemini's response for user study
+            LogUserStudy($"GEMINI_RESPONSE: {geminiResponse}");
 
             // Update UI if available - now showing the user-friendly message
             if (responseTextOnObject != null && !string.IsNullOrEmpty(geminiResponse))
@@ -986,6 +1016,9 @@ IMPORTANT:
                         if (responseWrapper != null && !string.IsNullOrEmpty(responseWrapper.message))
                         {
                             responseTextOnObject.text = responseWrapper.message;
+                            
+                            // Log extracted message for user study
+                            LogUserStudy($"DISPLAYED_MESSAGE: {responseWrapper.message}");
                         }
                         else
                         {
@@ -1074,6 +1107,9 @@ IMPORTANT:
                     
                     if (!string.IsNullOrEmpty(jsonContent))
                     {
+                        // Log extracted JSON for user study (environment level only)
+                        LogUserStudy($"JSON_RESPONSE: {jsonContent}");
+                        
                         try 
                         {
                             // First, try to parse as a ResponseWrapper to determine the type
@@ -1100,6 +1136,7 @@ IMPORTANT:
                                         // Store the original message to use in UI
                                         string relationshipsMessage = responseWrapper.message;
                                         ProcessRelationships(relationships, sceneObjectManager.GetAllAnchors(), originalQuery, relationshipsMessage);
+                                        LogUserStudy($"RESPONSE_TYPE: relationships");
                                         break;
                                         
                                     case "highlight":
@@ -1110,6 +1147,7 @@ IMPORTANT:
                                         // Store the original message to use in UI
                                         string highlightMessage = responseWrapper.message;
                                         ProcessHighlights(highlightData, sceneObjectManager.GetAllAnchors(), originalQuery, highlightMessage);
+                                        LogUserStudy($"RESPONSE_TYPE: highlight");
                                         break;
                                         
                                     case "instruction":
@@ -1120,14 +1158,17 @@ IMPORTANT:
                                         // Store the original message to use in UI
                                         string instructionMessage = responseWrapper.message;
                                         ProcessInstructions(instructionSteps, sceneObjectManager.GetAllAnchors(), originalQuery, instructionMessage);
+                                        LogUserStudy($"RESPONSE_TYPE: instruction");
                                         break;
                                         
                                     case "none":
                                         Debug.Log($"[SpeechRecorder] No relevant objects or relationships found: {responseWrapper.message}");
+                                        LogUserStudy($"RESPONSE_TYPE: none");
                                         break;
                                         
                                     default:
                                         Debug.LogWarning($"[SpeechRecorder] Unknown response type: {responseWrapper.type}");
+                                        LogUserStudy($"RESPONSE_TYPE: unknown_{responseWrapper.type}");
                                         break;
                                 }
                             }
@@ -1211,16 +1252,19 @@ IMPORTANT:
                         catch (Exception ex)
                         {
                             Debug.LogError($"[SpeechRecorder] Error processing JSON response: {ex.Message}");
+                            LogUserStudy($"JSON_PARSING_ERROR: {ex.Message}");
                         }
                     }
                     else
                     {
                         Debug.Log("[SpeechRecorder] No valid JSON found in response");
+                        LogUserStudy("NO_JSON_FOUND");
                     }
                 }
                 catch (Exception ex)
                 {
                     Debug.LogError($"[SpeechRecorder] Error processing response: {ex.Message}");
+                    LogUserStudy($"RESPONSE_PROCESSING_ERROR: {ex.Message}");
                 }
             }
         }
@@ -1710,6 +1754,7 @@ IMPORTANT:
         if (string.IsNullOrEmpty(extractedJson))
         {
             Debug.LogWarning("[SpeechRecorder] Could not find valid JSON block in Gemini question response.");
+            LogUserStudy("FOLLOW_UP_QUESTIONS: Failed to generate");
             yield break;
         }
         
@@ -1719,6 +1764,12 @@ IMPORTANT:
         {
             questionsList = JsonConvert.DeserializeObject<List<string>>(extractedJson);
             Debug.Log($"[SpeechRecorder] Successfully parsed {questionsList.Count} questions from JSON");
+            
+            // Log follow-up questions for user study
+            if (questionsList != null && questionsList.Count > 0)
+            {
+                LogUserStudy($"FOLLOW_UP_QUESTIONS: {string.Join(" | ", questionsList)}");
+            }
         }
         catch (Exception e)
         {
@@ -2320,6 +2371,14 @@ IMPORTANT:
                 labelRenderer.material.color = highlightColor;
             }
         }
+    }
+
+    // Helper method for creating timestamped user study logs
+    private void LogUserStudy(string message)
+    {
+        if (!enableUserStudyLogging) return;
+        string timestamp = System.DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
+        Debug.Log($"[USER_STUDY_LOG][{timestamp}] {message}");
     }
 }
 

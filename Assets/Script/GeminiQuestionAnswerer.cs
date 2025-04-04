@@ -18,12 +18,16 @@ public class GeminiQuestionAnswerer : GeminiGeneral
 
     [SerializeField] private string systemPromptTemplate = "You are a helpful AI assistant responding to the user's question. You can see what the user is currently looking at, but you don't have to only rely on that. You don't have to wait to see the object to respond. Only respond information about this object. Please respond concisely and avoid using markdown formatting. User question: {0}";
 
+    [Header("User Study Logging")]
+    [SerializeField] private bool enableUserStudyLogging = true;
+
     /// <summary>
     /// Request an answer from Gemini for a specific question about the current camera frame
     /// </summary>
     /// <param name="questionContent">The question to ask about the image</param>
     public void RequestAnswer(string questionContent)
     {
+        LogUserStudy($"QUESTION_REQUESTED: Question=\"{questionContent}\"");
         StartCoroutine(QuestionAnswerRoutine(questionContent));
     }
 
@@ -31,35 +35,46 @@ public class GeminiQuestionAnswerer : GeminiGeneral
     {
         // 1) Capture frame from RenderTexture
         Texture2D frameTex = CaptureFrame(cameraRenderTex);
+        LogUserStudy($"FRAME_CAPTURED: Resolution=\"{frameTex.width}x{frameTex.height}\"");
 
         // 2) Convert to base64 (PNG)
         string base64Image = ConvertTextureToBase64(frameTex);
+        LogUserStudy($"IMAGE_ENCODED: Size={base64Image.Length} bytes");
 
         string formattedPrompt = string.Format(systemPromptTemplate, questionContent);
 
         // 3) Call Gemini with the question
         // This now uses the new RequestStatus system which supports concurrent API calls
         // from multiple components without interfering with each other
+        LogUserStudy($"GEMINI_API_CALL_STARTED: Question=\"{questionContent}\"");
+        var startTime = Time.realtimeSinceStartup;
+        
         var request = MakeGeminiRequest(formattedPrompt, base64Image);
         while (!request.IsCompleted)
         {
             yield return null;
         }
         string response = request.Result;
+        
+        float duration = Time.realtimeSinceStartup - startTime;
+        LogUserStudy($"GEMINI_API_CALL_COMPLETED: Duration={duration:F2}s, ResponseLength={response.Length}");
 
         Debug.Log($"Question: {formattedPrompt}\nResponse: {response}");
 
         // 4) Parse the response
         string answer = ParseQuestionResponse(response);
+        LogUserStudy($"RESPONSE_PARSED: Length={answer.Length}, Success={(answer != "Error parsing response" && answer != "Failed to parse response")}");
         
         // 5) Update UI if available
         if (answerText != null && !string.IsNullOrEmpty(answer))
         {
             answerText.text = answer;
+            LogUserStudy($"ANSWER_DISPLAYED: Length={answer.Length}");
         }
 
         // 6) Invoke event with the answer
         onAnswerReceived?.Invoke(answer);
+        LogUserStudy($"ANSWER_EVENT_INVOKED: Listeners={onAnswerReceived?.GetPersistentEventCount() ?? 0}");
 
         // Clean up texture
         Destroy(frameTex);
@@ -70,13 +85,18 @@ public class GeminiQuestionAnswerer : GeminiGeneral
         try
         {
             string parsedText = ParseGeminiRawResponse(response);
-            if (string.IsNullOrEmpty(parsedText)) return "Failed to parse response";
+            if (string.IsNullOrEmpty(parsedText))
+            {
+                LogUserStudy($"PARSING_FAILED: Reason=\"empty_response\"");
+                return "Failed to parse response";
+            }
 
             // Remove any markdown formatting if present
             parsedText = parsedText.Trim();
             if (parsedText.StartsWith("```") && parsedText.EndsWith("```"))
             {
                 parsedText = parsedText.Substring(3, parsedText.Length - 6).Trim();
+                LogUserStudy($"MARKDOWN_REMOVED: Type=\"code_block\"");
             }
 
             return parsedText;
@@ -84,7 +104,16 @@ public class GeminiQuestionAnswerer : GeminiGeneral
         catch (Exception ex)
         {
             Debug.LogError($"Error parsing question response: {ex}");
+            LogUserStudy($"PARSING_ERROR: Exception=\"{ex.GetType().Name}\", Message=\"{ex.Message}\"");
             return "Error parsing response";
         }
+    }
+    
+    // Helper method for creating timestamped user study logs
+    private void LogUserStudy(string message)
+    {
+        if (!enableUserStudyLogging) return;
+        string timestamp = System.DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
+        Debug.Log($"[USER_STUDY_LOG][{timestamp}] {message}");
     }
 } 

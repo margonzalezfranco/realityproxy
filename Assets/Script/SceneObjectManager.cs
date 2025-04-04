@@ -49,6 +49,9 @@ public class SceneObjectManager : MonoBehaviour
     public TextMeshPro pointingPlaneText;
     public MyHandTracking handTracking;
 
+    [Header("User Study Logging")]
+    [SerializeField] private bool enableUserStudyLogging = true;
+
     private void Awake()
     {
         // Basic singleton pattern
@@ -79,12 +82,14 @@ public class SceneObjectManager : MonoBehaviour
         {
             // It's the same object => maybe update label if "better"
             UpdateAnchorLabel(existing, newLabel);
+            LogUserStudy($"ANCHOR_UPDATED: Object=\"{existing.label}\", NewLabel=\"{newLabel}\", Position=\"{hitPos}\"");
         }
         else
         {
             // No match => create a new anchor
             SceneObjectAnchor newAnchor = CreateNewAnchor(newLabel, hitPos);
             anchors.Add(newAnchor);
+            LogUserStudy($"ANCHOR_CREATED: Object=\"{newLabel}\", Position=\"{hitPos}\"");
         }
     }
 
@@ -101,6 +106,7 @@ public class SceneObjectManager : MonoBehaviour
             {
                 // Possibly the same object. 
                 // You could refine further (e.g. compare color histograms), but for now we accept this match.
+                LogUserStudy($"ANCHOR_MATCHED: Object=\"{anchor.label}\", Position=\"{anchor.position}\", HitPosition=\"{hitPos}\", Distance={dist:F3}m");
                 return anchor;
             }
         }
@@ -117,6 +123,7 @@ public class SceneObjectManager : MonoBehaviour
         if (anchor.userLocked)
         {
             // If user locked it, do nothing
+            LogUserStudy($"ANCHOR_UPDATE_REJECTED: Object=\"{anchor.label}\", NewLabel=\"{newLabel}\", Reason=\"user_locked\"");
             return;
         }
 
@@ -124,8 +131,10 @@ public class SceneObjectManager : MonoBehaviour
         // For a simple example, let's just do a direct override if it's not the same string.
         if (!anchor.label.Equals(newLabel))
         {
+            string oldLabel = anchor.label;
             anchor.label = newLabel;
             Debug.Log($"Anchor updated label to: {newLabel}");
+            LogUserStudy($"ANCHOR_LABEL_CHANGED: Object=\"{oldLabel}\", NewLabel=\"{newLabel}\"");
 
             // If we have a sphere object with a label, let's update its text
             if (anchor.sphereObj != null)
@@ -152,7 +161,7 @@ public class SceneObjectManager : MonoBehaviour
         GameObject sphereObj = SpawnSphereWithLabel(position, label);
         newAnchor.sphereObj = sphereObj;
 
-        // Debug.Log($"Created new anchor with label={label} at pos={position}");
+        LogUserStudy($"ANCHOR_INITIALIZED: Object=\"{label}\", Position=\"{position}\", Radius={matchingRadius:F3}m");
         return newAnchor;
     }
 
@@ -215,6 +224,8 @@ public class SceneObjectManager : MonoBehaviour
 
             // give tmp to sphereToggleScript
             if (sphereToggleScript != null) sphereToggleScript.labelUnderSphere = tmp;
+            
+            LogUserStudy($"SPHERE_LABEL_CREATED: Object=\"{label}\", LabelPosition=\"{lblObj.transform.position}\"");
         }
 
         if (questionAnswerer != null)
@@ -240,6 +251,7 @@ public class SceneObjectManager : MonoBehaviour
             sphereToggleScript.handTracking = handTracking;
         }
 
+        LogUserStudy($"SPHERE_CREATED: Object=\"{label}\", Position=\"{position}\", Size={sphereSize:F3}m");
         return sphereObj;
     }
 
@@ -256,6 +268,8 @@ public class SceneObjectManager : MonoBehaviour
     [ContextMenu("Clear All Anchors")]
     public void ClearAllAnchors()
     {
+        int anchorCount = anchors.Count;
+        
         // Destroy all the sphere GameObjects
         foreach (var anchor in anchors)
         {
@@ -275,5 +289,14 @@ public class SceneObjectManager : MonoBehaviour
         }
         
         Debug.Log("All anchors have been cleared from the scene");
+        LogUserStudy($"ALL_ANCHORS_CLEARED: Count={anchorCount}");
+    }
+    
+    // Helper method for creating timestamped user study logs
+    private void LogUserStudy(string message)
+    {
+        if (!enableUserStudyLogging) return;
+        string timestamp = System.DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
+        Debug.Log($"[USER_STUDY_LOG][{timestamp}] {message}");
     }
 }

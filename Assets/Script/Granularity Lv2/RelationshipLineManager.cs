@@ -24,6 +24,9 @@ public class RelationshipLineManager : MonoBehaviour
     [Tooltip("Manager that tracks all recognized objects in the scene.")]
     public SceneObjectManager sceneObjectManager;
 
+    [Header("User Study Logging")]
+    [SerializeField] private bool enableUserStudyLogging = true;
+
     // We'll store active lines so we can remove them later
     private List<LineConnection> activeLines = new List<LineConnection>();
     
@@ -63,6 +66,9 @@ public class RelationshipLineManager : MonoBehaviour
         
         // Clear any step indicators from instruction steps
         ClearAllStepIndicators();
+        
+        // Log the clearing of all visual elements
+        LogUserStudy("CLEAR_ALL_VISUALS: ClearedLines=true, ClearedHighlights=true, ClearedStepIndicators=true");
         
         // Then, find and reset ALL scene anchors (in case some were highlighted but not connected by lines)
         if (sceneObjectManager != null)
@@ -140,6 +146,10 @@ public class RelationshipLineManager : MonoBehaviour
         }
 
         Debug.Log($"ShowRelationships: Timeout {(enableTimeout ? "enabled" : "disabled")}");
+        
+        // Log the relationship visualization for user study
+        string targetLabels = string.Join("|", relationships.Keys);
+        LogUserStudy($"SHOW_RELATIONSHIPS: Source=\"{sourceAnchor.label}\", Targets=\"{targetLabels}\", Count={relationships.Count}, Timeout={enableTimeout}");
 
         // Define relationship line color (hex: #3089CF)
         Color lineColor = new Color(
@@ -377,6 +387,15 @@ public class RelationshipLineManager : MonoBehaviour
         Debug.Log($"ShowBidirectionalRelationships: Timeout {(enableTimeout ? "enabled" : "disabled")}");
         Debug.Log($"ShowBidirectionalRelationships: Processing {relationships.Count} relationships with {allAnchors.Count} available anchors");
         
+        // Log the bidirectional relationship visualization for user study
+        List<string> relationshipDescs = new List<string>();
+        foreach (var relation in relationships)
+        {
+            relationshipDescs.Add($"{relation.SourceObject}->{relation.TargetObject}");
+        }
+        string relationshipSummary = string.Join("|", relationshipDescs);
+        LogUserStudy($"SHOW_BIDIRECTIONAL_RELATIONSHIPS: Count={relationships.Count}, Relationships=\"{relationshipSummary}\", Timeout={enableTimeout}");
+        
         // Log all available anchors for debugging
         foreach (var anchor in allAnchors)
         {
@@ -494,6 +513,9 @@ public class RelationshipLineManager : MonoBehaviour
             a: 1.0f     // 100% alpha
         );
         
+        // Log clearing all relationship lines for user study
+        LogUserStudy($"CLEAR_ALL_LINES: Count={activeLines.Count}");
+        
         // Restore original colors of source and target anchors
         HashSet<SceneObjectAnchor> processedAnchors = new HashSet<SceneObjectAnchor>();
         
@@ -597,6 +619,9 @@ public class RelationshipLineManager : MonoBehaviour
         // If found, remove it and reset the colors of both anchors
         if (lineToRemove != null)
         {
+            // Log clearing specific line for user study
+            LogUserStudy($"CLEAR_SPECIFIC_LINE: Source=\"{sourceAnchor.label}\", Target=\"{targetAnchor.label}\"");
+            
             // Reset both anchor colors
             // First, reset the source anchor color
             if (lineToRemove.source != null && lineToRemove.source.sphereObj != null)
@@ -715,6 +740,9 @@ public class RelationshipLineManager : MonoBehaviour
     /// </summary>
     public void ClearAllStepIndicators()
     {
+        // Log clearing step indicators for user study
+        LogUserStudy($"CLEAR_STEP_INDICATORS: Count={activeStepIndicators.Count}");
+        
         foreach (var indicator in activeStepIndicators)
         {
             if (indicator != null)
@@ -744,6 +772,9 @@ public class RelationshipLineManager : MonoBehaviour
             highlightTimer += Time.deltaTime;
             if (highlightTimer >= highlightTimeout)
             {
+                // Log timeout event for user study
+                LogUserStudy($"HIGHLIGHT_TIMEOUT: Duration={highlightTimeout}s");
+                
                 ClearAllHighlightsAndLines();
                 highlightTimer = 0f;
                 hasActiveHighlights = false;
@@ -801,5 +832,13 @@ public class RelationshipLineManager : MonoBehaviour
         public string SourceObject;
         public string TargetObject;
         public string RelationLabel;
+    }
+
+    // Helper method for creating timestamped user study logs
+    private void LogUserStudy(string message)
+    {
+        if (!enableUserStudyLogging) return;
+        string timestamp = System.DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
+        Debug.Log($"[USER_STUDY_LOG][{timestamp}] {message}");
     }
 }
