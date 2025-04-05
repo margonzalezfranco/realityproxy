@@ -27,7 +27,7 @@ public class GeminiQuestionAnswerer : GeminiGeneral
     /// <param name="questionContent">The question to ask about the image</param>
     public void RequestAnswer(string questionContent)
     {
-        LogUserStudy($"QUESTION_REQUESTED: Question=\"{questionContent}\"");
+        LogUserStudy($"[QUESTION_ANSWERER] QUESTION_REQUESTED: Question=\"{questionContent}\"");
         StartCoroutine(QuestionAnswerRoutine(questionContent));
     }
 
@@ -35,18 +35,18 @@ public class GeminiQuestionAnswerer : GeminiGeneral
     {
         // 1) Capture frame from RenderTexture
         Texture2D frameTex = CaptureFrame(cameraRenderTex);
-        LogUserStudy($"FRAME_CAPTURED: Resolution=\"{frameTex.width}x{frameTex.height}\"");
+        LogUserStudy($"[QUESTION_ANSWERER] FRAME_CAPTURED: Resolution=\"{frameTex.width}x{frameTex.height}\"");
 
         // 2) Convert to base64 (PNG)
         string base64Image = ConvertTextureToBase64(frameTex);
-        LogUserStudy($"IMAGE_ENCODED: Size={base64Image.Length} bytes");
+        LogUserStudy($"[QUESTION_ANSWERER] IMAGE_ENCODED: Size={base64Image.Length} bytes");
 
         string formattedPrompt = string.Format(systemPromptTemplate, questionContent);
 
         // 3) Call Gemini with the question
         // This now uses the new RequestStatus system which supports concurrent API calls
         // from multiple components without interfering with each other
-        LogUserStudy($"GEMINI_API_CALL_STARTED: Question=\"{questionContent}\"");
+        LogUserStudy($"[QUESTION_ANSWERER] GEMINI_API_CALL_STARTED: Question=\"{questionContent}\"");
         var startTime = Time.realtimeSinceStartup;
         
         var request = MakeGeminiRequest(formattedPrompt, base64Image);
@@ -57,24 +57,24 @@ public class GeminiQuestionAnswerer : GeminiGeneral
         string response = request.Result;
         
         float duration = Time.realtimeSinceStartup - startTime;
-        LogUserStudy($"GEMINI_API_CALL_COMPLETED: Duration={duration:F2}s, ResponseLength={response.Length}");
+        LogUserStudy($"[QUESTION_ANSWERER] GEMINI_API_CALL_COMPLETED: Duration={duration:F2}s, ResponseLength={response.Length}");
 
         Debug.Log($"Question: {formattedPrompt}\nResponse: {response}");
 
         // 4) Parse the response
         string answer = ParseQuestionResponse(response);
-        LogUserStudy($"RESPONSE_PARSED: Length={answer.Length}, Success={(answer != "Error parsing response" && answer != "Failed to parse response")}");
+        LogUserStudy($"[QUESTION_ANSWERER] RESPONSE_PARSED: Length={answer.Length}, Success={(answer != "Error parsing response" && answer != "Failed to parse response")}");
         
         // 5) Update UI if available
         if (answerText != null && !string.IsNullOrEmpty(answer))
         {
             answerText.text = answer;
-            LogUserStudy($"ANSWER_DISPLAYED: Length={answer.Length}");
+            LogUserStudy($"[QUESTION_ANSWERER] ANSWER_DISPLAYED: Length={answer.Length}");
         }
 
         // 6) Invoke event with the answer
         onAnswerReceived?.Invoke(answer);
-        LogUserStudy($"ANSWER_EVENT_INVOKED: Listeners={onAnswerReceived?.GetPersistentEventCount() ?? 0}");
+        LogUserStudy($"[QUESTION_ANSWERER] ANSWER_EVENT_INVOKED: Listeners={onAnswerReceived?.GetPersistentEventCount() ?? 0}");
 
         // Clean up texture
         Destroy(frameTex);
@@ -87,7 +87,7 @@ public class GeminiQuestionAnswerer : GeminiGeneral
             string parsedText = ParseGeminiRawResponse(response);
             if (string.IsNullOrEmpty(parsedText))
             {
-                LogUserStudy($"PARSING_FAILED: Reason=\"empty_response\"");
+                LogUserStudy($"[QUESTION_ANSWERER] PARSING_FAILED: Reason=\"empty_response\"");
                 return "Failed to parse response";
             }
 
@@ -96,7 +96,7 @@ public class GeminiQuestionAnswerer : GeminiGeneral
             if (parsedText.StartsWith("```") && parsedText.EndsWith("```"))
             {
                 parsedText = parsedText.Substring(3, parsedText.Length - 6).Trim();
-                LogUserStudy($"MARKDOWN_REMOVED: Type=\"code_block\"");
+                LogUserStudy($"[QUESTION_ANSWERER] MARKDOWN_REMOVED: Type=\"code_block\"");
             }
 
             return parsedText;
@@ -104,7 +104,7 @@ public class GeminiQuestionAnswerer : GeminiGeneral
         catch (Exception ex)
         {
             Debug.LogError($"Error parsing question response: {ex}");
-            LogUserStudy($"PARSING_ERROR: Exception=\"{ex.GetType().Name}\", Message=\"{ex.Message}\"");
+            LogUserStudy($"[QUESTION_ANSWERER] PARSING_ERROR: Exception=\"{ex.GetType().Name}\", Message=\"{ex.Message}\"");
             return "Error parsing response";
         }
     }

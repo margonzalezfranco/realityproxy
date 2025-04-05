@@ -68,7 +68,7 @@ public class RelationshipLineManager : MonoBehaviour
         ClearAllStepIndicators();
         
         // Log the clearing of all visual elements
-        LogUserStudy("CLEAR_ALL_VISUALS: ClearedLines=true, ClearedHighlights=true, ClearedStepIndicators=true");
+        // LogUserStudy("CLEAR_ALL_VISUALS: ClearedLines=true, ClearedHighlights=true, ClearedStepIndicators=true");
         
         // Then, find and reset ALL scene anchors (in case some were highlighted but not connected by lines)
         if (sceneObjectManager != null)
@@ -149,7 +149,6 @@ public class RelationshipLineManager : MonoBehaviour
         
         // Log the relationship visualization for user study
         string targetLabels = string.Join("|", relationships.Keys);
-        LogUserStudy($"SHOW_RELATIONSHIPS: Source=\"{sourceAnchor.label}\", Targets=\"{targetLabels}\", Count={relationships.Count}, Timeout={enableTimeout}");
 
         // Define relationship line color (hex: #3089CF)
         Color lineColor = new Color(
@@ -394,7 +393,7 @@ public class RelationshipLineManager : MonoBehaviour
             relationshipDescs.Add($"{relation.SourceObject}->{relation.TargetObject}");
         }
         string relationshipSummary = string.Join("|", relationshipDescs);
-        LogUserStudy($"SHOW_BIDIRECTIONAL_RELATIONSHIPS: Count={relationships.Count}, Relationships=\"{relationshipSummary}\", Timeout={enableTimeout}");
+        LogUserStudy($"[RELATIONSHIP_LINE_MANAGER] SHOW_BIDIRECTIONAL_RELATIONSHIPS: Count={relationships.Count}, Relationships=\"{relationshipSummary}\", Timeout={enableTimeout}");
         
         // Log all available anchors for debugging
         foreach (var anchor in allAnchors)
@@ -404,6 +403,10 @@ public class RelationshipLineManager : MonoBehaviour
 
         // First clear any existing lines
         ClearAllLines();
+
+        // Set the highlight timeout flag based on the parameter
+        highlightTimer = 0f;
+        hasActiveHighlights = enableTimeout;
 
         // Group relationships by source object
         Dictionary<string, Dictionary<string, string>> groupedRelationships = new Dictionary<string, Dictionary<string, string>>();
@@ -514,7 +517,7 @@ public class RelationshipLineManager : MonoBehaviour
         );
         
         // Log clearing all relationship lines for user study
-        LogUserStudy($"CLEAR_ALL_LINES: Count={activeLines.Count}");
+        // LogUserStudy($"CLEAR_ALL_LINES: Count={activeLines.Count}");
         
         // Restore original colors of source and target anchors
         HashSet<SceneObjectAnchor> processedAnchors = new HashSet<SceneObjectAnchor>();
@@ -620,7 +623,7 @@ public class RelationshipLineManager : MonoBehaviour
         if (lineToRemove != null)
         {
             // Log clearing specific line for user study
-            LogUserStudy($"CLEAR_SPECIFIC_LINE: Source=\"{sourceAnchor.label}\", Target=\"{targetAnchor.label}\"");
+            LogUserStudy($"[RELATIONSHIP_LINE_MANAGER] CLEAR_SPECIFIC_LINE: Source=\"{sourceAnchor.label}\", Target=\"{targetAnchor.label}\"");
             
             // Reset both anchor colors
             // First, reset the source anchor color
@@ -741,7 +744,7 @@ public class RelationshipLineManager : MonoBehaviour
     public void ClearAllStepIndicators()
     {
         // Log clearing step indicators for user study
-        LogUserStudy($"CLEAR_STEP_INDICATORS: Count={activeStepIndicators.Count}");
+        // LogUserStudy($"CLEAR_STEP_INDICATORS: Count={activeStepIndicators.Count}");
         
         foreach (var indicator in activeStepIndicators)
         {
@@ -763,7 +766,7 @@ public class RelationshipLineManager : MonoBehaviour
         public GameObject labelObject;  // Add this to track the label
     }
 
-    // Update method simplified to match the original code
+    // Update method modified to respect the timeout setting
     private void Update()
     {
         // Check if we should clear highlights due to timeout
@@ -772,9 +775,6 @@ public class RelationshipLineManager : MonoBehaviour
             highlightTimer += Time.deltaTime;
             if (highlightTimer >= highlightTimeout)
             {
-                // Log timeout event for user study
-                LogUserStudy($"HIGHLIGHT_TIMEOUT: Duration={highlightTimeout}s");
-                
                 ClearAllHighlightsAndLines();
                 highlightTimer = 0f;
                 hasActiveHighlights = false;

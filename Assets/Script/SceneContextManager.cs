@@ -43,7 +43,6 @@ public class SceneContextManager : GeminiGeneral
 
     private void Start()
     {
-        LogUserStudy($"SCENE_CONTEXT_MANAGER_STARTED: Period={analysisPeriod}s, AutoAnalysis={isAnalyzing}");
         StartCoroutine(PeriodicAnalysisRoutine());
     }
 
@@ -53,7 +52,6 @@ public class SceneContextManager : GeminiGeneral
         {
             if (isAnalyzing)
             {
-                LogUserStudy("PERIODIC_ANALYSIS_TRIGGERED: Automatic=true");
                 yield return StartCoroutine(AnalyzeSceneRoutine());
             }
             yield return new WaitForSeconds(analysisPeriod);
@@ -64,15 +62,12 @@ public class SceneContextManager : GeminiGeneral
     {
         analysisCount++;
         int currentAnalysisId = analysisCount;
-        LogUserStudy($"SCENE_ANALYSIS_STARTED: ID={currentAnalysisId}");
         
         // 1) Capture frame from RenderTexture
         Texture2D frameTex = CaptureFrame(cameraRenderTex);
-        LogUserStudy($"FRAME_CAPTURED: ID={currentAnalysisId}, Resolution=\"{frameTex.width}x{frameTex.height}\"");
 
         // 2) Convert to base64
         string base64Image = ConvertTextureToBase64(frameTex);
-        LogUserStudy($"IMAGE_ENCODED: ID={currentAnalysisId}, Size={base64Image.Length} bytes");
 
         // 3) Build context-aware prompt
         string contextPrompt = BuildContextAwarePrompt();
@@ -82,12 +77,10 @@ public class SceneContextManager : GeminiGeneral
             var anchors = sceneManager.GetAllAnchors();
             detectedObjectCount = anchors?.Count ?? 0;
         }
-        LogUserStudy($"CONTEXT_PROMPT_BUILT: ID={currentAnalysisId}, DetectedObjects={detectedObjectCount}");
-
+    
         // 4) Call Gemini
         // This now uses the new RequestStatus system which supports concurrent API calls
         // from multiple components without blocking or interfering with each other
-        LogUserStudy($"GEMINI_API_CALL_STARTED: ID={currentAnalysisId}");
         var startTime = Time.realtimeSinceStartup;
         
         var request = MakeGeminiRequest(contextPrompt, base64Image);
@@ -98,12 +91,10 @@ public class SceneContextManager : GeminiGeneral
         string response = request.Result;
         
         float duration = Time.realtimeSinceStartup - startTime;
-        LogUserStudy($"GEMINI_API_CALL_COMPLETED: ID={currentAnalysisId}, Duration={duration:F2}s, ResponseLength={response.Length}");
 
         // 5) Parse response
         SceneContext analysis = ParseAnalysisResponse(response);
         bool parseSuccess = analysis != null;
-        LogUserStudy($"SCENE_ANALYSIS_PARSED: ID={currentAnalysisId}, Success={parseSuccess}");
         
         // 6) Update inspector and notify subscribers
         HandleSceneAnalysis(analysis);
@@ -112,14 +103,11 @@ public class SceneContextManager : GeminiGeneral
             int taskCount = analysis.possibleTasks?.Count ?? 0;
             int objectCount = analysis.relevantObjects?.Count ?? 0;
             
-            LogUserStudy($"SCENE_ANALYSIS_COMPLETED: ID={currentAnalysisId}, SceneType=\"{analysis.sceneType}\", TaskCount={taskCount}, ObjectCount={objectCount}");
             
             OnSceneContextComplete?.Invoke(analysis);
-            LogUserStudy($"CONTEXT_EVENT_INVOKED: Listeners={OnSceneContextComplete?.GetInvocationList().Length ?? 0}");
         }
         else
         {
-            LogUserStudy($"SCENE_ANALYSIS_FAILED: ID={currentAnalysisId}");
         }
 
         // Clean up
@@ -157,7 +145,6 @@ public class SceneContextManager : GeminiGeneral
             string jsonText = ParseGeminiRawResponse(response);
             if (string.IsNullOrEmpty(jsonText))
             {
-                LogUserStudy($"PARSING_FAILED: Reason=\"empty_response\"");
                 return null;
             }
 
@@ -166,7 +153,6 @@ public class SceneContextManager : GeminiGeneral
         catch (System.Exception ex)
         {
             Debug.LogError($"Error parsing scene analysis response: {ex}");
-            LogUserStudy($"PARSING_ERROR: Exception=\"{ex.GetType().Name}\", Message=\"{ex.Message}\"");
             return null;
         }
     }
@@ -176,7 +162,6 @@ public class SceneContextManager : GeminiGeneral
     /// </summary>
     public void TriggerAnalysis()
     {
-        LogUserStudy("MANUAL_ANALYSIS_TRIGGERED: User=true");
         StartCoroutine(AnalyzeSceneRoutine());
     }
 
@@ -192,7 +177,7 @@ public class SceneContextManager : GeminiGeneral
             currentRelevantObjects = analysis.relevantObjects?.ToArray() ?? new string[0];
             lastAnalysisTime = System.DateTime.Now.ToString("HH:mm:ss");
             
-            LogUserStudy($"SCENE_CONTEXT_UPDATED: SceneType=\"{currentSceneType}\", Tasks={currentPossibleTasks.Length}, Objects={currentRelevantObjects.Length}");
+            LogUserStudy($"[SCENE_CONTEXT_MANAGER] SCENE_CONTEXT_UPDATED: SceneType=\"{currentSceneType}\", Tasks=\"{string.Join(", ", currentPossibleTasks)}\", Objects=\"{string.Join(", ", currentRelevantObjects)}\"");
         }
         else
         {
@@ -200,8 +185,6 @@ public class SceneContextManager : GeminiGeneral
             currentSceneType = "Analysis failed";
             currentPossibleTasks = new string[0];
             currentRelevantObjects = new string[0];
-            
-            LogUserStudy("SCENE_CONTEXT_UPDATE_FAILED");
         }
     }
 

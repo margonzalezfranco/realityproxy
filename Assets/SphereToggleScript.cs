@@ -197,7 +197,7 @@ public class SphereToggleScript : MonoBehaviour
                 if (pointingPlaneText != null && !string.IsNullOrEmpty(pointingPlaneText.text) && 
                     pointingPlaneText.text != "none" && labelUnderSphere != null)
                 {
-                    LogUserStudy($"POINTING_STARTED: Object=\"{labelUnderSphere.text}\", Part=\"{pointingPlaneText.text}\"");
+                    LogUserStudy($"[DETAIL] [POINTING] POINTING_STARTED: Object=\"{labelUnderSphere.text}\", Part=\"{pointingPlaneText.text}\"");
                 }
                 
                 // Generate specialized questions for the part being pointed at
@@ -217,11 +217,11 @@ public class SphereToggleScript : MonoBehaviour
                 pointingPlane.SetActive(false);
                 relativePosition = Vector3.zero;
                 
-                // Log pointing end for user study
-                if (labelUnderSphere != null)
-                {
-                    LogUserStudy($"POINTING_ENDED: Object=\"{labelUnderSphere.text}\"");
-                }
+                // // Log pointing end for user study
+                // if (labelUnderSphere != null)
+                // {
+                //     LogUserStudy($"POINTING_ENDED: Object=\"{labelUnderSphere.text}\"");
+                // }
             }
             
             // Make sure to stop recording if it's active before resetting position
@@ -435,11 +435,11 @@ public class SphereToggleScript : MonoBehaviour
         // Log the toggling action for user study
         if (toggledOn && labelUnderSphere != null)
         {
-            LogUserStudy($"OBJECT_TOGGLED: Object=\"{labelUnderSphere.text}\", State=ON");
+            LogUserStudy($"[OBJECT] OBJECT_TOGGLED: Object=\"{labelUnderSphere.text}\", State=ON");
         }
         else if (!toggledOn && labelUnderSphere != null)
         {
-            LogUserStudy($"OBJECT_TOGGLED: Object=\"{labelUnderSphere.text}\", State=OFF");
+            LogUserStudy($"[OBJECT] OBJECT_TOGGLED: Object=\"{labelUnderSphere.text}\", State=OFF");
         }
         
         // Update the label toggle to match this toggle's state
@@ -1098,7 +1098,7 @@ public class SphereToggleScript : MonoBehaviour
             Debug.LogWarning("Could not find valid JSON block in Gemini question response.");
             
             // Log failure to generate questions for user study
-            LogUserStudy($"QUESTIONS_GENERATION_FAILED: Object=\"{labelContent}\"");
+            LogUserStudy($"[OBJECT] [SUGGESTED_ACTION] QUESTIONS_GENERATION_FAILED: Object=\"{labelContent}\"");
             
             yield break;
         }
@@ -1112,7 +1112,7 @@ public class SphereToggleScript : MonoBehaviour
             // Log successful question generation for user study
             if (questionsList != null && questionsList.Count > 0)
             {
-                LogUserStudy($"QUESTIONS_GENERATED: Object=\"{labelContent}\", Count={questionsList.Count}, Questions=\"{string.Join(" | ", questionsList)}\"");
+                LogUserStudy($"[OBJECT] [SUGGESTED_ACTION] QUESTIONS_GENERATED: Object=\"{labelContent}\", Count={questionsList.Count}, Questions=\"{string.Join(" | ", questionsList)}\"");
             }
         }
         catch (Exception e)
@@ -1245,7 +1245,7 @@ public class SphereToggleScript : MonoBehaviour
             Debug.LogWarning("No valid JSON found in relationships response.");
             
             // Log failure to find relationships for user study
-            LogUserStudy($"RELATIONSHIPS_GENERATION_FAILED: Object=\"{inHandLabel}\"");
+            LogUserStudy($"[ENV] [OBJECT_RELATIONSHIPS] RELATIONSHIPS_GENERATION_FAILED: Object=\"{inHandLabel}\"");
             
             yield break;
         }
@@ -1267,7 +1267,7 @@ public class SphereToggleScript : MonoBehaviour
             Debug.Log($"No meaningful relationships found for '{inHandLabel}' in the current context.");
             
             // Log no relationships found for user study
-            LogUserStudy($"NO_RELATIONSHIPS_FOUND: Object=\"{inHandLabel}\"");
+            LogUserStudy($"[ENV] [OBJECT_RELATIONSHIPS] NO_RELATIONSHIPS_FOUND: Object=\"{inHandLabel}\"");
             
             // Clear any existing relationship lines since there are no relationships
             if (relationLineManager != null)
@@ -1284,7 +1284,7 @@ public class SphereToggleScript : MonoBehaviour
         {
             relationshipSb.Append($"{kvp.Key}=\"{kvp.Value}\" | ");
         }
-        LogUserStudy($"RELATIONSHIPS_FOUND: Object=\"{inHandLabel}\", Count={relationshipsDict.Count}, Relationships=\"{relationshipSb.ToString().TrimEnd(' ', '|')}\"");
+        LogUserStudy($"[ENV] [OBJECT_RELATIONSHIPS] RELATIONSHIPS_FOUND: Object=\"{inHandLabel}\", Count={relationshipsDict.Count}, Relationships=\"{relationshipSb.ToString().TrimEnd(' ', '|')}\"");
         
         // 6) Show lines from this specific sphere to each related anchor
         // Instead of using GetAnchorByLabel, we'll find the anchor that matches our specific GameObject
@@ -1294,7 +1294,10 @@ public class SphereToggleScript : MonoBehaviour
             Debug.LogWarning($"No anchor found for this sphere GameObject!");
             yield break;
         }
-        relationLineManager.ShowRelationships(myAnchor, relationshipsDict, anchors);
+        
+        // When relationships are generated from manually toggling a sphere, 
+        // we set enableTimeout to false to prevent auto-clearing
+        relationLineManager.ShowRelationships(myAnchor, relationshipsDict, anchors, false);
     }
 
     /// <summary>
@@ -1474,7 +1477,7 @@ public class SphereToggleScript : MonoBehaviour
             // Log grab action for user study
             if (labelUnderSphere != null)
             {
-                LogUserStudy($"OBJECT_GRABBED: Object=\"{labelUnderSphere.text}\"");
+                LogUserStudy($"[OBJECT] OBJECT_GRABBED: Object=\"{labelUnderSphere.text}\"");
             }
             
             // Find the Menu canvas parent of InfoPanel
@@ -1522,11 +1525,11 @@ public class SphereToggleScript : MonoBehaviour
         // Check if this is our anchor
         if (anchor.sphereObj == this.gameObject)
         {
-            // Log release action for user study
-            if (labelUnderSphere != null)
-            {
-                LogUserStudy($"OBJECT_RELEASED: Object=\"{labelUnderSphere.text}\"");
-            }
+            // // Log release action for user study
+            // if (labelUnderSphere != null)
+            // {
+            //     LogUserStudy($"OBJECT_RELEASED: Object=\"{labelUnderSphere.text}\"");
+            // }
             
             // Find the Menu canvas parent of InfoPanel
             Transform menuCanvas = InfoPanel.transform.parent;
@@ -1588,6 +1591,8 @@ public class SphereToggleScript : MonoBehaviour
 
             UpdateRecorderToggle(true);
             UpdateObjectTrackingToggle(true);
+
+            LogUserStudy($"[OBJECT] TOGGLE_ON: Object=\"{labelUnderSphere.text}\"");
 
             // Set the current active anchor for the HandGrabTrigger system
             SceneObjectAnchor thisAnchor = SceneObjectManager.Instance.GetAnchorByGameObject(this.gameObject);
@@ -1696,6 +1701,8 @@ public class SphereToggleScript : MonoBehaviour
             answerPanel.SetActive(false);
             UpdateRecorderToggle(false);
             UpdateObjectTrackingToggle(false);
+
+            LogUserStudy($"[OBJECT] TOGGLE_OFF: Object=\"{labelUnderSphere.text}\"");
             
             // Stop any active coroutines
             if (activeQuestionGenerationCoroutine != null)
@@ -1799,7 +1806,7 @@ public class SphereToggleScript : MonoBehaviour
         Debug.Log($"Generating proximity relationship between '{thisObjectLabel}' and '{nearbyObjectLabel}'");
         
         // Log proximity relationship request for user study
-        LogUserStudy($"PROXIMITY_RELATIONSHIP: Source=\"{thisObjectLabel}\", Target=\"{nearbyObjectLabel}\"");
+        LogUserStudy($"[ENV] [PROXIMITY] PROXIMITY_RELATIONSHIP: Source=\"{thisObjectLabel}\", Target=\"{nearbyObjectLabel}\"");
         
         // Start the coroutine to generate relationship specifically between these two objects
         StartCoroutine(GenerateSpecificRelationshipRoutine(thisObjectLabel, nearbyObjectLabel));
@@ -1871,8 +1878,9 @@ public class SphereToggleScript : MonoBehaviour
         };
         
         // Show initial connection line with loading text
+        // Explicitly set enableTimeout to false for proximity relationships (user-initiated)
         var allAnchors = sceneObjManager.GetAllAnchors();
-        relationLineManager.ShowRelationships(myAnchor, loadingDict, allAnchors, false); // Disable timeout for proximity relationships
+        relationLineManager.ShowRelationships(myAnchor, loadingDict, allAnchors, false);
         
         // Build prompt specifically for these two objects
         string prompt = $@"
@@ -1969,8 +1977,8 @@ public class SphereToggleScript : MonoBehaviour
         // Get the current relationship
         string currentRelationship = relationshipDict[objectB];
         
-        // Show the final relationship with proper text
-        relationLineManager.ShowRelationships(myAnchor, relationshipDict, allAnchors, false); // Disable timeout for proximity relationships
+        // Show the final relationship with proper text - explicitly disable timeout
+        relationLineManager.ShowRelationships(myAnchor, relationshipDict, allAnchors, false);
 
         // Check if we should generate new questions based on the relationship
         // Only generate new questions if:
@@ -2092,7 +2100,7 @@ public class SphereToggleScript : MonoBehaviour
                 // Log auto-recording start for user study
                 if (lastRecordedPart != null && labelUnderSphere != null)
                 {
-                    LogUserStudy($"AUTO_RECORDING_STARTED: Object=\"{labelUnderSphere.text}\", Part=\"{lastRecordedPart}\"");
+                    LogUserStudy($"[DETAIL] [POINTING] AUTO_RECORDING_STARTED: Object=\"{labelUnderSphere.text}\", Part=\"{lastRecordedPart}\"");
                 }
                 
                 // Simulate pressing the recorder toggle button
@@ -2163,11 +2171,11 @@ public class SphereToggleScript : MonoBehaviour
             // Only toggle if actually recording
             if (currentlyRecording && toggle != null)
             {
-                // Log auto-recording stop for user study
-                if (labelUnderSphere != null)
-                {
-                    LogUserStudy($"AUTO_RECORDING_STOPPED: Object=\"{labelUnderSphere.text}\", Duration={delay}s");
-                }
+                // // Log auto-recording stop for user study
+                // if (labelUnderSphere != null)
+                // {
+                //     LogUserStudy($"AUTO_RECORDING_STOPPED: Object=\"{labelUnderSphere.text}\", Duration={delay}s");
+                // }
                 
                 // Simulate button press sequence
                 toggle.PressStart();
@@ -2470,7 +2478,7 @@ public class SphereToggleScript : MonoBehaviour
             Debug.LogWarning("Could not find valid JSON block in Gemini question response for pointing.");
             
             // Log failure for user study
-            LogUserStudy($"PART_QUESTIONS_GENERATION_FAILED: Object=\"{objectLabel}\", Part=\"{partName}\"");
+            LogUserStudy($"[DETAIL] [POINTING] PART_QUESTIONS_GENERATION_FAILED: Object=\"{objectLabel}\", Part=\"{partName}\"");
             
             yield break;
         }
@@ -2484,7 +2492,7 @@ public class SphereToggleScript : MonoBehaviour
             // Log success for user study
             if (questionsList != null && questionsList.Count > 0)
             {
-                LogUserStudy($"PART_QUESTIONS_GENERATED: Object=\"{objectLabel}\", Part=\"{partName}\", Count={questionsList.Count}, Questions=\"{string.Join(" | ", questionsList)}\"");
+                LogUserStudy($"[DETAIL] [POINTING] PART_QUESTIONS_GENERATED: Object=\"{objectLabel}\", Part=\"{partName}\", Count={questionsList.Count}, Questions=\"{string.Join(" | ", questionsList)}\"");
             }
         }
         catch (Exception e)

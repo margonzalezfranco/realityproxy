@@ -214,7 +214,22 @@ IMPORTANT:
 
         // Check critical UI references
         if (chatboxOnObject == null) Debug.LogError("ChatboxOnObject reference is missing! Responses won't be displayed.");
-        if (responseTextOnObject == null) Debug.LogError("ResponseTextOnObject reference is missing! Response text won't be displayed.");
+        if (responseTextOnObject == null) 
+        {
+            Debug.LogError("ResponseTextOnObject reference is missing! Response text won't be displayed.");
+            
+            // Try to find text component in the chatbox if it exists
+            if (chatboxOnObject != null)
+            {
+                TMPro.TextMeshPro[] textComponents = chatboxOnObject.GetComponentsInChildren<TMPro.TextMeshPro>(true);
+                if (textComponents.Length > 0)
+                {
+                    // Use the first TextMeshPro component found
+                    responseTextOnObject = textComponents[0];
+                    Debug.Log($"[SpeechRecorder] Auto-assigned responseTextOnObject to {responseTextOnObject.name}");
+                }
+            }
+        }
         
         if (chatboxOnObject != null)
         {
@@ -222,6 +237,36 @@ IMPORTANT:
             if (responseTextOnObject != null)
             {
                 Debug.Log($"ResponseTextOnObject found: {responseTextOnObject.name}");
+                
+                // Check if responseTextOnObject is properly nested under chatboxOnObject
+                bool isChildOfChatbox = false;
+                Transform parent = responseTextOnObject.transform.parent;
+                while (parent != null)
+                {
+                    if (parent.gameObject == chatboxOnObject)
+                    {
+                        isChildOfChatbox = true;
+                        break;
+                    }
+                    parent = parent.parent;
+                }
+                
+                if (!isChildOfChatbox)
+                {
+                    Debug.LogError("ResponseTextOnObject is not a child of chatboxOnObject! Text won't display properly in the chatbox.");
+                    
+                    // Try to find an alternative TextMeshPro component in the chatbox
+                    TMPro.TextMeshPro[] chatboxTextComponents = chatboxOnObject.GetComponentsInChildren<TMPro.TextMeshPro>(true);
+                    if (chatboxTextComponents.Length > 0)
+                    {
+                        responseTextOnObject = chatboxTextComponents[0];
+                        Debug.Log($"[SpeechRecorder] Reassigned responseTextOnObject to {responseTextOnObject.name} inside chatbox");
+                    }
+                }
+                else
+                {
+                    Debug.Log("ResponseTextOnObject is properly nested under chatboxOnObject.");
+                }
             }
         }
 
@@ -744,7 +789,7 @@ IMPORTANT:
                     requestText.text = transcriptionResult;
                     
                     // Log the user query for user study
-                    LogUserStudy($"USER_QUERY: \"{transcriptionResult}\"");
+                    LogUserStudy($"[VOICE_INPUT] USER_QUERY: \"{transcriptionResult}\"");
                     
                     TalkToGemini(transcriptionResult);
                 }
@@ -913,8 +958,7 @@ IMPORTANT:
             contextType = "PART_SPECIFIC";
             
             // Log context for user study
-            LogUserStudy($"CONTEXT_TYPE: {contextType}");
-            LogUserStudy($"CONTEXT_DETAILS: Object=\"{currentObjectLabel}\", Part=\"{pointingPartName}\", PartDescription=\"{pointingPartDescription}\"");
+            LogUserStudy($"[VOICE_INPUT] [OBJECT_POINTING] CONTEXT: Type=\"{contextType}\", Object=\"{currentObjectLabel}\", Part=\"{pointingPartName}\", PartDescription=\"{pointingPartDescription}\"");
         }
         // Otherwise, if in object mode, use the object context prompt template
         else if (isObjectMode)
@@ -924,8 +968,7 @@ IMPORTANT:
             contextType = "OBJECT_LEVEL";
             
             // Log context for user study
-            LogUserStudy($"CONTEXT_TYPE: {contextType}");
-            LogUserStudy($"CONTEXT_DETAILS: Object=\"{currentObjectLabel}\"");
+            LogUserStudy($"[VOICE_INPUT] [OBJECT] CONTEXT: Type=\"{contextType}\", Object=\"{currentObjectLabel}\"");
         }
         else // Global Mode
         {
@@ -958,8 +1001,7 @@ IMPORTANT:
             }
             
             // Log context for user study
-            LogUserStudy($"CONTEXT_TYPE: {contextType}");
-            LogUserStudy($"CONTEXT_DETAILS: SceneType=\"{currentSceneContext}\", Objects=\"{objectListString}\"");
+            LogUserStudy($"[VOICE_INPUT] [ENV] CONTEXT: Type=\"{contextType}\", SceneType=\"{currentSceneContext}\", Objects=\"{objectListString}\"");
             
              // --- Format the Global Prompt ---
             finalPrompt = string.Format(environmentLevelPromptTemplate, currentSceneContext, objectListString, userQuery);
@@ -992,7 +1034,7 @@ IMPORTANT:
             geminiResponse = "Error communicating with Gemini.";
             
             // Log error for user study
-            LogUserStudy($"GEMINI_ERROR: {requestStatus.Error.Message}");
+            LogUserStudy($"[VOICE_INPUT] [GEMINI] GEMINI_ERROR: {requestStatus.Error.Message}");
         }
         else
         {
@@ -1000,8 +1042,9 @@ IMPORTANT:
             geminiResponse = ParseGeminiRawResponse(rawResponse);
             Debug.Log($"Gemini response: {geminiResponse}");
             
-            // Log Gemini's response for user study
-            LogUserStudy($"GEMINI_RESPONSE: {geminiResponse}");
+            // // Log Gemini's response for user study - sanitize to ensure it's a single line
+            // string sanitizedResponse = geminiResponse.Replace("\n", " ").Replace("\r", "");
+            // LogUserStudy($"[VOICE_INPUT] [GEMINI] RAW_RESPONSE: {sanitizedResponse}");
 
             // Update UI if available - now showing the user-friendly message
             if (responseTextOnObject != null && !string.IsNullOrEmpty(geminiResponse))
@@ -1018,23 +1061,37 @@ IMPORTANT:
                             responseTextOnObject.text = responseWrapper.message;
                             
                             // Log extracted message for user study
-                            LogUserStudy($"DISPLAYED_MESSAGE: {responseWrapper.message}");
+                            LogUserStudy($"[VOICE_INPUT] [GEMINI] DISPLAYED_MESSAGE: {responseWrapper.message}");
                         }
                         else
                         {
                             responseTextOnObject.text = geminiResponse;
+                            Debug.Log("[SpeechRecorder] Using raw response as text (JSON wrapper had no message)");
                         }
                     }
                     else
                     {
+                        // No JSON found in the response, use the raw text directly
                         responseTextOnObject.text = geminiResponse;
+                        Debug.Log("[SpeechRecorder] Using raw response as text (no JSON found)");
+                        
+                        // Log the displayed message for user study
+                        LogUserStudy($"[VOICE_INPUT] [GEMINI] DISPLAYED_MESSAGE: {geminiResponse}");
                     }
                 }
                 catch (Exception ex)
                 {
                     Debug.LogWarning($"Failed to parse response for object text: {ex.Message}");
                     responseTextOnObject.text = geminiResponse;
+                    Debug.Log("[SpeechRecorder] Using raw response as text after exception: " + ex.Message);
+                    
+                    // Log the displayed message for user study
+                    LogUserStudy($"[VOICE_INPUT] [GEMINI] DISPLAYED_MESSAGE: {geminiResponse}");
                 }
+            }
+            else if (responseTextOnObject == null)
+            {
+                Debug.LogError("[SpeechRecorder] responseTextOnObject is null! Cannot display text response.");
             }
 
             // Update UI if available
@@ -1052,6 +1109,38 @@ IMPORTANT:
                         Debug.Log("[SpeechRecorder] Found parent canvas, forcing refresh");
                         canvas.enabled = false;
                         canvas.enabled = true;
+                    }
+                }
+                
+                // Double-check that responseTextOnObject has the correct text after activation
+                if (responseTextOnObject != null)
+                {
+                    // Ensure the text field has our response
+                    if (string.IsNullOrEmpty(responseTextOnObject.text))
+                    {
+                        Debug.LogWarning("[SpeechRecorder] Response text was empty after activation, forcing update");
+                        responseTextOnObject.text = geminiResponse;
+                    }
+                    
+                    // Force the TextMeshPro component to update
+                    responseTextOnObject.ForceMeshUpdate();
+                    Debug.Log($"[SpeechRecorder] responseTextOnObject text after activation: '{responseTextOnObject.text.Substring(0, Math.Min(50, responseTextOnObject.text.Length))}...'");
+                }
+                else
+                {
+                    Debug.LogError("[SpeechRecorder] responseTextOnObject is null when trying to update after chatbox activation!");
+                    
+                    // Try to find responseTextOnObject in children of chatboxOnObject
+                    TMPro.TextMeshPro[] textComponents = chatboxOnObject.GetComponentsInChildren<TMPro.TextMeshPro>(true);
+                    if (textComponents.Length > 0)
+                    {
+                        Debug.Log($"[SpeechRecorder] Found {textComponents.Length} TextMeshPro components in chatboxOnObject children");
+                        foreach (var textComp in textComponents)
+                        {
+                            Debug.Log($"[SpeechRecorder] TextMeshPro component: {textComp.name}, Text: {textComp.text.Substring(0, Math.Min(20, textComp.text.Length))}");
+                            textComp.text = geminiResponse;
+                            textComp.ForceMeshUpdate();
+                        }
                     }
                 }
                 
@@ -1108,7 +1197,8 @@ IMPORTANT:
                     if (!string.IsNullOrEmpty(jsonContent))
                     {
                         // Log extracted JSON for user study (environment level only)
-                        LogUserStudy($"JSON_RESPONSE: {jsonContent}");
+                        string sanitizedJson = jsonContent.Replace("\n", " ").Replace("\r", "");
+                        LogUserStudy($"[VOICE_INPUT] [ENV] JSON_RESPONSE: {sanitizedJson}");
                         
                         try 
                         {
@@ -1136,7 +1226,7 @@ IMPORTANT:
                                         // Store the original message to use in UI
                                         string relationshipsMessage = responseWrapper.message;
                                         ProcessRelationships(relationships, sceneObjectManager.GetAllAnchors(), originalQuery, relationshipsMessage);
-                                        LogUserStudy($"RESPONSE_TYPE: relationships");
+                                        // LogUserStudy($"RESPONSE_TYPE: relationships");
                                         break;
                                         
                                     case "highlight":
@@ -1147,7 +1237,7 @@ IMPORTANT:
                                         // Store the original message to use in UI
                                         string highlightMessage = responseWrapper.message;
                                         ProcessHighlights(highlightData, sceneObjectManager.GetAllAnchors(), originalQuery, highlightMessage);
-                                        LogUserStudy($"RESPONSE_TYPE: highlight");
+                                        // LogUserStudy($"RESPONSE_TYPE: highlight");
                                         break;
                                         
                                     case "instruction":
@@ -1158,17 +1248,20 @@ IMPORTANT:
                                         // Store the original message to use in UI
                                         string instructionMessage = responseWrapper.message;
                                         ProcessInstructions(instructionSteps, sceneObjectManager.GetAllAnchors(), originalQuery, instructionMessage);
-                                        LogUserStudy($"RESPONSE_TYPE: instruction");
+                                        // LogUserStudy($"RESPONSE_TYPE: instruction");
                                         break;
                                         
                                     case "none":
                                         Debug.Log($"[SpeechRecorder] No relevant objects or relationships found: {responseWrapper.message}");
-                                        LogUserStudy($"RESPONSE_TYPE: none");
+                                        string sanitizedNoneMessage = responseWrapper.message?.Replace("\n", " ").Replace("\r", "");
+                                        // LogUserStudy($"RESPONSE_TYPE: none");
+                                        LogUserStudy($"[VOICE_INPUT] [ENV] PROCESS_RESULT: Type=\"none\", Message=\"{sanitizedNoneMessage}\"");
                                         break;
                                         
                                     default:
                                         Debug.LogWarning($"[SpeechRecorder] Unknown response type: {responseWrapper.type}");
-                                        LogUserStudy($"RESPONSE_TYPE: unknown_{responseWrapper.type}");
+                                        // LogUserStudy($"RESPONSE_TYPE: unknown_{responseWrapper.type}");
+                                        LogUserStudy($"[VOICE_INPUT] [ENV] PROCESS_RESULT: Type=\"unknown\", ResponseType=\"{responseWrapper.type}\"");
                                         break;
                                 }
                             }
@@ -1252,19 +1345,19 @@ IMPORTANT:
                         catch (Exception ex)
                         {
                             Debug.LogError($"[SpeechRecorder] Error processing JSON response: {ex.Message}");
-                            LogUserStudy($"JSON_PARSING_ERROR: {ex.Message}");
+                            LogUserStudy($"[VOICE_INPUT] [ENV] JSON_PARSING_ERROR: {ex.Message}");
                         }
                     }
                     else
                     {
                         Debug.Log("[SpeechRecorder] No valid JSON found in response");
-                        LogUserStudy("NO_JSON_FOUND");
+                        LogUserStudy("[VOICE_INPUT] [ENV] NO_JSON_FOUND");
                     }
                 }
                 catch (Exception ex)
                 {
                     Debug.LogError($"[SpeechRecorder] Error processing response: {ex.Message}");
-                    LogUserStudy($"RESPONSE_PROCESSING_ERROR: {ex.Message}");
+                    LogUserStudy($"[VOICE_INPUT] [ENV] RESPONSE_PROCESSING_ERROR: {ex.Message}");
                 }
             }
         }
@@ -1395,17 +1488,27 @@ IMPORTANT:
         if (relationships == null || relationships.Count == 0)
         {
             Debug.Log("[SpeechRecorder] No relationships to process");
+            LogUserStudy("[VOICE_INPUT] [ENV] PROCESS_RESULT: Type=\"relationships\", Status=\"no_relationships_found\"");
             return;
         }
         
         Debug.Log($"[SpeechRecorder] Processing {relationships.Count} relationships");
         
-        // Log details of each relationship for debugging
+        // Build a detailed summary for logging
+        StringBuilder relationshipSummary = new StringBuilder();
+        relationshipSummary.Append($"Count={relationships.Count}");
+        
+        // Log details of each relationship for debugging and include in user study log
         for (int i = 0; i < relationships.Count; i++)
         {
             var rel = relationships[i];
             Debug.Log($"[SpeechRecorder] Relationship {i+1}: {rel.SourceObject} -> {rel.TargetObject}: '{rel.RelationLabel}'");
+            relationshipSummary.Append($", R{i+1}=\"{rel.SourceObject}->{rel.TargetObject}:{rel.RelationLabel}\"");
         }
+        
+        // Log the relationship details for user study
+        string sanitizedMessage = relationshipsMessage?.Replace("\n", " ").Replace("\r", "") ?? "No message";
+        LogUserStudy($"[VOICE_INPUT] [ENV] PROCESS_RESULT: Type=\"relationships\", {relationshipSummary.ToString()}, DisplayedMessage=\"{sanitizedMessage}\"");
         
         // Convert our internal RelationshipInfo objects to the RelationshipLineManager format
         List<RelationshipLineManager.RelationshipInfo> relationshipLineInfos = 
@@ -1501,11 +1604,18 @@ IMPORTANT:
         if (highlightData == null || highlightData.objects == null || highlightData.objects.Count == 0)
         {
             Debug.Log("[SpeechRecorder] No objects to highlight");
+            LogUserStudy("[VOICE_INPUT] [ENV] PROCESS_RESULT: Type=\"highlight\", Status=\"no_objects_found\"");
             return;
         }
         
         Debug.Log($"[SpeechRecorder] Highlighting {highlightData.objects.Count} objects: {string.Join(", ", highlightData.objects)}");
         Debug.Log($"[SpeechRecorder] Rationale: {highlightData.rationale}");
+
+        // Log detailed highlight information for user study
+        string objectsList = string.Join(", ", highlightData.objects);
+        string sanitizedRationale = highlightData.rationale?.Replace("\n", " ").Replace("\r", "");
+        string sanitizedMessage = highlightMessage?.Replace("\n", " ").Replace("\r", "") ?? "No message";
+        LogUserStudy($"[VOICE_INPUT] [ENV] PROCESS_RESULT: Type=\"highlight\", Count={highlightData.objects.Count}, Objects=\"{objectsList}\", Rationale=\"{sanitizedRationale}\", DisplayedMessage=\"{sanitizedMessage}\"");
 
         // Clear all previous highlights before starting new ones
         relationshipLineManager.ClearAllHighlightsAndLines();
@@ -1754,7 +1864,7 @@ IMPORTANT:
         if (string.IsNullOrEmpty(extractedJson))
         {
             Debug.LogWarning("[SpeechRecorder] Could not find valid JSON block in Gemini question response.");
-            LogUserStudy("FOLLOW_UP_QUESTIONS: Failed to generate");
+            LogUserStudy("[VOICE_INPUT] [SUGGESTED_ACTIONS] FOLLOW_UP_QUESTIONS: Failed to generate");
             yield break;
         }
         
@@ -1768,7 +1878,7 @@ IMPORTANT:
             // Log follow-up questions for user study
             if (questionsList != null && questionsList.Count > 0)
             {
-                LogUserStudy($"FOLLOW_UP_QUESTIONS: {string.Join(" | ", questionsList)}");
+                LogUserStudy($"[VOICE_INPUT] [SUGGESTED_ACTIONS] FOLLOW_UP_QUESTIONS: {string.Join(" | ", questionsList)}");
             }
         }
         catch (Exception e)
@@ -2000,14 +2110,25 @@ IMPORTANT:
         
         Debug.Log($"[SpeechRecorder] Auto-hiding response UI after {delay} seconds");
         
-        // Explicitly clear all visual elements first
+        // Explicitly clear all visual elements first, but only if they were created via voice interactions
+        // (relationships created by manual anchor toggling won't be affected)
         if (relationshipLineManager != null)
         {
-            relationshipLineManager.ClearAllHighlightsAndLines();
-            relationshipLineManager.ClearAllStepIndicators();
-            // Reset the internal state
-            relationshipLineManager.hasActiveHighlights = false;
-            relationshipLineManager.highlightTimer = 0f;
+            // Only clear visual elements if they're set to auto-hide (voice activated)
+            if (relationshipLineManager.hasActiveHighlights)
+            {
+                relationshipLineManager.ClearAllHighlightsAndLines();
+                relationshipLineManager.ClearAllStepIndicators();
+                // Reset the internal state
+                relationshipLineManager.hasActiveHighlights = false;
+                relationshipLineManager.highlightTimer = 0f;
+                Debug.Log("[SpeechRecorder] Cleared relationship lines and highlights that were set to auto-hide");
+            }
+            else
+            {
+                // If hasActiveHighlights is false, these were likely created by manual anchor toggling
+                Debug.Log("[SpeechRecorder] Leaving relationship lines intact as they weren't set to auto-hide");
+            }
         }
         
         // Hide the chatbox
@@ -2179,6 +2300,7 @@ IMPORTANT:
         if (instructionSteps == null || instructionSteps.Count == 0)
         {
             Debug.Log("[SpeechRecorder] No instruction steps to process");
+            LogUserStudy("[VOICE_INPUT] [ENV] PROCESS_RESULT: Type=\"instruction\", Status=\"no_steps_found\"");
             return;
         }
         
@@ -2187,12 +2309,21 @@ IMPORTANT:
         // Sort the steps by order to ensure correct sequence
         instructionSteps = instructionSteps.OrderBy(step => step.order).ToList();
         
+        // Build detailed step information for user study logging
+        StringBuilder stepsInfo = new StringBuilder();
+        stepsInfo.Append($"Count={instructionSteps.Count}");
+        
         // Log details of each step for debugging
         for (int i = 0; i < instructionSteps.Count; i++)
         {
             var step = instructionSteps[i];
             Debug.Log($"[SpeechRecorder] Step {step.order}: {step.@object}");
+            stepsInfo.Append($", Step{step.order}=\"{step.@object}\"");
         }
+        
+        // Log instruction steps details for user study
+        string sanitizedMessage = instructionMessage?.Replace("\n", " ").Replace("\r", "") ?? "No message";
+        LogUserStudy($"[VOICE_INPUT] [ENV] PROCESS_RESULT: Type=\"instruction\", {stepsInfo.ToString()}, DisplayedMessage=\"{sanitizedMessage}\"");
         
         // Clear any existing highlights or relationship lines
         relationshipLineManager.ClearAllHighlightsAndLines();
