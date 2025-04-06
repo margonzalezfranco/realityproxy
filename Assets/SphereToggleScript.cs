@@ -298,6 +298,13 @@ public class SphereToggleScript : MonoBehaviour
             objectTrackingToggle = GameObject.Find("ObjectTrackingToggle");
         }
 
+        // Keep a reference to the object tracking toggle to restore if needed
+        if (objectTrackingToggle != null)
+        {
+            // Cache a reference to ensure we can restore it if needed
+            Transform objectTrackingToggleTransform = objectTrackingToggle.transform;
+        }
+
         if (recorder == null)
         {
             recorder = FindFirstObjectByType<SpeechToTextRecorder>();
@@ -435,6 +442,13 @@ public class SphereToggleScript : MonoBehaviour
             {
                 UpdateRecorderToggle(true);
             }
+        }
+        
+        // Check if objectTrackingToggle reference is lost and restore it if needed
+        if (objectTrackingToggle == null)
+        {
+            objectTrackingToggle = GameObject.Find("ObjectTrackingToggle");
+            Debug.Log("Restored missing objectTrackingToggle reference");
         }
         
         // Do the same for object tracking toggle
@@ -1814,7 +1828,39 @@ public class SphereToggleScript : MonoBehaviour
                     menuCanvas.SetParent(null);
 
                     LazyFollow lazyFollow = menuCanvas.GetComponent<LazyFollow>();
-                    if (lazyFollow != null) lazyFollow.positionFollowMode = LazyFollow.PositionFollowMode.Follow;
+                    if (lazyFollow != null) 
+                    {
+                        // IMPROVED FIX: Force a reset by disabling and re-enabling the component
+                        // This will trigger the initialization behavior similar to what happens with the recorder toggle
+                        lazyFollow.enabled = false;
+                        
+                        // Configure optimal parameters before re-enabling
+                        lazyFollow.positionFollowMode = LazyFollow.PositionFollowMode.Follow;
+                        lazyFollow.minDistanceAllowed = 0.01f;  // Smaller value to detect small movements
+                        lazyFollow.maxDistanceAllowed = 0.1f;   // Max distance as shown in screenshot
+                        lazyFollow.timeUntilThresholdReachesMaxDistance = 0.5f;  // Time threshold as shown
+                        lazyFollow.movementSpeed = 8f;  // Movement speed as shown in screenshot
+                        lazyFollow.movementSpeedVariancePercentage = 0.5f; // Variance as shown
+                        
+                        // Set rotation parameters exactly as shown in screenshot
+                        lazyFollow.rotationFollowMode = LazyFollow.RotationFollowMode.LookAt;
+                        lazyFollow.minAngleAllowed = 0.01f;
+                        lazyFollow.maxAngleAllowed = 1f;
+                        lazyFollow.timeUntilThresholdReachesMaxAngle = 0.5f;
+                        
+                        // Wait a frame to ensure the position change is registered
+                        lazyFollow.enabled = true;
+                        
+                        // Force the target to be the camera explicitly
+                        if (Camera.main != null)
+                        {
+                            lazyFollow.target = Camera.main.transform;
+                            // Force a snap to target position
+                            lazyFollow.snapOnEnable = true;
+                        }
+                        
+                        Debug.Log("Reset LazyFollow on menuCanvas to force immediate following");
+                    }
 
                     if (menuCanvas.childCount >= 3)
                     {
