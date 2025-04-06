@@ -4596,26 +4596,37 @@ MonoBehaviour:
     [object1] is [brief relation] to [object2].\"\"\n}}\n```\n\nFor HIGHLIGHT requests
     (e.g., \"\"show me all food items\"\" or \"\"highlight the kitchen tools\"\"):\n1.
     Identify which objects from the detected list match the user's criteria.\n2.
+    Directly answer the user's question, not just indicate that items were highlighted.\n3.
     Output a JSON object with the following structure:\n```json\n{{\n  \"\"type\"\":
     \"\"highlight\"\",\n  \"\"data\"\": {{\n    \"\"objects\"\": [\n      \"\"object1\"\",\n     
     \"\"object2\"\",\n      \"\"object3\"\"\n    ],\n    \"\"rationale\"\": \"\"Brief
     explanation of why these objects were selected (1-2 sentences)\"\"\n  }},\n 
-    \"\"message\"\": \"\"Highlighted [number] [category] items.\"\"\n}}\n```\n\nFor
-    INSTRUCTION requests (e.g., \"\"how do I make a cake?\"\" or \"\"show me the
-    steps to assemble this\"\"):\n1. Identify a sequence of objects from the detected
-    list needed to complete the task.\n2. Order them in the correct sequence for
-    completing the task.\n3. Output a JSON object with the following structure:\n```json\n{{\n 
-    \"\"type\"\": \"\"instruction\"\",\n  \"\"data\"\": [\n    {{\n      \"\"order\"\":
-    1,\n      \"\"object\"\": \"\"first_object_name\"\"\n    }},\n    {{\n      \"\"order\"\":
-    2,\n      \"\"object\"\": \"\"second_object_name\"\"\n    }},\n    {{\n     
-    \"\"order\"\": 3,\n      \"\"object\"\": \"\"third_object_name\"\"\n    }}\n 
-    ],\n  \"\"message\"\": \"\"Step 1: Use [first_object]. Step 2: Use [second_object].
-    Step 3: Use [third_object].\"\"\n}}\n```\n\nIf no relevant objects or relationships
+    \"\"message\"\": \"\"[Direct answer to user's question] These [objects] contain/are
+    [key property]. [One additional relevant fact about the items].\"\"\n}}\n```\n\nExamples
+    of good highlight messages:\n- For \"\"What items contain gluten?\"\": \"\"Bread,
+    pasta, and cake contain gluten. These items are made with wheat flour.\"\"\n-
+    For \"\"Show me kitchen tools\"\": \"\"Spatula, whisk, and knife are kitchen
+    tools. They're essential for basic food preparation.\"\"\n- For \"\"Which items
+    are toxic?\"\": \"\"Bleach and ammonia are toxic. Never mix these chemicals as
+    they produce dangerous fumes.\"\"\n\nFor INSTRUCTION requests (e.g., \"\"how
+    do I make a cake?\"\" or \"\"show me the steps to assemble this\"\"):\n1. Identify
+    a sequence of objects from the detected list needed to complete the task.\n2.
+    Order them in the correct sequence for completing the task.\n3. For each step,
+    include a specific action and purpose (what to do and why).\n4. Output a JSON
+    object with the following structure:\n```json\n{{\n  \"\"type\"\": \"\"instruction\"\",\n 
+    \"\"data\"\": [\n    {{\n      \"\"order\"\": 1,\n      \"\"object\"\": \"\"first_object_name\"\"\n   
+    }},\n    {{\n      \"\"order\"\": 2,\n      \"\"object\"\": \"\"second_object_name\"\"\n   
+    }},\n    {{\n      \"\"order\"\": 3,\n      \"\"object\"\": \"\"third_object_name\"\"\n   
+    }}\n  ],\n  \"\"message\"\": \"\"To [accomplish task]: 1. Use [first_object]
+    to [specific action/purpose]. 2. Then [action with second_object]. 3. Finally,
+    [action with third_object].\"\"\n}}\n```\n\nIf no relevant objects or relationships
     can be identified, return:\n```json\n{{\n  \"\"type\"\": \"\"none\"\",\n  \"\"message\"\":
     \"\"No matching objects found. Try rephrasing.\"\"\n}}\n```\n\nIMPORTANT: \n1.
     Only include objects that are in the detected objects list provided above.\n2.
-    Keep messages short and clear (max 15 words).\n3. Focus on key information only.\n4.
-    Avoid technical terms or JSON structure."
+    Keep messages focused and clear but include specific actions and purposes (20-25
+    words max).\n3. For instructions, make each step useful with a practical action,
+    not just \"\"use X\"\" - explain how/why.\n4. Prioritize clarity and helpfulness
+    in your instructions.\n5. Avoid technical terms or JSON structure in messages."
   useMiddlePinchControl: 0
   useLeftHand: 1
   requestText: {fileID: 1092430616}

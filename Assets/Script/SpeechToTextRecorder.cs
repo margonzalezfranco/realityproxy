@@ -70,7 +70,8 @@ For RELATIONSHIPS between objects (e.g., ""how are these objects related?"" or "
 
 For HIGHLIGHT requests (e.g., ""show me all food items"" or ""highlight the kitchen tools""):
 1. Identify which objects from the detected list match the user's criteria.
-2. Output a JSON object with the following structure:
+2. Directly answer the user's question, not just indicate that items were highlighted.
+3. Output a JSON object with the following structure:
 ```json
 {{
   ""type"": ""highlight"",
@@ -82,14 +83,20 @@ For HIGHLIGHT requests (e.g., ""show me all food items"" or ""highlight the kitc
     ],
     ""rationale"": ""Brief explanation of why these objects were selected (1-2 sentences)""
   }},
-  ""message"": ""Highlighted [number] [category] items.""
+  ""message"": ""[Direct answer to user's question] These [objects] contain/are [key property]. [One additional relevant fact about the items].""
 }}
 ```
+
+Examples of good highlight messages:
+- For ""What items contain gluten?"": ""Bread, pasta, and cake contain gluten. These items are made with wheat flour.""
+- For ""Show me kitchen tools"": ""Spatula, whisk, and knife are kitchen tools. They're essential for basic food preparation.""
+- For ""Which items are toxic?"": ""Bleach and ammonia are toxic. Never mix these chemicals as they produce dangerous fumes.""
 
 For INSTRUCTION requests (e.g., ""how do I make a cake?"" or ""show me the steps to assemble this""):
 1. Identify a sequence of objects from the detected list needed to complete the task.
 2. Order them in the correct sequence for completing the task.
-3. Output a JSON object with the following structure:
+3. For each step, include a specific action and purpose (what to do and why).
+4. Output a JSON object with the following structure:
 ```json
 {{
   ""type"": ""instruction"",
@@ -107,7 +114,7 @@ For INSTRUCTION requests (e.g., ""how do I make a cake?"" or ""show me the steps
       ""object"": ""third_object_name""
     }}
   ],
-  ""message"": ""Step 1: Use [first_object]. Step 2: Use [second_object]. Step 3: Use [third_object].""
+  ""message"": ""To [accomplish task]: 1. Use [first_object] to [specific action/purpose]. 2. Then [action with second_object]. 3. Finally, [action with third_object].""
 }}
 ```
 
@@ -121,9 +128,10 @@ If no relevant objects or relationships can be identified, return:
 
 IMPORTANT: 
 1. Only include objects that are in the detected objects list provided above.
-2. Keep messages short and clear (max 15 words).
-3. Focus on key information only.
-4. Avoid technical terms or JSON structure.";
+2. Keep messages focused and clear but include specific actions and purposes (20-25 words max).
+3. For instructions, make each step useful with a practical action, not just ""use X"" - explain how/why.
+4. Prioritize clarity and helpfulness in your instructions.
+5. Avoid technical terms or JSON structure in messages.";
 
     [Header("Gesture Control")]
     [SerializeField] private bool useMiddlePinchControl = true;
@@ -1041,10 +1049,6 @@ IMPORTANT:
             string rawResponse = requestStatus.Result;
             geminiResponse = ParseGeminiRawResponse(rawResponse);
             Debug.Log($"Gemini response: {geminiResponse}");
-            
-            // // Log Gemini's response for user study - sanitize to ensure it's a single line
-            // string sanitizedResponse = geminiResponse.Replace("\n", " ").Replace("\r", "");
-            // LogUserStudy($"[VOICE_INPUT] [GEMINI] RAW_RESPONSE: {sanitizedResponse}");
 
             // Update UI if available - now showing the user-friendly message
             if (responseTextOnObject != null && !string.IsNullOrEmpty(geminiResponse))
@@ -1055,18 +1059,28 @@ IMPORTANT:
                     string jsonContent = TryExtractJson(geminiResponse);
                     if (!string.IsNullOrEmpty(jsonContent))
                     {
-                        ResponseWrapper responseWrapper = JsonConvert.DeserializeObject<ResponseWrapper>(jsonContent);
-                        if (responseWrapper != null && !string.IsNullOrEmpty(responseWrapper.message))
-                        {
-                            responseTextOnObject.text = responseWrapper.message;
-                            
-                            // Log extracted message for user study
-                            LogUserStudy($"[VOICE_INPUT] [GEMINI] DISPLAYED_MESSAGE: {responseWrapper.message}");
+                        try {
+                            ResponseWrapper responseWrapper = JsonConvert.DeserializeObject<ResponseWrapper>(jsonContent);
+                            if (responseWrapper != null && !string.IsNullOrEmpty(responseWrapper.message))
+                            {
+                                // Just display the message part, not the whole JSON
+                                responseTextOnObject.text = responseWrapper.message;
+                                
+                                // Log extracted message for user study
+                                LogUserStudy($"[VOICE_INPUT] [GEMINI] DISPLAYED_MESSAGE: {responseWrapper.message}");
+                            }
+                            else
+                            {
+                                responseTextOnObject.text = geminiResponse;
+                                Debug.Log("[SpeechRecorder] Using raw response as text (JSON wrapper had no message)");
+                            }
                         }
-                        else
+                        catch (JsonException jsonEx)
                         {
+                            // If JSON parsing fails, show raw response
+                            Debug.LogWarning($"[SpeechRecorder] JSON parsing exception: {jsonEx.Message}");
                             responseTextOnObject.text = geminiResponse;
-                            Debug.Log("[SpeechRecorder] Using raw response as text (JSON wrapper had no message)");
+                            LogUserStudy($"[VOICE_INPUT] [GEMINI] DISPLAYED_MESSAGE: {geminiResponse}");
                         }
                     }
                     else
