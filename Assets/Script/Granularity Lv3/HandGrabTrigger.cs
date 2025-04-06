@@ -145,6 +145,44 @@ public class HandGrabTrigger : MonoBehaviour
     [Header("User Study Logging")]
     [SerializeField] private bool enableUserStudyLogging = true;
 
+    [Header("Directional Aiming Relationship Detection")]
+    [Tooltip("Maximum angle in degrees to consider an object as being aimed at")]
+    public float maxAimAngle = 30f; // Objects within this angular threshold can be selected
+
+    [Tooltip("Minimum angle change in degrees needed to switch to a new target (hysteresis)")]
+    public float aimHysteresis = 5f; // Prevent rapid switching between targets
+
+    [Tooltip("Maximum detection distance for aiming (set to very large for infinite)")]
+    public float maxAimDistance = 100f; // Can aim at objects at any distance within view
+
+    [Tooltip("Minimum time between aim relationship checks")]
+    public float aimCheckInterval = 0.2f; // Check more frequently than proximity since aiming is more responsive
+
+    [Tooltip("Minimum time to keep a relationship before switching to a new target")]
+    public float minAimRelationshipDuration = 1.0f; // Seconds
+
+    [Header("Aiming Visualization")]
+    [Tooltip("Enable visualization of the aiming direction")]
+    public bool visualizeAiming = true;
+
+    [Tooltip("Line renderer prefab for aiming visualization")]
+    public GameObject aimingVisualizerPrefab;
+
+    [Tooltip("Color of the aiming visualization (alpha will be adjusted automatically)")]
+    public Color aimingColor = Color.white;
+
+    [Tooltip("Width of the aiming visualization line")]
+    public float aimingLineWidth = 0.005f;
+
+    [Tooltip("Length of the aiming visualization line")]
+    public float aimingLineLength = 2.0f;
+
+    // Add a new field to track the current aiming direction
+    private Vector3 _currentAimDirection;
+
+    // Reference to the aiming visualizer line renderer
+    private LineRenderer _aimingVisualizer;
+
     private void Start()
     {
         // Auto-detect which hand this is based on the GameObject name if not set
@@ -265,6 +303,13 @@ public class HandGrabTrigger : MonoBehaviour
             grabbingDetector.OnGrabbingReleased -= OnGeminiGrabbingReleased;
             grabbingDetector.OnGrabbingUpdated -= OnGeminiGrabbingUpdated;
             eventsSubscribed = false;
+        }
+
+        // Clean up the aiming visualizer if it exists
+        if (_aimingVisualizer != null)
+        {
+            Destroy(_aimingVisualizer.gameObject);
+            _aimingVisualizer = null;
         }
     }
 
@@ -503,6 +548,9 @@ public class HandGrabTrigger : MonoBehaviour
         
         // Set the offset
         lazyFollow.targetOffset = grabOffset;
+        
+        // Initialize aiming direction from camera
+        _currentAimDirection = Camera.main?.transform.forward ?? Vector3.forward;
     }
 
     // New method to handle Gemini grabbing updates (when the label changes)
@@ -638,9 +686,12 @@ public class HandGrabTrigger : MonoBehaviour
             {
                 UpdateTwinPosition();
             }
+            
+            // Update the aiming direction before checking relationships
+            UpdateAimingDirection();
 
-            // Check for proximity to other anchors
-            CheckProximityToOtherAnchors();
+            // Check for directional aiming to other anchors
+            CheckDirectionalAimingToOtherAnchors();
 
             // Add recovery mechanism for tracking loss
             if (!_isManualGrab && currentGrabInfo != null)
@@ -867,6 +918,12 @@ public class HandGrabTrigger : MonoBehaviour
         // Reset the manual grab flag
         _isManualGrab = false;
         
+        // Hide the aiming visualizer
+        if (_aimingVisualizer != null)
+        {
+            _aimingVisualizer.gameObject.SetActive(false);
+        }
+        
         // Reset state
         _grabbedAnchor = null;
         labelObj = null;
@@ -909,13 +966,13 @@ public class HandGrabTrigger : MonoBehaviour
     }
 
     /// <summary>
-    /// Checks if the grabbed anchor is near any other anchors in the scene
-    /// and generates relationship information if they are close enough.
+    /// Checks if the grabbed anchor is aimed towards any other anchors in the scene
+    /// and generates relationship information based on which anchor is most directly aligned.
     /// </summary>
-    private void CheckProximityToOtherAnchors()
+    private void CheckDirectionalAimingToOtherAnchors()
     {
         // Only check at the specified interval to avoid performance issues
-        if (Time.time - lastProximityCheckTime < proximityCheckInterval || sceneObjectManager == null || _grabbedAnchor == null)
+        if (Time.time - lastProximityCheckTime < aimCheckInterval || sceneObjectManager == null || _grabbedAnchor == null)
         {
             return;
         }
@@ -929,19 +986,20 @@ public class HandGrabTrigger : MonoBehaviour
             return;
         }
         
-        // Get the position of our grabbed anchor
+        // Get the position and forward direction of our grabbed anchor
         Vector3 grabbedAnchorPos = _grabbedAnchor.sphereObj.transform.position;
+        Vector3 aimDirection = _currentAimDirection;
         string grabbedLabel = _grabbedAnchor.label;
         
         // Make a copy of the recently highlighted list to avoid modification during iteration
         HashSet<SceneObjectAnchor> stillHighlighted = new HashSet<SceneObjectAnchor>();
         HashSet<SceneObjectAnchor> toDeselect = new HashSet<SceneObjectAnchor>(recentlyHighlighted);
         
-        // First find the closest anchor that satisfies our proximity conditions
-        SceneObjectAnchor closestAnchor = null;
-        float closestDistance = float.MaxValue;
+        // First find the closest anchor in terms of angular alignment
+        SceneObjectAnchor bestAlignedAnchor = null;
+        float smallestAngle = maxAimAngle; // Only consider objects within maxAimAngle
         
-        // Check distance to each other anchor and find potential candidates
+        // Check angular alignment to each other anchor
         foreach (var otherAnchor in allAnchors)
         {
             // Skip if it's the same anchor we're grabbing
@@ -950,20 +1008,30 @@ public class HandGrabTrigger : MonoBehaviour
                 continue;
             }
             
-            // Calculate distance
-            float distance = Vector3.Distance(grabbedAnchorPos, otherAnchor.sphereObj.transform.position);
+            // Calculate direction vector to this anchor
+            Vector3 directionToAnchor = otherAnchor.sphereObj.transform.position - grabbedAnchorPos;
+            
+            // Skip if the anchor is too far away (optional distance limit)
+            float distance = directionToAnchor.magnitude;
+            if (distance > maxAimDistance)
+            {
+                continue;
+            }
+            
+            // Calculate the angle between our forward direction and the direction to this anchor
+            float angle = Vector3.Angle(aimDirection, directionToAnchor);
             
             // Check if this anchor could be a candidate for relationship
             bool isCandidate = false;
             
-            // Use different thresholds depending on whether we already have a relationship with this anchor
+            // Determine if this anchor is a candidate based on aiming angle
             if (otherAnchor == currentRelationshipAnchor)
             {
-                // If this is our current relationship, use the maintain threshold (larger)
-                isCandidate = distance <= maintainRelationshipThreshold;
+                // If this is our current relationship, add some hysteresis to the max angle
+                isCandidate = angle <= (maxAimAngle + aimHysteresis);
                 
-                // Even if it's not a candidate anymore, add it to highlighted if still within threshold
-                if (distance <= maintainRelationshipThreshold)
+                // Even if it's not the best candidate anymore, keep it highlighted if within range
+                if (angle <= (maxAimAngle + aimHysteresis))
                 {
                     stillHighlighted.Add(otherAnchor);
                     toDeselect.Remove(otherAnchor);
@@ -971,27 +1039,33 @@ public class HandGrabTrigger : MonoBehaviour
             }
             else
             {
-                // For new potential relationships, use the activation threshold (smaller)
-                isCandidate = distance <= proximityThreshold;
+                // For new potential relationships, use the standard max angle
+                isCandidate = angle <= maxAimAngle;
             }
             
-            // If it's a candidate and closer than current closest, update closest
-            if (isCandidate && distance < closestDistance)
+            // Debug information about angles
+            if (enableDebugLogging() && angle <= maxAimAngle * 1.5f)
             {
-                closestDistance = distance;
-                closestAnchor = otherAnchor;
+                Debug.Log($"Aiming check: Anchor '{otherAnchor.label}' at angle {angle:F1}° (distance {distance:F2}m)");
             }
             
-            // If this anchor is beyond the maintain threshold and was highlighted, reset it immediately
-            if (distance > maintainRelationshipThreshold && recentlyHighlighted.Contains(otherAnchor))
+            // If it's a candidate and more aligned than current best, update
+            if (isCandidate && angle < smallestAngle)
             {
-                // This anchor was previously highlighted but is now well outside the range
+                smallestAngle = angle;
+                bestAlignedAnchor = otherAnchor;
+            }
+            
+            // If this anchor is beyond the aiming threshold and was highlighted, reset it immediately
+            if (angle > (maxAimAngle + aimHysteresis) && recentlyHighlighted.Contains(otherAnchor))
+            {
+                // This anchor was previously highlighted but is now out of aim
                 // Reset its appearance immediately
                 ResetAnchorHighlight(otherAnchor);
-                Debug.Log($"Anchor '{otherAnchor.label}' moved outside maintenance range ({distance}m), clearing relationship");
+                Debug.Log($"Anchor '{otherAnchor.label}' moved outside aiming angle ({angle:F1}°), clearing relationship");
                 
                 // Log the relationship end for user study
-                LogUserStudy($"[GRAB] PROXIMITY_RELATIONSHIP_ENDED: Held=\"{_grabbedAnchor.label}\", Other=\"{otherAnchor.label}\", Distance={distance:F3}m, Reason=\"distance_exceeded\"");
+                LogUserStudy($"[GRAB] AIMING_RELATIONSHIP_ENDED: Held=\"{_grabbedAnchor.label}\", Other=\"{otherAnchor.label}\", Angle={angle:F1}°, Reason=\"angle_exceeded\"");
                 
                 // Clear the relationship line explicitly if this was our active relationship
                 if (otherAnchor == currentRelationshipAnchor)
@@ -1013,14 +1087,30 @@ public class HandGrabTrigger : MonoBehaviour
         }
         
         // Now determine if we should establish a new relationship or maintain the current one
-        if (closestAnchor != null)
+        if (bestAlignedAnchor != null)
         {
-            // Calculate distance to closest anchor
-            float distanceToClosest = Vector3.Distance(grabbedAnchorPos, closestAnchor.sphereObj.transform.position);
+            // Calculate angle to best aligned anchor
+            Vector3 directionToBest = bestAlignedAnchor.sphereObj.transform.position - grabbedAnchorPos;
+            float angleToClosest = Vector3.Angle(aimDirection, directionToBest);
             
-            // Always add closest to stillHighlighted
-            stillHighlighted.Add(closestAnchor);
-            toDeselect.Remove(closestAnchor);
+            // Update the aiming visualizer color based on whether we have a target in range
+            if (_aimingVisualizer != null && visualizeAiming)
+            {
+                // If aligned with a target, use white with 70% alpha, otherwise use white with 40% alpha
+                float alphaValue = (angleToClosest < maxAimAngle * 0.6f) ? 0.7f : 0.4f;
+                _aimingVisualizer.startColor = new Color(1f, 1f, 1f, alphaValue);
+                _aimingVisualizer.endColor = new Color(1f, 1f, 1f, 0f); // Fade out to transparent
+                
+                // Optionally make the line thicker when aligned
+                _aimingVisualizer.startWidth = (angleToClosest < maxAimAngle * 0.6f) ? 
+                    aimingLineWidth * 1.5f : aimingLineWidth;
+                _aimingVisualizer.endWidth = (angleToClosest < maxAimAngle * 0.6f) ? 
+                    aimingLineWidth * 0.75f : aimingLineWidth * 0.5f;
+            }
+            
+            // Always add best aligned to stillHighlighted
+            stillHighlighted.Add(bestAlignedAnchor);
+            toDeselect.Remove(bestAlignedAnchor);
             
             bool shouldEstablishNewRelationship = false;
             
@@ -1028,35 +1118,44 @@ public class HandGrabTrigger : MonoBehaviour
             if (currentRelationshipAnchor == null)
             {
                 shouldEstablishNewRelationship = true;
-                Debug.Log($"Establishing new relationship with closest anchor: '{closestAnchor.label}' at distance {distanceToClosest}m");
+                Debug.Log($"Establishing new relationship with best aligned anchor: '{bestAlignedAnchor.label}' at angle {angleToClosest:F1}°");
                 
-                // Log proximity relationship start for user study
-                LogUserStudy($"[GRAB] PROXIMITY_RELATIONSHIP_STARTED: Held=\"{_grabbedAnchor.label}\", Other=\"{closestAnchor.label}\", Distance={distanceToClosest:F3}m");
+                // Log aiming relationship start for user study
+                LogUserStudy($"[GRAB] AIMING_RELATIONSHIP_STARTED: Held=\"{_grabbedAnchor.label}\", Other=\"{bestAlignedAnchor.label}\", Angle={angleToClosest:F1}°");
             }
-            // Case 2: Current relationship anchor is no longer within maintain threshold
-            else if (!allAnchors.Contains(currentRelationshipAnchor) || 
-                    Vector3.Distance(grabbedAnchorPos, currentRelationshipAnchor.sphereObj.transform.position) > maintainRelationshipThreshold)
+            // Case 2: Current relationship anchor is no longer within aiming threshold
+            else if (!allAnchors.Contains(currentRelationshipAnchor))
             {
                 shouldEstablishNewRelationship = true;
-                Debug.Log($"Current relationship anchor '{currentRelationshipAnchor.label}' beyond maintain threshold, switching to '{closestAnchor.label}'");
+                Debug.Log($"Current relationship anchor no longer exists, switching to '{bestAlignedAnchor.label}'");
                 
-                // Log switching proximity relationship for user study
-                LogUserStudy($"[GRAB] PROXIMITY_RELATIONSHIP_SWITCHED: Held=\"{_grabbedAnchor.label}\", OldTarget=\"{currentRelationshipAnchor.label}\", NewTarget=\"{closestAnchor.label}\", Distance={distanceToClosest:F3}m, Reason=\"distance_exceeded\"");
+                // Log switching aiming relationship for user study
+                LogUserStudy($"[GRAB] AIMING_RELATIONSHIP_SWITCHED: Held=\"{_grabbedAnchor.label}\", OldTarget=\"{currentRelationshipAnchor.label}\", NewTarget=\"{bestAlignedAnchor.label}\", Angle={angleToClosest:F1}°, Reason=\"target_missing\"");
             }
-            // Case 3: We have a relationship, but found a significantly closer anchor AND minimum duration has passed
-            else if (currentRelationshipAnchor != closestAnchor && 
-                    Time.time - timeStartedRelationship > minRelationshipDuration)
+            // Case 3: Current relationship is out of aiming angle
+            else
             {
-                float distanceToCurrent = Vector3.Distance(grabbedAnchorPos, currentRelationshipAnchor.sphereObj.transform.position);
+                Vector3 directionToCurrent = currentRelationshipAnchor.sphereObj.transform.position - grabbedAnchorPos;
+                float angleToCurrent = Vector3.Angle(aimDirection, directionToCurrent);
                 
-                // Only switch if the new anchor is significantly closer (beyond hysteresis threshold)
-                if (distanceToCurrent - distanceToClosest > proximityHysteresis)
+                if (angleToCurrent > (maxAimAngle + aimHysteresis))
                 {
                     shouldEstablishNewRelationship = true;
-                    Debug.Log($"Found closer anchor '{closestAnchor.label}' ({distanceToClosest}m) than current '{currentRelationshipAnchor.label}' ({distanceToCurrent}m), switching");
+                    Debug.Log($"Current relationship anchor '{currentRelationshipAnchor.label}' beyond aiming threshold ({angleToCurrent:F1}°), switching to '{bestAlignedAnchor.label}' ({angleToClosest:F1}°)");
                     
-                    // Log switching proximity relationship for user study
-                    LogUserStudy($"[GRAB] PROXIMITY_RELATIONSHIP_SWITCHED: Held=\"{_grabbedAnchor.label}\", OldTarget=\"{currentRelationshipAnchor.label}\", NewTarget=\"{closestAnchor.label}\", Distance={distanceToClosest:F3}m, Reason=\"closer_object\"");
+                    // Log switching aiming relationship for user study
+                    LogUserStudy($"[GRAB] AIMING_RELATIONSHIP_SWITCHED: Held=\"{_grabbedAnchor.label}\", OldTarget=\"{currentRelationshipAnchor.label}\", NewTarget=\"{bestAlignedAnchor.label}\", Angle={angleToClosest:F1}°, Reason=\"angle_exceeded\"");
+                }
+                // Case 4: Found a significantly better aligned anchor AND minimum duration has passed
+                else if (currentRelationshipAnchor != bestAlignedAnchor && 
+                        Time.time - timeStartedRelationship > minAimRelationshipDuration &&
+                        (angleToCurrent - angleToClosest) > aimHysteresis)
+                {
+                    shouldEstablishNewRelationship = true;
+                    Debug.Log($"Found better aligned anchor '{bestAlignedAnchor.label}' ({angleToClosest:F1}°) than current '{currentRelationshipAnchor.label}' ({angleToCurrent:F1}°), switching");
+                    
+                    // Log switching aiming relationship for user study
+                    LogUserStudy($"[GRAB] AIMING_RELATIONSHIP_SWITCHED: Held=\"{_grabbedAnchor.label}\", OldTarget=\"{currentRelationshipAnchor.label}\", NewTarget=\"{bestAlignedAnchor.label}\", Angle={angleToClosest:F1}°, Reason=\"better_alignment\"");
                     
                     // Clear the old relationship first
                     if (sphereToggleScript != null && sphereToggleScript.relationLineManager != null)
@@ -1066,30 +1165,30 @@ public class HandGrabTrigger : MonoBehaviour
                 }
                 else
                 {
-                    // Not significantly closer, maintain current relationship
+                    // Not significantly better aligned, maintain current relationship
                     stillHighlighted.Add(currentRelationshipAnchor);
                     toDeselect.Remove(currentRelationshipAnchor);
-                    Debug.Log($"Maintaining relationship with '{currentRelationshipAnchor.label}' as new anchor '{closestAnchor.label}' is not significantly closer");
+                    Debug.Log($"Maintaining relationship with '{currentRelationshipAnchor.label}' as new anchor '{bestAlignedAnchor.label}' is not significantly better aligned");
                 }
             }
             
-            // If we should establish a new relationship and the closest anchor is not the same as our current relationship
-            if (shouldEstablishNewRelationship && (currentRelationshipAnchor != closestAnchor))
+            // If we should establish a new relationship and the best aligned anchor is not the same as our current relationship
+            if (shouldEstablishNewRelationship && (currentRelationshipAnchor != bestAlignedAnchor))
             {
                 // Update our current relationship anchor
-                currentRelationshipAnchor = closestAnchor;
+                currentRelationshipAnchor = bestAlignedAnchor;
                 timeStartedRelationship = Time.time;
                 
                 // Highlight the nearby object if it's not already highlighted
-                if (!recentlyHighlighted.Contains(closestAnchor))
+                if (!recentlyHighlighted.Contains(bestAlignedAnchor))
                 {
-                    StartCoroutine(HighlightAnchorBriefly(closestAnchor));
+                    StartCoroutine(HighlightAnchorBriefly(bestAlignedAnchor));
                     
                     // Play proximity sound
                     PlayProximitySound();
                     
                     // Add to recently highlighted
-                    recentlyHighlighted.Add(closestAnchor);
+                    recentlyHighlighted.Add(bestAlignedAnchor);
                 }
                 
                 // Get SphereToggleScript if we don't have it yet
@@ -1104,18 +1203,18 @@ public class HandGrabTrigger : MonoBehaviour
                 }
                 
                 // Generate relationship between the two objects
-                sphereToggleScript.GenerateProximityRelationship(closestAnchor.label);
+                sphereToggleScript.GenerateProximityRelationship(bestAlignedAnchor.label);
             }
         }
         else if (currentRelationshipAnchor != null)
         {
-            // No anchors in range now, clear current relationship
+            // No anchors in aim range now, clear current relationship
             if (sphereToggleScript != null && sphereToggleScript.relationLineManager != null)
             {
-                Debug.Log($"No anchors in range, clearing current relationship with '{currentRelationshipAnchor.label}'");
+                Debug.Log($"No anchors in aiming range, clearing current relationship with '{currentRelationshipAnchor.label}'");
                 
                 // Log relationship ending for user study
-                LogUserStudy($"[GRAB] PROXIMITY_RELATIONSHIP_ENDED: Held=\"{_grabbedAnchor.label}\", Other=\"{currentRelationshipAnchor.label}\", Reason=\"no_objects_in_range\"");
+                LogUserStudy($"[GRAB] AIMING_RELATIONSHIP_ENDED: Held=\"{_grabbedAnchor.label}\", Other=\"{currentRelationshipAnchor.label}\", Reason=\"no_objects_in_aim\"");
                 
                 sphereToggleScript.ClearSpecificRelationship(currentRelationshipAnchor.label);
                 currentRelationshipAnchor = null;
@@ -1272,5 +1371,86 @@ public class HandGrabTrigger : MonoBehaviour
         if (!enableUserStudyLogging) return;
         string timestamp = System.DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
         Debug.Log($"[USER_STUDY_LOG][{timestamp}] {message}");
+    }
+
+    // Add an UpdateAimingDirection method
+    /// <summary>
+    /// Updates the current aiming direction based on the camera's direction or other input
+    /// </summary>
+    private void UpdateAimingDirection()
+    {
+        if (Camera.main == null || _grabbedAnchor == null)
+            return;
+        
+        // Get camera forward as the base aiming direction
+        Vector3 cameraForward = Camera.main.transform.forward;
+        
+        // Option 1: Use pure camera forward direction
+        _currentAimDirection = cameraForward;
+        
+        // Option 2 (alternative): Use the direction from the grabbed anchor to where the camera is looking
+        // This creates a "pointing" effect from the held object
+        // Vector3 rayDirection = _grabbedAnchor.sphereObj.transform.position - Camera.main.transform.position;
+        // _currentAimDirection = cameraForward; 
+        
+        // Debug information - visualize aiming direction
+        if (enableDebugLogging())
+        {
+            Debug.DrawRay(_grabbedAnchor.sphereObj.transform.position, _currentAimDirection * 2.0f, Color.cyan, aimCheckInterval);
+        }
+        
+        // Update visual aiming indicator if enabled
+        UpdateAimingVisualizer();
+    }
+
+    /// <summary>
+    /// Updates or creates a visual indicator for the aiming direction
+    /// </summary>
+    private void UpdateAimingVisualizer()
+    {
+        if (!visualizeAiming || _grabbedAnchor == null)
+        {
+            // Hide visualizer if it exists
+            if (_aimingVisualizer != null)
+            {
+                _aimingVisualizer.gameObject.SetActive(false);
+            }
+            return;
+        }
+        
+        // Create visualizer if it doesn't exist
+        if (_aimingVisualizer == null)
+        {
+            if (aimingVisualizerPrefab != null)
+            {
+                // Instantiate from prefab if provided
+                var visualizerObj = Instantiate(aimingVisualizerPrefab);
+                _aimingVisualizer = visualizerObj.GetComponent<LineRenderer>();
+            }
+            else
+            {
+                // Create a new game object with line renderer if no prefab
+                var visualizerObj = new GameObject("AimingVisualizer");
+                _aimingVisualizer = visualizerObj.AddComponent<LineRenderer>();
+                
+                // Set up the line renderer
+                _aimingVisualizer.startWidth = aimingLineWidth;
+                _aimingVisualizer.endWidth = aimingLineWidth * 0.5f; // Taper the end
+                _aimingVisualizer.material = new Material(Shader.Find("Sprites/Default"));
+                _aimingVisualizer.startColor = new Color(1f, 1f, 1f, 0.4f); // White with 40% alpha
+                _aimingVisualizer.endColor = new Color(1f, 1f, 1f, 0f); // Fade out to transparent
+                _aimingVisualizer.positionCount = 2;
+            }
+        }
+        
+        // Ensure the visualizer is active
+        _aimingVisualizer.gameObject.SetActive(true);
+        
+        // Update the line positions
+        Vector3 startPosition = _grabbedAnchor.sphereObj.transform.position;
+        Vector3 endPosition = startPosition + _currentAimDirection * aimingLineLength;
+        
+        _aimingVisualizer.SetPosition(0, startPosition);
+        _aimingVisualizer.SetPosition(1, endPosition);
     }
 }
