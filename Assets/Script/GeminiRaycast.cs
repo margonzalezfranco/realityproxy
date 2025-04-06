@@ -66,11 +66,11 @@ public class GeminiRaycast : MonoBehaviour
     );
 
     /// <summary>
-    /// Called by Gemini2DBoundingBoxDetector (or similar) whenever new bounding boxes are detected.
-    /// We then unproject each box center -> 3D ray -> Physics.Raycast,
-    /// and pass the result to SceneObjectManager to anchor or update that object.
+    /// Processes bounding boxes using the camera pose at the time of capture.
+    /// This ensures raycasts occur from the position when the user pressed the button,
+    /// not from where they are when the API response arrives.
     /// </summary>
-    public void OnBoxesUpdated(List<Box2DResult> boxes)
+    public void OnBoxesUpdatedWithCameraPose(List<Box2DResult> boxes, Gemini2DBoundingBoxDetector.CameraPoseData cameraPose)
     {
         // Clear only debug visualization objects, not the persistent spheres
         ClearDebugObjects();
@@ -81,11 +81,7 @@ public class GeminiRaycast : MonoBehaviour
             return;
         }
 
-        // If offsetNode is missing, fallback to xrCamera
-        if (!offsetNode)
-        {
-            Debug.LogWarning("No offsetNode assigned, using xrCamera transform directly.");
-        }
+        Debug.Log("Processing boxes with camera pose from capture time: " + cameraPose.position);
 
         // Iterate over each bounding box
         foreach (var box in boxes)
@@ -111,11 +107,23 @@ public class GeminiRaycast : MonoBehaviour
                 extrinsicsMatrix
             ).normalized; // normalize it
 
-            // 3) Build a ray from offsetNode or camera
-            Transform finalNode = offsetNode ? offsetNode : xrCamera.transform;
-            Quaternion finalWorldRot = finalNode.rotation;
-            Vector3 directionWS = finalWorldRot * directionLocal;
-            Vector3 finalOrigin = finalNode.position;
+            // 3) Build a ray using the CAPTURED camera pose, not the current one
+            Vector3 directionWS;
+            Vector3 finalOrigin;
+            
+            // Determine if we should use the offset node pose or the camera pose
+            if (offsetNode != null && cameraPose.offsetNodePosition != Vector3.zero)
+            {
+                // Use captured offset node pose
+                directionWS = cameraPose.offsetNodeRotation * directionLocal;
+                finalOrigin = cameraPose.offsetNodePosition;
+            }
+            else
+            {
+                // Use captured camera pose
+                directionWS = cameraPose.rotation * directionLocal;
+                finalOrigin = cameraPose.position;
+            }
 
             Ray finalRay = new Ray(finalOrigin, directionWS);
 
@@ -135,8 +143,7 @@ public class GeminiRaycast : MonoBehaviour
                     VisualizeRaySegment(finalRay.origin, hit.point, Color.green);
                 }
 
-                // *** Here is where we register or update the anchor, 
-                // rather than spawning a new sphere each time. ***
+                // Register or update the anchor
                 string detectedLabel = box.label;
                 sceneObjectManager.RegisterOrUpdateAnchor(detectedLabel, hit.point);
             }
@@ -146,10 +153,38 @@ public class GeminiRaycast : MonoBehaviour
             }
         }
 
-        // Optionally visualize offsetNode camera frustum
-        if (visualizeOffsetNodeCamera && offsetNode)
+        // Optionally visualize the captured camera pose as a frustum
+        if (visualizeOffsetNodeCamera)
         {
-            VisualizeOffsetNodeCamera(offsetNode, offsetNodeFOV, offsetNodeAspect, offsetNodeNear, offsetNodeFar);
+            // Create a temporary GameObject to visualize the captured camera pose
+            GameObject tempCamObj = new GameObject("CapturedCameraPose");
+            debugVisualizationObjects.Add(tempCamObj);
+            
+            // Set it to the captured pose
+            tempCamObj.transform.position = offsetNode != null ? cameraPose.offsetNodePosition : cameraPose.position;
+            tempCamObj.transform.rotation = offsetNode != null ? cameraPose.offsetNodeRotation : cameraPose.rotation;
+            
+            // Visualize its frustum
+            VisualizeOffsetNodeCamera(tempCamObj.transform, offsetNodeFOV, offsetNodeAspect, offsetNodeNear, offsetNodeFar);
+        }
+    }
+
+    /// <summary>
+    /// Original method - keeping for backward compatibility
+    /// </summary>
+    public void OnBoxesUpdated(List<Box2DResult> boxes)
+    {
+        // For backward compatibility, redirect to the new method with current camera pose
+        if (xrCamera != null)
+        {
+            var currentPose = new Gemini2DBoundingBoxDetector.CameraPoseData(
+                xrCamera.transform, offsetNode);
+            
+            OnBoxesUpdatedWithCameraPose(boxes, currentPose);
+        }
+        else
+        {
+            Debug.LogError("Cannot process boxes - xrCamera is null");
         }
     }
 

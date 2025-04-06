@@ -22,12 +22,60 @@ public class Gemini2DBoundingBoxDetector : GeminiGeneral
 
     public GeminiRaycast m_geminiRaycast;
 
+    // Store camera pose at capture time
+    private CameraPoseData capturedCameraPose;
+
+    /// <summary>
+    /// Data structure to store camera pose at capture time
+    /// </summary>
+    public struct CameraPoseData
+    {
+        public Vector3 position;
+        public Quaternion rotation;
+        public Vector3 offsetNodePosition;
+        public Quaternion offsetNodeRotation;
+
+        public CameraPoseData(Transform camera, Transform offsetNode)
+        {
+            position = camera.position;
+            rotation = camera.rotation;
+            
+            if (offsetNode != null)
+            {
+                offsetNodePosition = offsetNode.position;
+                offsetNodeRotation = offsetNode.rotation;
+            }
+            else
+            {
+                offsetNodePosition = Vector3.zero;
+                offsetNodeRotation = Quaternion.identity;
+            }
+        }
+    }
+
     /// <summary>
     /// Example call to detect bounding boxes on the current camera frame.
     /// You can hook this to a UI button or call it automatically.
     /// </summary>
     public void Request2DBoundingBoxes()
     {
+        // Capture the camera pose at the time the button is pressed
+        if (m_geminiRaycast != null && m_geminiRaycast.xrCamera != null)
+        {
+            capturedCameraPose = new CameraPoseData(
+                m_geminiRaycast.xrCamera.transform, 
+                m_geminiRaycast.offsetNode
+            );
+            
+            Debug.Log("Captured camera pose: " + 
+                      capturedCameraPose.position + ", " + 
+                      capturedCameraPose.rotation.eulerAngles);
+        }
+        else
+        {
+            Debug.LogWarning("Cannot capture camera pose - missing GeminiRaycast or xrCamera reference");
+        }
+        
         StartCoroutine(DetectBoxesRoutine());
     }
 
@@ -68,7 +116,8 @@ public class Gemini2DBoundingBoxDetector : GeminiGeneral
             Debug.Log($"Got {boxResults.Count} boxes from Gemini!");
             if (m_geminiRaycast != null && boxResults.Count > 0)
             {
-                m_geminiRaycast.OnBoxesUpdated(boxResults);
+                // Pass the captured camera pose with the boxes
+                m_geminiRaycast.OnBoxesUpdatedWithCameraPose(boxResults, capturedCameraPose);
             }
         }
 
