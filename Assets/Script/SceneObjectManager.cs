@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using TMPro;
 using PolySpatial.Template;
+using UnityEngine.XR.Interaction.Toolkit.UI;
 
 /// <summary>
 /// Singleton manager that tracks all recognized objects in the scene,
@@ -48,6 +49,10 @@ public class SceneObjectManager : MonoBehaviour
     public GameObject pointingPlane;
     public TextMeshPro pointingPlaneText;
     public MyHandTracking handTracking;
+    public GameObject recorderToggle;
+    
+    [Tooltip("Reference to the BaselineModeController for mode-specific behaviors")]
+    public BaselineModeController baselineModeController;
 
     [Header("User Study Logging")]
     [SerializeField] private bool enableUserStudyLogging = true;
@@ -57,6 +62,12 @@ public class SceneObjectManager : MonoBehaviour
         // Basic singleton pattern
         if (Instance == null) Instance = this;
         else Destroy(gameObject);
+        
+        // Find BaselineModeController if not set
+        if (baselineModeController == null)
+        {
+            baselineModeController = FindObjectOfType<BaselineModeController>();
+        }
     }
 
     public List<SceneObjectAnchor> GetAllAnchors()
@@ -195,6 +206,18 @@ public class SceneObjectManager : MonoBehaviour
                 sphereToggleScript.relationLineManager = relationLineManager;
                 sphereToggleScript.sceneObjManager = sceneObjManager;
                 sphereToggleScript.sceneContextManager = sceneContextManager;
+                
+                // Make sure to pass our recorder toggle to the new sphere toggle script
+                if (recorderToggle != null)
+                {
+                    sphereToggleScript.recorderToggle = recorderToggle;
+                }
+                
+                // Make sure to pass baseline mode controller reference
+                if (baselineModeController != null)
+                {
+                    sphereToggleScript.baselineModeController = baselineModeController;
+                }
             }
 
             var menuScript = InfoPanel.GetComponentInChildren<MenuScript>();
@@ -263,6 +286,82 @@ public class SceneObjectManager : MonoBehaviour
     {
         int anchorCount = anchors.Count;
         
+        // Handle recorder toggle
+        if (recorderToggle != null)
+        {
+            // Apply the same settings as used in SphereToggleScript.UpdateTogglePosition when setting parent to null
+            recorderToggle.transform.SetParent(null);
+            
+            // Update reference scale using SpatialUI component
+            var spatialUI = recorderToggle.GetComponent<SpatialUI>();
+            if (spatialUI != null) spatialUI.UpdateReferenceScale();
+            
+            // Reset position and rotation
+            recorderToggle.transform.localPosition = Vector3.zero;
+            recorderToggle.transform.localRotation = Quaternion.identity;
+            
+            // Enable LazyFollow if it exists
+            var lazyFollow = recorderToggle.GetComponent<LazyFollow>();
+            if (lazyFollow != null) lazyFollow.enabled = true;
+            
+            // Reset object label in the recorder component
+            SpeechToTextRecorder recorder = recorderToggle.GetComponent<SpeechToTextRecorder>();
+            if (recorder == null && recorderToggle.transform.parent != null) 
+                recorder = recorderToggle.transform.parent.GetComponent<SpeechToTextRecorder>();
+            if (recorder != null) recorder.ResetObjectLabel();
+            
+            // Handle baseline mode if available
+            if (baselineModeController != null && baselineModeController.baselineMode)
+            {
+                // In baseline mode, set inactive - but we'll need to reactivate it for new spheres
+                recorderToggle.SetActive(false);
+            }
+            else
+            {
+                // In normal mode, make sure it's active
+                recorderToggle.SetActive(true);
+            }
+            
+            // Store this recorder toggle in a static variable so it can be accessed by new spheres
+            StoreRecorderToggleReference();
+        }
+        
+        // Handle object tracking toggle if we can find one
+        GameObject objectTrackingToggle = GameObject.Find("ObjectTrackingToggle");
+        if (objectTrackingToggle != null)
+        {
+            // Apply the same settings as the recorder toggle
+            objectTrackingToggle.transform.SetParent(null);
+            
+            var spatialUI = objectTrackingToggle.GetComponent<SpatialUI>();
+            if (spatialUI != null) spatialUI.UpdateReferenceScale();
+            
+            objectTrackingToggle.transform.localPosition = Vector3.zero;
+            objectTrackingToggle.transform.localRotation = Quaternion.identity;
+            
+            var lazyFollow = objectTrackingToggle.GetComponent<LazyFollow>();
+            if (lazyFollow != null) lazyFollow.enabled = true;
+            
+            // Handle visibility based on baseline mode
+            if (baselineModeController != null && baselineModeController.baselineMode)
+            {
+                // In baseline mode, always hide the object tracking toggle
+                objectTrackingToggle.SetActive(false);
+            }
+            else
+            {
+                // In normal mode, make sure it's visible
+                objectTrackingToggle.SetActive(true);
+            }
+            
+            // Make sure all sphere toggles have a reference to this toggle
+            SphereToggleScript[] allToggles = FindObjectsOfType<SphereToggleScript>();
+            foreach (var toggle in allToggles)
+            {
+                toggle.objectTrackingToggle = objectTrackingToggle;
+            }
+        }
+        
         // Destroy all the sphere GameObjects
         foreach (var anchor in anchors)
         {
@@ -283,6 +382,21 @@ public class SceneObjectManager : MonoBehaviour
         
         Debug.Log("All anchors have been cleared from the scene");
         LogUserStudy($"[SCENE_OBJECT_MANAGER] ALL_ANCHORS_CLEARED: Count={anchorCount}");
+    }
+    
+    // Helper method to store a reference to the recorder toggle
+    private void StoreRecorderToggleReference()
+    {
+        if (recorderToggle != null)
+        {
+            // Get all SphereToggleScript components in the scene
+            SphereToggleScript[] allToggles = FindObjectsOfType<SphereToggleScript>();
+            foreach (var toggle in allToggles)
+            {
+                // Update the recorder toggle reference
+                toggle.recorderToggle = recorderToggle;
+            }
+        }
     }
     
     // Helper method for creating timestamped user study logs

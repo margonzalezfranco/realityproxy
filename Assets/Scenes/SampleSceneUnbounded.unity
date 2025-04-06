@@ -4641,6 +4641,7 @@ MonoBehaviour:
   stepIndicatorPrefab: {fileID: 1336632255144453280, guid: a369a714ca5524eadb8ac4ff33c81217, type: 3}
   pointingPlane: {fileID: 505788586}
   objectLevelRecordingToggle: 1
+  enableUserStudyLogging: 1
 --- !u!114 &779485471
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -6415,6 +6416,7 @@ MonoBehaviour:
   labelScale: 0.002
   highlightTimeout: 10
   sceneObjectManager: {fileID: 1242229081}
+  enableUserStudyLogging: 1
 --- !u!4 &1083609193
 Transform:
   m_ObjectHideFlags: 0
@@ -6773,7 +6775,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: Version 2
+  m_text: "Single-Object \nQ&A"
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: f675742eaf9c20a4f909d78ee7a14fed, type: 2}
   m_sharedMaterial: {fileID: 4687939059374929122, guid: f675742eaf9c20a4f909d78ee7a14fed, type: 2}
@@ -6800,8 +6802,8 @@ MonoBehaviour:
   m_faceColor:
     serializedVersion: 2
     rgba: 4294967295
-  m_fontSize: 160
-  m_fontSizeBase: 160
+  m_fontSize: 129.8
+  m_fontSizeBase: 129.8
   m_fontWeight: 400
   m_enableAutoSizing: 0
   m_fontSizeMin: 18
@@ -8061,6 +8063,7 @@ MonoBehaviour:
   currentPossibleTasks: []
   currentRelevantObjects: []
   lastAnalysisTime: Never
+  enableUserStudyLogging: 1
 --- !u!4 &1242229079
 Transform:
   m_ObjectHideFlags: 0
@@ -8133,6 +8136,7 @@ MonoBehaviour:
   pointingPlane: {fileID: 505788586}
   pointingPlaneText: {fileID: 1799472516}
   handTracking: {fileID: 1483904742}
+  enableUserStudyLogging: 1
 --- !u!1001 &1274422331
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -9646,6 +9650,7 @@ MonoBehaviour:
   questionPrefab: {fileID: 8332209716421791987, guid: afb3b284441664fef8669ab537fb8b5f, type: 3}
   answerPanel: {fileID: 1093593259}
   questionAnswerer: {fileID: 1557741984}
+  enableUserStudyLogging: 1
 --- !u!1 &1490084817
 GameObject:
   m_ObjectHideFlags: 0
@@ -10216,6 +10221,7 @@ MonoBehaviour:
     to only rely on that. You don''t have to wait to see the object to respond. Only
     respond information about this object. Please respond concisely and avoid using
     markdown formatting. User question: {0}'
+  enableUserStudyLogging: 1
 --- !u!114 &1557741985
 MonoBehaviour:
   m_ObjectHideFlags: 0

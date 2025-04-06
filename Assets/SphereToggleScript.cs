@@ -307,6 +307,18 @@ public class SphereToggleScript : MonoBehaviour
         {
             baselineModeController = FindFirstObjectByType<BaselineModeController>();
         }
+        
+        // Subscribe to baseline mode changes
+        if (baselineModeController != null)
+        {
+            baselineModeController.OnBaselineModeChanged += HandleBaselineModeChanged;
+            
+            // Initial check - hide recorder toggle if already in baseline mode
+            if (baselineModeController.baselineMode && recorderToggle != null && !isOn)
+            {
+                recorderToggle.SetActive(false);
+            }
+        }
 
         // Ensure we have a reference to a GeminiGeneral component
         if (geminiGeneral == null)
@@ -369,6 +381,12 @@ public class SphereToggleScript : MonoBehaviour
         HandGrabTrigger.OnAnchorReleased -= HandleAnchorReleased;
         UnsubscribeFromToggleEvents();
         OnPointingStateChanged -= OnPointingStateHandler;
+        
+        // Unsubscribe from baseline mode changes
+        if (baselineModeController != null)
+        {
+            baselineModeController.OnBaselineModeChanged -= HandleBaselineModeChanged;
+        }
 
         // Make sure to set pointing state to false when destroyed
         if (currentlyPointing)
@@ -394,6 +412,54 @@ public class SphereToggleScript : MonoBehaviour
         if (activeRelationshipQuestionCoroutine != null)
         {
             StopCoroutine(activeRelationshipQuestionCoroutine);
+        }
+    }
+    
+    // Add handler for baseline mode changes
+    private void HandleBaselineModeChanged(bool isBaselineMode)
+    {
+        // If baseline mode is turned on and recorder toggle exists
+        if (isBaselineMode && recorderToggle != null && !isOn)
+        {
+            // Hide the recorder toggle
+            recorderToggle.SetActive(false);
+        }
+        // If baseline mode is turned off, always make recorder toggle visible
+        else if (!isBaselineMode && recorderToggle != null)
+        {
+            // Show the recorder toggle regardless of sphere toggle state
+            recorderToggle.SetActive(true);
+            
+            // Make sure to update its position if sphere toggle is on
+            if (isOn)
+            {
+                UpdateRecorderToggle(true);
+            }
+        }
+        
+        // Do the same for object tracking toggle
+        if (isBaselineMode && objectTrackingToggle != null && !isOn)
+        {
+            objectTrackingToggle.SetActive(false);
+        }
+        else if (!isBaselineMode && objectTrackingToggle != null)
+        {
+            // Show the object tracking toggle regardless of sphere toggle state
+            objectTrackingToggle.SetActive(true);
+            
+            // Make sure to update its position if sphere toggle is on
+            if (isOn)
+            {
+                UpdateObjectTrackingToggle(true);
+            }
+        }
+        
+        // If baseline mode is turned off, also make sure to update HandleToggleEffects
+        // for the current state to ensure toggles are positioned correctly
+        if (!isBaselineMode && isOn)
+        {
+            // Update the object tracking toggle since it would have been skipped in baseline mode
+            UpdateObjectTrackingToggle(true);
         }
     }
 
@@ -492,6 +558,14 @@ public class SphereToggleScript : MonoBehaviour
     {
         if (toggle != null)
         {
+            // If in baseline mode and this is the object tracking toggle, keep it inactive
+            if (baselineModeController != null && baselineModeController.baselineMode && 
+                toggleType == "objectTracking")
+            {
+                toggle.SetActive(false);
+                return;
+            }
+            
             if (isOn)
             {
                 toggle.transform.SetParent(transform);
@@ -504,6 +578,9 @@ public class SphereToggleScript : MonoBehaviour
                 if (lazyFollow != null) lazyFollow.enabled = false;
 
                 if (toggleType == "recorder" && recorder != null && labelUnderSphere != null) recorder.SetObjectLabel(labelUnderSphere.text, this.gameObject);
+                
+                // Make sure the toggle is active when toggled on
+                toggle.SetActive(true);
             }
             else
             {
@@ -520,6 +597,12 @@ public class SphereToggleScript : MonoBehaviour
                     SpeechToTextRecorder recorder = toggle.GetComponent<SpeechToTextRecorder>();
                     if (recorder == null && toggle.transform.parent != null) recorder = toggle.transform.parent.GetComponent<SpeechToTextRecorder>();
                     if (recorder != null)   recorder.ResetObjectLabel();
+                    
+                    // New logic: If in baseline mode, set the toggle inactive when toggled off
+                    if (baselineModeController != null && baselineModeController.baselineMode)
+                    {
+                        toggle.SetActive(false);
+                    }
                 }
             }
         }
@@ -1590,7 +1673,10 @@ public class SphereToggleScript : MonoBehaviour
             if (!baselineModeController.baselineMode) InfoPanel.SetActive(true);
 
             UpdateRecorderToggle(true);
-            UpdateObjectTrackingToggle(true);
+            // Only update object tracking toggle if not in baseline mode
+            if (!baselineModeController.baselineMode) {
+                UpdateObjectTrackingToggle(true);
+            }
 
             LogUserStudy($"[OBJECT] TOGGLE_ON: Object=\"{labelUnderSphere.text}\"");
 
