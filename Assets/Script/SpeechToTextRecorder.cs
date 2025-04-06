@@ -562,6 +562,9 @@ IMPORTANT:
     {
         currentObjectLabel = label;
         
+        // Set the objectLevelRecordingToggle flag to true when associated with an object
+        objectLevelRecordingToggle = true;
+        
         // Save original parent of recorder toggle if this is the first time setting
         if (originalRecorderParent == null && transform.parent != null)
         {
@@ -575,7 +578,7 @@ IMPORTANT:
         //     transform.SetParent(sphereToggle.transform);
         // }
         
-        Debug.Log($"Recorder now associated with object: {label}");
+        Debug.Log($"Recorder now associated with object: {label}, objectLevelRecordingToggle set to {objectLevelRecordingToggle}");
     }
 
     // Method to reset object label and restore original parent
@@ -585,12 +588,15 @@ IMPORTANT:
         string previousLabel = currentObjectLabel;
         currentObjectLabel = null;
         
+        // Reset the objectLevelRecordingToggle flag to false
+        objectLevelRecordingToggle = false;
+        
         // Check if we are currently parented to a pointing plane
         bool wasOnPointingPlane = transform.parent != null && transform.parent.name == "PointingPlane";
         
         transform.SetParent(null);
         
-        Debug.Log($"Recorder object association cleared from {previousLabel}, was on pointing plane: {wasOnPointingPlane}");
+        Debug.Log($"Recorder object association cleared from {previousLabel}, was on pointing plane: {wasOnPointingPlane}, objectLevelRecordingToggle set to {objectLevelRecordingToggle}");
     }
 
     private void StartRecording()
@@ -916,7 +922,8 @@ IMPORTANT:
     public void TalkToGemini(string userQuery)
     {
         string finalPrompt;
-        bool isObjectMode = !string.IsNullOrEmpty(currentObjectLabel);
+        // Update this line to check both conditions
+        bool isObjectMode = objectLevelRecordingToggle && !string.IsNullOrEmpty(currentObjectLabel);
         string contextType = "UNKNOWN";
 
         // Check if we're pointing at a specific part of an object
