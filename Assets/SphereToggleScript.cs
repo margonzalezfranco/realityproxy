@@ -17,6 +17,9 @@ using System.Text;
 /// </summary>
 public class SphereToggleScript : MonoBehaviour
 {
+    // Static reference to the currently active toggle
+    public static SphereToggleScript CurrentActiveToggle { get; private set; }
+
     [Header("References")]
     [Tooltip("The Toggle component on this sphere.")]
     [SerializeField]
@@ -360,6 +363,33 @@ public class SphereToggleScript : MonoBehaviour
             }
         }
 
+        // Check if we're already on at start but there's another active toggle
+        if (isOn)
+        {
+            // If there's already a different active toggle, turn this one off
+            if (CurrentActiveToggle != null && CurrentActiveToggle != this)
+            {
+                Debug.Log($"Multiple toggles active at start. Turning off {gameObject.name}");
+                isOn = false;
+                if (spatialUIToggle != null && spatialUIToggle.enableInteraction)
+                {
+                    spatialUIToggle.PressStart();
+                    spatialUIToggle.PressEnd();
+                }
+                if (labelToggle != null && labelToggle.enableInteraction)
+                {
+                    labelToggle.PressStart();
+                    labelToggle.PressEnd();
+                }
+                HandleToggleEffects(false);
+            }
+            else
+            {
+                // If no other active toggle, register this one as active
+                CurrentActiveToggle = this;
+            }
+        }
+
         // Subscribe to the toggle's onValueChanged event
         SubscribeToToggleEvents();
 
@@ -419,6 +449,13 @@ public class SphereToggleScript : MonoBehaviour
         if (activeRelationshipQuestionCoroutine != null)
         {
             StopCoroutine(activeRelationshipQuestionCoroutine);
+        }
+        
+        // Clear the current active toggle reference if this is being destroyed
+        if (CurrentActiveToggle == this)
+        {
+            CurrentActiveToggle = null;
+            Debug.Log("Cleared CurrentActiveToggle reference as this toggle is being destroyed");
         }
     }
     
@@ -502,12 +539,18 @@ public class SphereToggleScript : MonoBehaviour
         Debug.Log($"Using task context: {currentTaskContext}");
     }
 
+    // Handler for when the main sphere is toggled
     private void OnSphereToggled(bool toggledOn)
     {
         // If we're already handling a toggle event, ignore this one to prevent loops
         if (isHandlingToggle) return;
         
         isHandlingToggle = true;
+        
+        // Before activating, deactivate any other toggle in the scene
+        if (toggledOn) {
+            DeactivateAllOtherToggles();
+        }
         
         // Update our internal state first
         isOn = toggledOn;
@@ -516,10 +559,18 @@ public class SphereToggleScript : MonoBehaviour
         if (toggledOn && labelUnderSphere != null)
         {
             LogUserStudy($"[OBJECT] OBJECT_TOGGLED: Object=\"{labelUnderSphere.text}\", State=ON");
+            
+            // Set as current active toggle
+            CurrentActiveToggle = this;
         }
         else if (!toggledOn && labelUnderSphere != null)
         {
             LogUserStudy($"[OBJECT] OBJECT_TOGGLED: Object=\"{labelUnderSphere.text}\", State=OFF");
+            
+            // If this was the current active toggle, clear the reference
+            if (CurrentActiveToggle == this) {
+                CurrentActiveToggle = null;
+            }
         }
         
         // Update the label toggle to match this toggle's state
@@ -543,8 +594,20 @@ public class SphereToggleScript : MonoBehaviour
         
         isHandlingToggle = true;
 
+        // Before activating, deactivate any other toggle in the scene
+        if (toggledOn) {
+            DeactivateAllOtherToggles();
+        }
+        
         // Update our internal state first
         isOn = toggledOn;
+        
+        // If toggling ON, update current active reference
+        if (toggledOn) {
+            CurrentActiveToggle = this;
+        } else if (CurrentActiveToggle == this) {
+            CurrentActiveToggle = null;
+        }
         
         // Update the sphere toggle to match the label toggle's state
         if (spatialUIToggle != null && spatialUIToggle.enableInteraction)
@@ -555,6 +618,61 @@ public class SphereToggleScript : MonoBehaviour
         
         // Handle the toggle effects
         HandleToggleEffects(isOn);
+        
+        isHandlingToggle = false;
+    }
+    
+    // New method to deactivate all other toggles when this one is activated
+    private void DeactivateAllOtherToggles()
+    {
+        // If there's already an active toggle that isn't this one, deactivate it
+        if (CurrentActiveToggle != null && CurrentActiveToggle != this && CurrentActiveToggle.isOn)
+        {
+            // Log that we're auto-turning off the previous toggle
+            if (CurrentActiveToggle.labelUnderSphere != null)
+            {
+                Debug.Log($"Auto-toggling off previous sphere: {CurrentActiveToggle.labelUnderSphere.text}");
+                LogUserStudy($"[OBJECT] AUTO_TOGGLE_OFF: Object=\"{CurrentActiveToggle.labelUnderSphere.text}\", Reason=\"New toggle activated\"");
+            }
+            
+            // Turn off the other toggle
+            CurrentActiveToggle.TurnOffToggle();
+        }
+    }
+    
+    // New method to programmatically turn off this toggle
+    public void TurnOffToggle()
+    {
+        // Only do something if we're currently on
+        if (!isOn) return;
+        
+        // Use isHandlingToggle to prevent any feedback loops
+        isHandlingToggle = true;
+        
+        // Update internal state
+        isOn = false;
+        
+        // Simulate pressing the toggle buttons to turn them off
+        if (spatialUIToggle != null && spatialUIToggle.enableInteraction)
+        {
+            spatialUIToggle.PressStart();
+            spatialUIToggle.PressEnd();
+        }
+        
+        if (labelToggle != null && labelToggle.enableInteraction)
+        {
+            labelToggle.PressStart();
+            labelToggle.PressEnd();
+        }
+        
+        // Apply the effects directly
+        HandleToggleEffects(false);
+        
+        // If this was the active toggle, clear the reference
+        if (CurrentActiveToggle == this)
+        {
+            CurrentActiveToggle = null;
+        }
         
         isHandlingToggle = false;
     }
@@ -1607,8 +1725,12 @@ public class SphereToggleScript : MonoBehaviour
                     menuCanvas.GetChild(2).gameObject.SetActive(false);
                 }
 
+                // Before activating this toggle, turn off any other active ones
+                DeactivateAllOtherToggles();
+                
                 // Update state and trigger effects
                 isOn = true;
+                CurrentActiveToggle = this;
                 HandleToggleEffects(true);
 
                 // Start object inspection
@@ -1660,6 +1782,11 @@ public class SphereToggleScript : MonoBehaviour
 
                 // Update state and trigger effects
                 isOn = false;
+                // If this was the current active toggle, clear the reference
+                if (CurrentActiveToggle == this)
+                {
+                    CurrentActiveToggle = null;
+                }
                 HandleToggleEffects(false);
 
                 // Stop object inspection

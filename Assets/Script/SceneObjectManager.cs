@@ -168,6 +168,32 @@ public class SceneObjectManager : MonoBehaviour
         GameObject sphereObj = SpawnSphereWithLabel(position, label);
         newAnchor.sphereObj = sphereObj;
 
+        // Ensure any new toggle is initialized in the off state if there's already an active toggle
+        SphereToggleScript toggleScript = sphereObj.GetComponent<SphereToggleScript>();
+        if (toggleScript != null)
+        {
+            // Get the current active toggle in the scene
+            SphereToggleScript currentActive = SphereToggleScript.CurrentActiveToggle;
+            
+            // If there's already an active toggle, make sure this new one starts off
+            if (currentActive != null)
+            {
+                // Force the new toggle to initialize in off state
+                var toggle = toggleScript.GetComponent<SpatialUIToggle>();
+                if (toggle != null && toggle.enabled)
+                {
+                    // Make sure the toggle starts in the off state
+                    if (toggle.isActiveAndEnabled)
+                    {
+                        // Ensure it's off without triggering events
+                        toggleScript.TurnOffToggle();
+                    }
+                }
+                
+                Debug.Log($"New anchor created with label '{label}' initialized in non-active state since there's already an active toggle");
+            }
+        }
+
         LogUserStudy($"[SCENE_OBJECT_MANAGER] ANCHOR_INITIALIZED: Object=\"{label}\", Position=\"{position}\", Radius={matchingRadius:F3}m");
         return newAnchor;
     }

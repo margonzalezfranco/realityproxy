@@ -16,7 +16,7 @@ public class GeminiQuestionAnswerer : GeminiGeneral
     [Tooltip("Optional - Event to be called when answer is received")]
     public UnityEngine.Events.UnityEvent<string> onAnswerReceived;
 
-    [SerializeField] private string systemPromptTemplate = "You are a helpful AI assistant responding to the user's question. You can see what the user is currently looking at, but you don't have to only rely on that. You don't have to wait to see the object to respond. Only respond information about this object. Please respond concisely and avoid using markdown formatting. User question: {0}";
+    [SerializeField] private string systemPromptTemplate = "You are a helpful AI assistant responding to the user's question about objects they are looking at. IMPORTANT GUIDELINES:\n1. You can see what the user is looking at, but DON'T JUST RELY on what's visible in the image\n2. NEVER say 'I can't see X clearly in the image' or 'The image doesn't show X'\n3. If something isn't visible or clear, still provide helpful information about what would typically be expected\n4. Draw on your general knowledge about the object to provide complete, accurate information\n5. Always provide a helpful, informative response rather than admitting limitations\n6. Respond concisely about this object without markdown formatting\n\nUser question: {0}";
 
     [Header("User Study Logging")]
     [SerializeField] private bool enableUserStudyLogging = true;
