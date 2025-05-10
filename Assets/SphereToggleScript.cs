@@ -40,6 +40,9 @@ public class SphereToggleScript : MonoBehaviour
     // Flag to prevent toggle loops
     private bool isHandlingToggle = false;
 
+    // Make isOn public so RelationToggleController can access it
+    public bool isOn = false;
+
     // -----------------------------
     // New Fields for Gemini Re-Call
     // -----------------------------
@@ -88,8 +91,6 @@ public class SphereToggleScript : MonoBehaviour
     public Vector3 menuOffset = new Vector3(0f, 1f, 0f); // Default slightly above the anchor
     
     public Vector3 menuOffsetForStatic = new Vector3(0f, 1f, 0f);
-
-    private bool isOn = false;
 
     private string currentSceneContext = "unknown environment";
     private string currentTaskContext = "no specific task";
@@ -194,7 +195,6 @@ public class SphereToggleScript : MonoBehaviour
 
     // New fields for function toggle exclusivity
     private bool isHandlingFunctionToggleExclusivity = false;
-    private bool relationLinesAreCurrentlyActive = false;
 
     // Define a handler for pointing state changes to avoid recursion
     private void OnPointingStateHandler(bool isPointing)
@@ -360,8 +360,21 @@ public class SphereToggleScript : MonoBehaviour
             {
                 // Clear any existing listeners to avoid duplicates
                 toggle.m_ToggleChanged.RemoveAllListeners();
-                // Add listener to control the relationship lines
-                toggle.m_ToggleChanged.AddListener(ToggleRelationshipLines);
+
+                // Check if there's a RelationToggleController on the GameObject
+                var controller = relationToggle.GetComponent<RelationToggleController>();
+                if (controller == null)
+                {
+                    // Add the controller if it doesn't exist
+                    controller = relationToggle.AddComponent<RelationToggleController>();
+                    // Set up references
+                    controller.toggle = toggle;
+                    controller.ownerSphereToggle = this;
+                    controller.relationshipLineManager = relationLineManager;
+                    controller.sceneObjectManager = sceneObjManager;
+                    controller.geminiGeneral = geminiGeneral;
+                    controller.geminiClient = geminiClient;
+                }
                 
                 // Initialize toggle to off state - relationships start hidden
                 if (toggle.m_Active)
@@ -521,7 +534,8 @@ public class SphereToggleScript : MonoBehaviour
             SpatialUIToggle toggle = relationToggle.GetComponent<SpatialUIToggle>();
             if (toggle != null)
             {
-                toggle.m_ToggleChanged.RemoveListener(ToggleRelationshipLines);
+                // Don't need to remove listener since we're not adding it directly anymore
+                // toggle.m_ToggleChanged.RemoveListener(ToggleRelationshipLines);
             }
         }
 
@@ -819,7 +833,25 @@ public class SphereToggleScript : MonoBehaviour
                 var lazyFollow = toggle.GetComponent<LazyFollow>();
                 if (lazyFollow != null) lazyFollow.enabled = false;
 
-                if (toggleType == "recorder" && recorder != null && labelUnderSphere != null) recorder.SetObjectLabel(labelUnderSphere.text, this.gameObject);
+                // Handle specific toggle types
+                if (toggleType == "recorder" && recorder != null && labelUnderSphere != null) 
+                {
+                    recorder.SetObjectLabel(labelUnderSphere.text, this.gameObject);
+                }
+                else if (toggleType == "relation")
+                {
+                    // Update the relation controller owner reference
+                    var controller = toggle.GetComponent<RelationToggleController>();
+                    if (controller != null)
+                    {
+                        controller.UpdateOwner(this);
+                        // Ensure the toggle's active state matches the controller
+                        if (controller.toggle != null && controller.toggle.m_Active)
+                        {
+                            controller.ToggleRelationshipLines(true);
+                        }
+                    }
+                }
                 
                 // Make sure the toggle is active when toggled on
                 toggle.SetActive(true);
@@ -834,6 +866,7 @@ public class SphereToggleScript : MonoBehaviour
                 var lazyFollow = toggle.GetComponent<LazyFollow>();
                 if (lazyFollow != null) lazyFollow.enabled = true;
                 
+                // Handle specific toggle types
                 if (toggleType == "recorder")
                 {
                     SpeechToTextRecorder recorder = toggle.GetComponent<SpeechToTextRecorder>();
@@ -844,6 +877,15 @@ public class SphereToggleScript : MonoBehaviour
                     if (baselineModeController != null && baselineModeController.baselineMode)
                     {
                         toggle.SetActive(false);
+                    }
+                }
+                else if (toggleType == "relation")
+                {
+                    // If the relation toggle is active when being detached, turn it off
+                    var controller = toggle.GetComponent<RelationToggleController>();
+                    if (controller != null && controller.toggle != null && controller.toggle.m_Active)
+                    {
+                        controller.ToggleRelationshipLines(false);
                     }
                 }
             }
@@ -868,6 +910,16 @@ public class SphereToggleScript : MonoBehaviour
     private void UpdateRelationToggle(bool isOn)
     {
         UpdateTogglePosition(relationToggle, relationToggleOffset, isOn, "relation");
+        
+        // Update the controller's owner reference
+        if (isOn && relationToggle != null)
+        {
+            RelationToggleController controller = relationToggle.GetComponent<RelationToggleController>();
+            if (controller != null)
+            {
+                controller.UpdateOwner(this);
+            }
+        }
     }
 
     private void OnObjectInspected(bool inspected)
@@ -1953,12 +2005,14 @@ public class SphereToggleScript : MonoBehaviour
                 LogUserStudy($"[OBJECT] INFO_PANEL_VISIBILITY: Object=\"{labelUnderSphere.text}\", Visible={isVisible}");
 
                 // Deactivate Relation Toggle if it's active
-                if (relationLinesAreCurrentlyActive && relationToggle != null)
+                if (relationToggle != null)
                 {
                     SpatialUIToggle rt = relationToggle.GetComponent<SpatialUIToggle>();
-                    if (rt != null)
+                    RelationToggleController controller = relationToggle.GetComponent<RelationToggleController>();
+                    
+                    if (rt != null && IsRelationToggleActive())
                     {
-                        rt.PressStart(); // This will trigger ToggleRelationshipLines(false)
+                        rt.PressStart(); // This will trigger controller's ToggleRelationshipLines(false)
                         rt.PressEnd();
                     }
                 }
@@ -2099,10 +2153,14 @@ public class SphereToggleScript : MonoBehaviour
                 if (relationToggle != null)
                 {
                     SpatialUIToggle toggle = relationToggle.GetComponent<SpatialUIToggle>();
-                    if (toggle != null && toggle.m_Active)
+                    RelationToggleController controller = relationToggle.GetComponent<RelationToggleController>();
+                    
+                    if (toggle != null && toggle.m_Active && controller != null)
                     {
-                        // The relation toggle is on, so generate relationships
-                        ToggleRelationshipLines(true);
+                        // Ensure owner reference is updated
+                        controller.UpdateOwner(this);
+                        // Use the controller to toggle relationship lines
+                        controller.ToggleRelationshipLines(true);
                     }
                 }
             }
@@ -3213,79 +3271,6 @@ public class SphereToggleScript : MonoBehaviour
         Debug.Log($"[USER_STUDY_LOG][{timestamp}] {message}");
     }
 
-    // Method to toggle relationship lines on/off
-    public void ToggleRelationshipLines(bool showLines)
-    {
-        bool stateActuallyChanged = relationLinesAreCurrentlyActive != showLines;
-        relationLinesAreCurrentlyActive = showLines;
-
-        if (showLines)
-        {
-            Debug.Log("ToggleRelationshipLines: showLines = true");
-            // Only generate relationships if we're in active state
-            if (isOn && labelUnderSphere != null)
-            {
-                if (stateActuallyChanged) // Being turned ON
-                {
-                    if (isHandlingFunctionToggleExclusivity) return;
-                    isHandlingFunctionToggleExclusivity = true;
-
-                    // Deactivate Question Toggle if it's active
-                    if (InfoPanel != null && InfoPanel.activeSelf && questionToggle != null)
-                    {
-                        SpatialUIToggle qt = questionToggle.GetComponent<SpatialUIToggle>();
-                        if (qt != null)
-                        {
-                            qt.PressStart(); // This will trigger SetInfoPanelVisibility(false)
-                            qt.PressEnd();
-                        }
-                    }
-
-                    // Deactivate Recorder Toggle if it's active
-                    if (IsRecorderOn() && recorderToggle != null)
-                    {
-                        SpatialUIToggle recT = recorderToggle.GetComponent<SpatialUIToggle>();
-                        if (recT != null)
-                        {
-                            recT.PressStart(); // This will trigger OnRecorderFunctionToggleChanged(false)
-                            recT.PressEnd();
-                        }
-                    }
-                    isHandlingFunctionToggleExclusivity = false;
-                }
-
-                string labelContent = labelUnderSphere.text;
-                
-                // Stop any existing relationship generation coroutine
-                if (activeRelationshipQuestionCoroutine != null)
-                {
-                    StopCoroutine(activeRelationshipQuestionCoroutine);
-                    activeRelationshipQuestionCoroutine = null;
-                }
-                
-                // Generate relationships with other items
-                StartCoroutine(GenerateRelationshipsRoutine(labelContent));
-                
-                // Log the action
-                LogUserStudy($"[RELATION] RELATIONSHIP_LINES_SHOWN: Object=\"{labelContent}\"");
-            }
-        }
-        else
-        {
-            // Clear any existing relationship lines
-            if (relationLineManager != null)
-            {
-                relationLineManager.ClearAllLines();
-                
-                // Log the action
-                if (labelUnderSphere != null && stateActuallyChanged) // Log only if state changed to OFF
-                {
-                    LogUserStudy($"[RELATION] RELATIONSHIP_LINES_HIDDEN: Object=\"{labelUnderSphere.text}\"");
-                }
-            }
-        }
-    }
-
     // New listener for RecorderToggle state changes for exclusivity
     private void OnRecorderFunctionToggleChanged(bool isRecorderNowOn)
     {
@@ -3311,12 +3296,12 @@ public class SphereToggleScript : MonoBehaviour
             }
 
             // Deactivate Relation Toggle if it's active
-            if (relationLinesAreCurrentlyActive && relationToggle != null)
+            if (relationToggle != null)
             {
                 SpatialUIToggle rt = relationToggle.GetComponent<SpatialUIToggle>();
-                if (rt != null)
+                if (rt != null && IsRelationToggleActive())
                 {
-                    rt.PressStart(); // Triggers ToggleRelationshipLines(false)
+                    rt.PressStart(); // This will trigger the controller's ToggleRelationshipLines(false)
                     rt.PressEnd();
                 }
             }
@@ -3351,5 +3336,17 @@ public class SphereToggleScript : MonoBehaviour
             }
         }
         return false; // Default if cannot determine
+    }
+
+    // Helper method to check if relation toggle is active
+    private bool IsRelationToggleActive()
+    {
+        if (relationToggle == null) return false;
+        SpatialUIToggle toggle = relationToggle.GetComponent<SpatialUIToggle>();
+        if (toggle != null)
+        {
+            return toggle.m_Active;
+        }
+        return false;
     }
 }
