@@ -317,12 +317,16 @@ MonoBehaviour:
   objectTrackingToggle: {fileID: 0}
   recorderToggleOffset: {x: 0, y: 2.5, z: 0}
   objectTrackingToggleOffset: {x: 0, y: -0.3, z: -1.26}
+  questionToggleOffset: {x: -1, y: 2.5, z: 0}
+  relationToggleOffset: {x: 1, y: 2.5, z: 0}
   Offset: {x: 0, y: 0.06, z: -0.05}
   enableAutoRecordOnPointing: 1
   autoRecordDuration: 10
   minTimeBetweenAutoRecordings: 3
   autoRecordingActiveColor: {r: 1, g: 0.3, b: 0.3, a: 1}
   enableUserStudyLogging: 1
+  questionToggle: {fileID: 0}
+  relationToggle: {fileID: 0}
 --- !u!114 &-4739414126409212889
 MonoBehaviour:
   m_ObjectHideFlags: 0

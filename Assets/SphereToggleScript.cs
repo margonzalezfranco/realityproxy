@@ -147,6 +147,12 @@ public class SphereToggleScript : MonoBehaviour
     Vector3 objectTrackingToggleOffset = new Vector3(0f, 0.06f, -0.05f);
 
     [SerializeField]
+    Vector3 questionToggleOffset = new Vector3(-0.07f, 0.1f, -0.05f);
+
+    [SerializeField]
+    Vector3 relationToggleOffset = new Vector3(-0.07f, 0.06f, -0.05f);
+
+    [SerializeField]
     Vector3 Offset = new Vector3(0f, 0.06f, -0.05f);
 
     private Vector3 originalInfoPanelPosition;
@@ -181,6 +187,14 @@ public class SphereToggleScript : MonoBehaviour
 
     [Header("User Study Logging")]
     [SerializeField] private bool enableUserStudyLogging = true;
+
+    public GameObject questionToggle;
+
+    public GameObject relationToggle;
+
+    // New fields for function toggle exclusivity
+    private bool isHandlingFunctionToggleExclusivity = false;
+    private bool relationLinesAreCurrentlyActive = false;
 
     // Define a handler for pointing state changes to avoid recursion
     private void OnPointingStateHandler(bool isPointing)
@@ -300,6 +314,62 @@ public class SphereToggleScript : MonoBehaviour
         {
             objectTrackingToggle = GameObject.Find("ObjectTrackingToggle");
         }
+        
+        if (questionToggle == null)
+        {
+            questionToggle = GameObject.Find("QuestionToggle");
+        }
+
+        if (relationToggle == null)
+        {
+            relationToggle = GameObject.Find("RelationToggle");
+        }
+
+        // Set up the question toggle to control the InfoPanel
+        if (questionToggle != null)
+        {
+            SpatialUIToggle toggle = questionToggle.GetComponent<SpatialUIToggle>();
+            if (toggle != null)
+            {
+                // Clear any existing listeners to avoid duplicates
+                toggle.m_ToggleChanged.RemoveAllListeners();
+                // Add listener to control the InfoPanel
+                toggle.m_ToggleChanged.AddListener(SetInfoPanelVisibility);
+                
+                // Initialize the toggle state to match the InfoPanel if it exists
+                if (InfoPanel != null)
+                {
+                    bool isPanelActive = InfoPanel.activeSelf;
+                    if (toggle.m_Active != isPanelActive)
+                    {
+                        // Update toggle state without invoking events
+                        if (isPanelActive)
+                            toggle.PassiveToggleWithoutInvokeOn();
+                        else
+                            toggle.PassiveToggleWithoutInvokeOff();
+                    }
+                }
+            }
+        }
+
+        // Set up the relation toggle to control relationship lines
+        if (relationToggle != null)
+        {
+            SpatialUIToggle toggle = relationToggle.GetComponent<SpatialUIToggle>();
+            if (toggle != null)
+            {
+                // Clear any existing listeners to avoid duplicates
+                toggle.m_ToggleChanged.RemoveAllListeners();
+                // Add listener to control the relationship lines
+                toggle.m_ToggleChanged.AddListener(ToggleRelationshipLines);
+                
+                // Initialize toggle to off state - relationships start hidden
+                if (toggle.m_Active)
+                {
+                    toggle.PassiveToggleWithoutInvokeOff();
+                }
+            }
+        }
 
         // Keep a reference to the object tracking toggle to restore if needed
         if (objectTrackingToggle != null)
@@ -404,6 +474,16 @@ public class SphereToggleScript : MonoBehaviour
 
         // Subscribe to pointing state changes with our handler method
         OnPointingStateChanged += OnPointingStateHandler;
+
+        // Set up the recorder toggle listener for exclusivity
+        if (recorderToggle != null)
+        {
+            SpatialUIToggle toggle = recorderToggle.GetComponent<SpatialUIToggle>();
+            if (toggle != null)
+            {
+                toggle.m_ToggleChanged.AddListener(OnRecorderFunctionToggleChanged);
+            }
+        }
     }
 
     private void OnDestroy()
@@ -423,6 +503,36 @@ public class SphereToggleScript : MonoBehaviour
         if (baselineModeController != null)
         {
             baselineModeController.OnBaselineModeChanged -= HandleBaselineModeChanged;
+        }
+        
+        // Unsubscribe from question toggle
+        if (questionToggle != null)
+        {
+            SpatialUIToggle toggle = questionToggle.GetComponent<SpatialUIToggle>();
+            if (toggle != null)
+            {
+                toggle.m_ToggleChanged.RemoveListener(SetInfoPanelVisibility);
+            }
+        }
+
+        // Unsubscribe from relation toggle
+        if (relationToggle != null)
+        {
+            SpatialUIToggle toggle = relationToggle.GetComponent<SpatialUIToggle>();
+            if (toggle != null)
+            {
+                toggle.m_ToggleChanged.RemoveListener(ToggleRelationshipLines);
+            }
+        }
+
+        // Unsubscribe from recorder toggle exclusivity listener
+        if (recorderToggle != null)
+        {
+            SpatialUIToggle toggle = recorderToggle.GetComponent<SpatialUIToggle>();
+            if (toggle != null)
+            {
+                toggle.m_ToggleChanged.RemoveListener(OnRecorderFunctionToggleChanged);
+            }
         }
 
         // Make sure to set pointing state to false when destroyed
@@ -748,6 +858,16 @@ public class SphereToggleScript : MonoBehaviour
     private void UpdateObjectTrackingToggle(bool isOn)
     {
         UpdateTogglePosition(objectTrackingToggle, objectTrackingToggleOffset, isOn, "objectTracking");
+    }
+
+    private void UpdateQuestionToggle(bool isOn)
+    {
+        UpdateTogglePosition(questionToggle, questionToggleOffset, isOn, "question");
+    }
+
+    private void UpdateRelationToggle(bool isOn)
+    {
+        UpdateTogglePosition(relationToggle, relationToggleOffset, isOn, "relation");
     }
 
     private void OnObjectInspected(bool inspected)
@@ -1805,15 +1925,76 @@ public class SphereToggleScript : MonoBehaviour
         public string part;
         public string description;
     }
+    
+    [ContextMenu("ToggleInfoPanel")]
+    public void ToggleInfoPanel()
+    {
+        SetInfoPanelVisibility(!InfoPanel.activeSelf);
+    }
+    
+    public void SetInfoPanelVisibility(bool isVisible)
+    {
+        if (InfoPanel != null)
+        {
+            bool stateActuallyChanged = InfoPanel.activeSelf != isVisible;
+            InfoPanel.SetActive(isVisible);
+            
+            // If hiding the panel, also hide the answer panel
+            if (!isVisible && answerPanel != null)
+            {
+                answerPanel.SetActive(false);
+            }
+
+            if (isVisible && stateActuallyChanged) // Panel is being turned ON
+            {
+                if (isHandlingFunctionToggleExclusivity) return;
+                isHandlingFunctionToggleExclusivity = true;
+
+                LogUserStudy($"[OBJECT] INFO_PANEL_VISIBILITY: Object=\"{labelUnderSphere.text}\", Visible={isVisible}");
+
+                // Deactivate Relation Toggle if it's active
+                if (relationLinesAreCurrentlyActive && relationToggle != null)
+                {
+                    SpatialUIToggle rt = relationToggle.GetComponent<SpatialUIToggle>();
+                    if (rt != null)
+                    {
+                        rt.PressStart(); // This will trigger ToggleRelationshipLines(false)
+                        rt.PressEnd();
+                    }
+                }
+
+                // Deactivate Recorder Toggle if it's active
+                if (IsRecorderOn() && recorderToggle != null)
+                {
+                    SpatialUIToggle recT = recorderToggle.GetComponent<SpatialUIToggle>();
+                    if (recT != null)
+                    {
+                        recT.PressStart(); // This will trigger OnRecorderFunctionToggleChanged(false)
+                        recT.PressEnd();
+                    }
+                }
+                isHandlingFunctionToggleExclusivity = false;
+            }
+            else if (!isVisible && stateActuallyChanged) // Panel is being turned OFF
+            {
+                 LogUserStudy($"[OBJECT] INFO_PANEL_VISIBILITY: Object=\"{labelUnderSphere.text}\", Visible={isVisible}");
+            }
+        }
+    }
 
     // Shared method to handle toggle effects for both toggles
     private void HandleToggleEffects(bool isActive)
     {
         if (isActive)
         {
-            if (!baselineModeController.baselineMode) InfoPanel.SetActive(true);
+            // if (!baselineModeController.baselineMode) 
+            // {
+            //     SetInfoPanelVisibility(true);
+            // }
 
             UpdateRecorderToggle(true);
+            UpdateQuestionToggle(true);
+            UpdateRelationToggle(true);
             // Only update object tracking toggle if not in baseline mode
             if (!baselineModeController.baselineMode) {
                 UpdateObjectTrackingToggle(true);
@@ -1908,9 +2089,21 @@ public class SphereToggleScript : MonoBehaviour
                 activeQuestionGenerationCoroutine = StartCoroutine(GenerateQuestionsRoutine(labelContent));
 
                 // 2) Also generate relationships with other items (Granularity Lv2)
-                if (!baselineModeController.baselineMode)
+                // This is now controlled by the relationToggle instead of being automatic
+                // if (!baselineModeController.baselineMode)
+                // {
+                //     StartCoroutine(GenerateRelationshipsRoutine(labelContent));
+                // }
+
+                // Check if the relation toggle is on, and if so, generate relationships
+                if (relationToggle != null)
                 {
-                    StartCoroutine(GenerateRelationshipsRoutine(labelContent));
+                    SpatialUIToggle toggle = relationToggle.GetComponent<SpatialUIToggle>();
+                    if (toggle != null && toggle.m_Active)
+                    {
+                        // The relation toggle is on, so generate relationships
+                        ToggleRelationshipLines(true);
+                    }
                 }
             }
 
@@ -1923,10 +2116,15 @@ public class SphereToggleScript : MonoBehaviour
         }
         else
         {
-            // Turn OFF
-            if (!baselineModeController.baselineMode) InfoPanel.SetActive(false);
-            answerPanel.SetActive(false);
+            // // Turn OFF the info panel
+            // if (!baselineModeController.baselineMode) 
+            // {
+            //     SetInfoPanelVisibility(false);
+            // }
+            
             UpdateRecorderToggle(false);
+            UpdateQuestionToggle(false);
+            UpdateRelationToggle(false);
             UpdateObjectTrackingToggle(false);
 
             LogUserStudy($"[OBJECT] TOGGLE_OFF: Object=\"{labelUnderSphere.text}\"");
@@ -3013,5 +3211,145 @@ public class SphereToggleScript : MonoBehaviour
         if (!enableUserStudyLogging) return;
         string timestamp = System.DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
         Debug.Log($"[USER_STUDY_LOG][{timestamp}] {message}");
+    }
+
+    // Method to toggle relationship lines on/off
+    public void ToggleRelationshipLines(bool showLines)
+    {
+        bool stateActuallyChanged = relationLinesAreCurrentlyActive != showLines;
+        relationLinesAreCurrentlyActive = showLines;
+
+        if (showLines)
+        {
+            Debug.Log("ToggleRelationshipLines: showLines = true");
+            // Only generate relationships if we're in active state
+            if (isOn && labelUnderSphere != null)
+            {
+                if (stateActuallyChanged) // Being turned ON
+                {
+                    if (isHandlingFunctionToggleExclusivity) return;
+                    isHandlingFunctionToggleExclusivity = true;
+
+                    // Deactivate Question Toggle if it's active
+                    if (InfoPanel != null && InfoPanel.activeSelf && questionToggle != null)
+                    {
+                        SpatialUIToggle qt = questionToggle.GetComponent<SpatialUIToggle>();
+                        if (qt != null)
+                        {
+                            qt.PressStart(); // This will trigger SetInfoPanelVisibility(false)
+                            qt.PressEnd();
+                        }
+                    }
+
+                    // Deactivate Recorder Toggle if it's active
+                    if (IsRecorderOn() && recorderToggle != null)
+                    {
+                        SpatialUIToggle recT = recorderToggle.GetComponent<SpatialUIToggle>();
+                        if (recT != null)
+                        {
+                            recT.PressStart(); // This will trigger OnRecorderFunctionToggleChanged(false)
+                            recT.PressEnd();
+                        }
+                    }
+                    isHandlingFunctionToggleExclusivity = false;
+                }
+
+                string labelContent = labelUnderSphere.text;
+                
+                // Stop any existing relationship generation coroutine
+                if (activeRelationshipQuestionCoroutine != null)
+                {
+                    StopCoroutine(activeRelationshipQuestionCoroutine);
+                    activeRelationshipQuestionCoroutine = null;
+                }
+                
+                // Generate relationships with other items
+                StartCoroutine(GenerateRelationshipsRoutine(labelContent));
+                
+                // Log the action
+                LogUserStudy($"[RELATION] RELATIONSHIP_LINES_SHOWN: Object=\"{labelContent}\"");
+            }
+        }
+        else
+        {
+            // Clear any existing relationship lines
+            if (relationLineManager != null)
+            {
+                relationLineManager.ClearAllLines();
+                
+                // Log the action
+                if (labelUnderSphere != null && stateActuallyChanged) // Log only if state changed to OFF
+                {
+                    LogUserStudy($"[RELATION] RELATIONSHIP_LINES_HIDDEN: Object=\"{labelUnderSphere.text}\"");
+                }
+            }
+        }
+    }
+
+    // New listener for RecorderToggle state changes for exclusivity
+    private void OnRecorderFunctionToggleChanged(bool isRecorderNowOn)
+    {
+        if (isHandlingFunctionToggleExclusivity) return;
+
+        // We need to determine if the state *actually* changed to ON.
+        // The IsRecorderOn() reflects the state *after* the toggle press.
+        // So if isRecorderNowOn is true, it means it just turned on.
+        if (isRecorderNowOn)
+        {
+            isHandlingFunctionToggleExclusivity = true;
+            Debug.Log("RecorderToggle turned ON by user, ensuring other function toggles are OFF.");
+
+            // Deactivate Question Toggle if it's active
+            if (InfoPanel != null && InfoPanel.activeSelf && questionToggle != null)
+            {
+                SpatialUIToggle qt = questionToggle.GetComponent<SpatialUIToggle>();
+                if (qt != null)
+                {
+                    qt.PressStart(); // Triggers SetInfoPanelVisibility(false)
+                    qt.PressEnd();
+                }
+            }
+
+            // Deactivate Relation Toggle if it's active
+            if (relationLinesAreCurrentlyActive && relationToggle != null)
+            {
+                SpatialUIToggle rt = relationToggle.GetComponent<SpatialUIToggle>();
+                if (rt != null)
+                {
+                    rt.PressStart(); // Triggers ToggleRelationshipLines(false)
+                    rt.PressEnd();
+                }
+            }
+            isHandlingFunctionToggleExclusivity = false;
+        }
+        // If isRecorderNowOn is false, it means it was turned off, no need to deactivate others.
+    }
+
+    // Helper method for IsRecorderOn
+    private bool IsRecorderOn()
+    {
+        if (recorderToggle == null) return false;
+        SpeechToTextRecorder recorderComponent = recorderToggle.GetComponent<SpeechToTextRecorder>();
+        if (recorderComponent == null && recorderToggle.transform.parent != null)
+        {
+            recorderComponent = recorderToggle.transform.parent.GetComponent<SpeechToTextRecorder>();
+        }
+        if (recorderComponent != null)
+        {
+            var isRecordingField = recorderComponent.GetType().GetField("isRecording",
+                System.Reflection.BindingFlags.Instance |
+                System.Reflection.BindingFlags.NonPublic |
+                System.Reflection.BindingFlags.Public);
+            if (isRecordingField != null)
+            {
+                try { // Add try-catch for safety if field access fails
+                    return (bool)isRecordingField.GetValue(recorderComponent);
+                } catch (Exception ex) {
+                    Debug.LogError($"Error accessing isRecording field: {ex.Message}");
+                    return false;
+                }
+            }
+        }
+        return false; // Default if cannot determine
     }
 }
