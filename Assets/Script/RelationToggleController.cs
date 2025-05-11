@@ -241,11 +241,23 @@ public class RelationToggleController : MonoBehaviour
             ownerSphereToggle.InfoPanel.activeSelf && 
             ownerSphereToggle.questionToggle != null)
         {
+            // Always simulate the toggle press to ensure visual state is updated
             SpatialUIToggle qt = ownerSphereToggle.questionToggle.GetComponent<SpatialUIToggle>();
             if (qt != null)
             {
-                qt.PressStart(); // This will trigger SetInfoPanelVisibility(false)
+                Debug.Log("Simulating questionToggle press to turn it off");
+                qt.PressStart();
                 qt.PressEnd();
+            }
+            else
+            {
+                // If for some reason we can't find the toggle, fall back to using the controller directly
+                var infoController = ownerSphereToggle.questionToggle.GetComponent<InfoPanelToggleController>();
+                if (infoController != null)
+                {
+                    Debug.Log("Falling back to direct InfoPanelToggleController call");
+                    infoController.SetInfoPanelVisibility(false);
+                }
             }
         }
 

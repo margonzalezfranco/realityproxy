@@ -325,49 +325,45 @@ public class SphereToggleScript : MonoBehaviour
             relationToggle = GameObject.Find("RelationToggle");
         }
 
-        // Set up the question toggle to control the InfoPanel
         if (questionToggle != null)
         {
-            SpatialUIToggle toggle = questionToggle.GetComponent<SpatialUIToggle>();
-            if (toggle != null)
+            InfoPanelToggleController controller = questionToggle.GetComponent<InfoPanelToggleController>();
+            if (controller == null)
             {
-                // Clear any existing listeners to avoid duplicates
-                toggle.m_ToggleChanged.RemoveAllListeners();
-                // Add listener to control the InfoPanel
-                toggle.m_ToggleChanged.AddListener(SetInfoPanelVisibility);
-                
-                // Initialize the toggle state to match the InfoPanel if it exists
-                if (InfoPanel != null)
+                controller = questionToggle.AddComponent<InfoPanelToggleController>();
+            }
+            
+            controller.infoPanel = InfoPanel;
+            controller.answerPanel = answerPanel;
+            controller.relationToggle = relationToggle;
+            controller.recorderToggle = recorderToggle;
+            controller.sphereToggleScript = this;
+            
+            SpatialUIToggle toggle = questionToggle.GetComponent<SpatialUIToggle>();
+            if (toggle != null && InfoPanel != null)
+            {
+                bool isPanelActive = InfoPanel.activeSelf;
+                if (toggle.m_Active != isPanelActive)
                 {
-                    bool isPanelActive = InfoPanel.activeSelf;
-                    if (toggle.m_Active != isPanelActive)
-                    {
-                        // Update toggle state without invoking events
-                        if (isPanelActive)
-                            toggle.PassiveToggleWithoutInvokeOn();
-                        else
-                            toggle.PassiveToggleWithoutInvokeOff();
-                    }
+                    if (isPanelActive)
+                        toggle.PassiveToggleWithoutInvokeOn();
+                    else
+                        toggle.PassiveToggleWithoutInvokeOff();
                 }
             }
         }
 
-        // Set up the relation toggle to control relationship lines
         if (relationToggle != null)
         {
             SpatialUIToggle toggle = relationToggle.GetComponent<SpatialUIToggle>();
             if (toggle != null)
             {
-                // Clear any existing listeners to avoid duplicates
                 toggle.m_ToggleChanged.RemoveAllListeners();
 
-                // Check if there's a RelationToggleController on the GameObject
                 var controller = relationToggle.GetComponent<RelationToggleController>();
                 if (controller == null)
                 {
-                    // Add the controller if it doesn't exist
                     controller = relationToggle.AddComponent<RelationToggleController>();
-                    // Set up references
                     controller.toggle = toggle;
                     controller.ownerSphereToggle = this;
                     controller.relationshipLineManager = relationLineManager;
@@ -376,7 +372,6 @@ public class SphereToggleScript : MonoBehaviour
                     controller.geminiClient = geminiClient;
                 }
                 
-                // Initialize toggle to off state - relationships start hidden
                 if (toggle.m_Active)
                 {
                     toggle.PassiveToggleWithoutInvokeOff();
@@ -518,15 +513,7 @@ public class SphereToggleScript : MonoBehaviour
             baselineModeController.OnBaselineModeChanged -= HandleBaselineModeChanged;
         }
         
-        // Unsubscribe from question toggle
-        if (questionToggle != null)
-        {
-            SpatialUIToggle toggle = questionToggle.GetComponent<SpatialUIToggle>();
-            if (toggle != null)
-            {
-                toggle.m_ToggleChanged.RemoveListener(SetInfoPanelVisibility);
-            }
-        }
+        // We don't need to unsubscribe from question toggle anymore as we're using the InfoPanelToggleController
 
         // Unsubscribe from relation toggle
         if (relationToggle != null)
@@ -905,6 +892,16 @@ public class SphereToggleScript : MonoBehaviour
     private void UpdateQuestionToggle(bool isOn)
     {
         UpdateTogglePosition(questionToggle, questionToggleOffset, isOn, "question");
+        
+        // Update the controller's owner reference
+        if (isOn && questionToggle != null)
+        {
+            InfoPanelToggleController controller = questionToggle.GetComponent<InfoPanelToggleController>();
+            if (controller != null)
+            {
+                controller.UpdateOwner(this);
+            }
+        }
     }
 
     private void UpdateRelationToggle(bool isOn)
@@ -1978,65 +1975,6 @@ public class SphereToggleScript : MonoBehaviour
         public string description;
     }
     
-    [ContextMenu("ToggleInfoPanel")]
-    public void ToggleInfoPanel()
-    {
-        SetInfoPanelVisibility(!InfoPanel.activeSelf);
-    }
-    
-    public void SetInfoPanelVisibility(bool isVisible)
-    {
-        if (InfoPanel != null)
-        {
-            bool stateActuallyChanged = InfoPanel.activeSelf != isVisible;
-            InfoPanel.SetActive(isVisible);
-            
-            // If hiding the panel, also hide the answer panel
-            if (!isVisible && answerPanel != null)
-            {
-                answerPanel.SetActive(false);
-            }
-
-            if (isVisible && stateActuallyChanged) // Panel is being turned ON
-            {
-                if (isHandlingFunctionToggleExclusivity) return;
-                isHandlingFunctionToggleExclusivity = true;
-
-                LogUserStudy($"[OBJECT] INFO_PANEL_VISIBILITY: Object=\"{labelUnderSphere.text}\", Visible={isVisible}");
-
-                // Deactivate Relation Toggle if it's active
-                if (relationToggle != null)
-                {
-                    SpatialUIToggle rt = relationToggle.GetComponent<SpatialUIToggle>();
-                    RelationToggleController controller = relationToggle.GetComponent<RelationToggleController>();
-                    
-                    if (rt != null && IsRelationToggleActive())
-                    {
-                        rt.PressStart(); // This will trigger controller's ToggleRelationshipLines(false)
-                        rt.PressEnd();
-                    }
-                }
-
-                // Deactivate Recorder Toggle if it's active
-                if (IsRecorderOn() && recorderToggle != null)
-                {
-                    SpatialUIToggle recT = recorderToggle.GetComponent<SpatialUIToggle>();
-                    if (recT != null)
-                    {
-                        recT.PressStart(); // This will trigger OnRecorderFunctionToggleChanged(false)
-                        recT.PressEnd();
-                    }
-                }
-                isHandlingFunctionToggleExclusivity = false;
-            }
-            else if (!isVisible && stateActuallyChanged) // Panel is being turned OFF
-            {
-                 LogUserStudy($"[OBJECT] INFO_PANEL_VISIBILITY: Object=\"{labelUnderSphere.text}\", Visible={isVisible}");
-            }
-        }
-    }
-
-    // Shared method to handle toggle effects for both toggles
     private void HandleToggleEffects(bool isActive)
     {
         if (isActive)
@@ -3287,11 +3225,23 @@ public class SphereToggleScript : MonoBehaviour
             // Deactivate Question Toggle if it's active
             if (InfoPanel != null && InfoPanel.activeSelf && questionToggle != null)
             {
+                // Always simulate the toggle press to ensure visual state is updated
                 SpatialUIToggle qt = questionToggle.GetComponent<SpatialUIToggle>();
                 if (qt != null)
                 {
-                    qt.PressStart(); // Triggers SetInfoPanelVisibility(false)
+                    Debug.Log("Simulating questionToggle press to turn it off");
+                    qt.PressStart();
                     qt.PressEnd();
+                }
+                else
+                {
+                    // If for some reason we can't find the toggle, fall back to using the controller directly
+                    var infoController = questionToggle.GetComponent<InfoPanelToggleController>();
+                    if (infoController != null)
+                    {
+                        Debug.Log("Falling back to direct InfoPanelToggleController call");
+                        infoController.SetInfoPanelVisibility(false);
+                    }
                 }
             }
 

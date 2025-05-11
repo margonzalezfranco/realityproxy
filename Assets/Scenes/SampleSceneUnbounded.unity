@@ -2857,6 +2857,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 9184914e7058e408db2f8b8c35bf442c, type: 3}
       insertIndex: -1
       addedObject: {fileID: 540766669}
+    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 9184914e7058e408db2f8b8c35bf442c, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 540766678}
   m_SourcePrefab: {fileID: 100100000, guid: 9184914e7058e408db2f8b8c35bf442c, type: 3}
 --- !u!1001 &505788584
 PrefabInstance:
@@ -3257,10 +3260,10 @@ MonoBehaviour:
   m_ToggleChanged:
     m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 0}
-        m_TargetAssemblyTypeName: SpeechToTextRecorder, Assembly-CSharp
-        m_MethodName: ToggleRecording
-        m_Mode: 1
+      - m_Target: {fileID: 540766678}
+        m_TargetAssemblyTypeName: InfoPanelToggleController, Assembly-CSharp
+        m_MethodName: SetInfoPanelVisibility
+        m_Mode: 0
         m_Arguments:
           m_ObjectArgument: {fileID: 0}
           m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
@@ -3337,6 +3340,24 @@ Transform:
   m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: 9184914e7058e408db2f8b8c35bf442c, type: 3}
   m_PrefabInstance: {fileID: 494701665}
   m_PrefabAsset: {fileID: 0}
+--- !u!114 &540766678
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 540766667}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4107a3da181ae4961a4bfb3274034e6b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  infoPanel: {fileID: 90799424}
+  answerPanel: {fileID: 1093593259}
+  relationToggle: {fileID: 342383967}
+  recorderToggle: {fileID: 779485459}
+  toggle: {fileID: 0}
+  sphereToggleScript: {fileID: 0}
 --- !u!1 &547423345
 GameObject:
   m_ObjectHideFlags: 0
@@ -12979,7 +13000,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: Gemini
+  m_text: Scan
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: f675742eaf9c20a4f909d78ee7a14fed, type: 2}
   m_sharedMaterial: {fileID: 4687939059374929122, guid: f675742eaf9c20a4f909d78ee7a14fed, type: 2}
