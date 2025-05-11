@@ -37,6 +37,8 @@ public class SphereToggleScript : MonoBehaviour
 
     public GameObject InfoPanel;
 
+    public GameObject GlobalMenu;
+
     // Flag to prevent toggle loops
     private bool isHandlingToggle = false;
 
@@ -653,83 +655,58 @@ public class SphereToggleScript : MonoBehaviour
     // Handler for when the main sphere is toggled
     private void OnSphereToggled(bool toggledOn)
     {
-        // If we're already handling a toggle event, ignore this one to prevent loops
         if (isHandlingToggle) return;
-        
         isHandlingToggle = true;
         
-        // Before activating, deactivate any other toggle in the scene
         if (toggledOn) {
             DeactivateAllOtherToggles();
         }
         
-        // Update our internal state first
         isOn = toggledOn;
         
-        // Log the toggling action for user study
         if (toggledOn && labelUnderSphere != null)
         {
             LogUserStudy($"[OBJECT] OBJECT_TOGGLED: Object=\"{labelUnderSphere.text}\", State=ON");
-            
-            // Set as current active toggle
             CurrentActiveToggle = this;
         }
         else if (!toggledOn && labelUnderSphere != null)
         {
             LogUserStudy($"[OBJECT] OBJECT_TOGGLED: Object=\"{labelUnderSphere.text}\", State=OFF");
-            
-            // If this was the current active toggle, clear the reference
             if (CurrentActiveToggle == this) {
                 CurrentActiveToggle = null;
             }
         }
         
-        // Update the label toggle to match this toggle's state
-        if (labelToggle != null && labelToggle.enableInteraction)
-        {
-            // Since we can't access m_Active directly (it's private), simulate a press if needed
+        if (labelToggle != null && labelToggle.enableInteraction) {
             SimulateToggleIfNeeded(labelToggle, toggledOn);
         }
 
-        // Handle the toggle effects
-        HandleToggleEffects(isOn);
-        
+        HandleToggleEffects(isOn); // where the real toggle happens
         isHandlingToggle = false;
     }
 
-    // Handler for when the label toggle is toggled
     private void OnLabelToggled(bool toggledOn)
     {
-        // If we're already handling a toggle event, ignore this one to prevent loops
         if (isHandlingToggle) return;
-        
         isHandlingToggle = true;
 
-        // Before activating, deactivate any other toggle in the scene
         if (toggledOn) {
             DeactivateAllOtherToggles();
         }
         
-        // Update our internal state first
         isOn = toggledOn;
         
-        // If toggling ON, update current active reference
         if (toggledOn) {
             CurrentActiveToggle = this;
         } else if (CurrentActiveToggle == this) {
             CurrentActiveToggle = null;
         }
         
-        // Update the sphere toggle to match the label toggle's state
-        if (spatialUIToggle != null && spatialUIToggle.enableInteraction)
-        {
-            // Since we can't access m_Active directly (it's private), simulate a press if needed
+        if (spatialUIToggle != null && spatialUIToggle.enableInteraction) {
             SimulateToggleIfNeeded(spatialUIToggle, toggledOn);
         }
         
-        // Handle the toggle effects
-        HandleToggleEffects(isOn);
-        
+        HandleToggleEffects(isOn); // where the real toggle happens
         isHandlingToggle = false;
     }
     
@@ -1864,10 +1841,10 @@ public class SphereToggleScript : MonoBehaviour
                 LogUserStudy($"[OBJECT] OBJECT_GRABBED: Object=\"{labelUnderSphere.text}\"");
             }
             
-            // Find the Menu canvas parent of InfoPanel
-            Transform menuCanvas = InfoPanel.transform.parent;
-            if (menuCanvas != null && menuCanvas.name == "Menu")
-            {
+            // // Find the Menu canvas parent of InfoPanel
+            // Transform menuCanvas = InfoPanel.transform.parent;
+            // if (menuCanvas != null && menuCanvas.name == "Menu")
+            // {
                 // // Setup DualTargetLazyFollow for menuCanvas
                 // SetupDualTargetLazyFollow(menuCanvas.gameObject, menuOffset);
 
@@ -1886,13 +1863,13 @@ public class SphereToggleScript : MonoBehaviour
                     labelToggle.gameObject.SetActive(false);
                 }
 
-                // Deactivate first two children
-                if (menuCanvas.childCount >= 3)
-                {
-                    menuCanvas.GetChild(0).gameObject.SetActive(false);
-                    menuCanvas.GetChild(1).gameObject.SetActive(false);
-                    menuCanvas.GetChild(2).gameObject.SetActive(false);
-                }
+                // // Deactivate first two children
+                // if (menuCanvas.childCount >= 3)
+                // {
+                //     menuCanvas.GetChild(0).gameObject.SetActive(false);
+                //     menuCanvas.GetChild(1).gameObject.SetActive(false);
+                //     menuCanvas.GetChild(2).gameObject.SetActive(false);
+                // }
 
                 // Before activating this toggle, turn off any other active ones
                 DeactivateAllOtherToggles();
@@ -1904,7 +1881,7 @@ public class SphereToggleScript : MonoBehaviour
 
                 // Start object inspection
                 OnObjectInspected(true);
-            }
+            // }
         }
     }
 
@@ -1919,10 +1896,10 @@ public class SphereToggleScript : MonoBehaviour
             //     LogUserStudy($"OBJECT_RELEASED: Object=\"{labelUnderSphere.text}\"");
             // }
             
-            // Find the Menu canvas parent of InfoPanel
-            Transform menuCanvas = InfoPanel.transform.parent;
-            if (menuCanvas != null && menuCanvas.name == "Menu")
-            {
+            // // Find the Menu canvas parent of InfoPanel
+            // Transform menuCanvas = InfoPanel.transform.parent;
+            // if (menuCanvas != null && menuCanvas.name == "Menu")
+            // {
                 // // Cleanup DualTargetLazyFollow for menuCanvas
                 // CleanupDualTargetLazyFollow(menuCanvas.gameObject);
 
@@ -1941,13 +1918,13 @@ public class SphereToggleScript : MonoBehaviour
                     labelToggle.gameObject.SetActive(true);
                 }
 
-                // Reactivate first two children
-                if (menuCanvas.childCount >= 3)
-                {
-                    menuCanvas.GetChild(0).gameObject.SetActive(true);
-                    menuCanvas.GetChild(1).gameObject.SetActive(true);
-                    menuCanvas.GetChild(2).gameObject.SetActive(true);
-                }
+                // // Reactivate first two children
+                // if (menuCanvas.childCount >= 3)
+                // {
+                //     menuCanvas.GetChild(0).gameObject.SetActive(true);
+                //     menuCanvas.GetChild(1).gameObject.SetActive(true);
+                //     menuCanvas.GetChild(2).gameObject.SetActive(true);
+                // }
 
                 // Update state and trigger effects
                 isOn = false;
@@ -1963,7 +1940,7 @@ public class SphereToggleScript : MonoBehaviour
                 
                 // Stop any active auto-recording
                 StopAutoRecordingIfActive();
-            }
+            // }
         }
     }
 
@@ -1987,7 +1964,7 @@ public class SphereToggleScript : MonoBehaviour
             UpdateRecorderToggle(true);
             UpdateQuestionToggle(true);
             UpdateRelationToggle(true);
-            // Only update object tracking toggle if not in baseline mode
+
             if (!baselineModeController.baselineMode) {
                 UpdateObjectTrackingToggle(true);
             }
@@ -2004,17 +1981,10 @@ public class SphereToggleScript : MonoBehaviour
             if (!baselineModeController.baselineMode) {
 
                 Transform menuCanvas = InfoPanel.transform.parent;
-                if (menuCanvas != null && menuCanvas.name == "Menu")
+                if (menuCanvas != null && menuCanvas.name == "QuestionCanvas")
                 {
                     LazyFollow lazyFollow = menuCanvas.GetComponent<LazyFollow>();
                     if (lazyFollow != null)   lazyFollow.positionFollowMode = LazyFollow.PositionFollowMode.None;
-
-                    if (menuCanvas.childCount >= 3)
-                    {
-                        menuCanvas.GetChild(0).gameObject.SetActive(false);
-                        menuCanvas.GetChild(1).gameObject.SetActive(false);
-                        menuCanvas.GetChild(2).gameObject.SetActive(false);
-                    }
 
                     menuCanvas.SetParent(transform);
                     menuCanvas.localPosition = menuOffset;
@@ -2237,7 +2207,7 @@ public class SphereToggleScript : MonoBehaviour
     }
 
     /// <summary>
-    /// Generates relationship between this object and another nearby object.
+    /// Generates relationship between this object and another nearby object. Check: HandGrabTrigger.cs
     /// Called when two objects come within proximity threshold of each other.
     /// </summary>
     public void GenerateProximityRelationship(string nearbyObjectLabel)

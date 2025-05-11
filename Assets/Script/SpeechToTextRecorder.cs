@@ -146,9 +146,9 @@ IMPORTANT:
 
     [Header("UI Integration")]
     [Tooltip("The parent menu canvas containing the InfoPanel and other UI elements")]
-    public Transform menuCanvas;
+    public Transform infoPanelParent;
     [Tooltip("The transform that will hold the questions (typically the InfoPanel)")]
-    public Transform questionsParent;
+    public Transform infoPanel;
     [Tooltip("Prefab to use for question buttons")]
     public GameObject questionPrefab;
     [Tooltip("Answer panel to display responses to questions")]
@@ -1732,16 +1732,16 @@ IMPORTANT:
         Debug.Log($"[SpeechRecorder] Generating follow-up questions for query: {userQuery}");
         
         // Show the menu canvas if it's not already visible
-        if (menuCanvas != null)
+        if (infoPanelParent != null)
         {
-            menuCanvas.gameObject.SetActive(true);
+            infoPanelParent.gameObject.SetActive(true);
             
             // Position it appropriately
-            PositionMenuCanvas();
+            PositionInfoPanelParent();
         }
         else
         {
-            Debug.LogWarning("[SpeechRecorder] menuCanvas is null, cannot display questions");
+            Debug.LogWarning("[SpeechRecorder] infoPanelParent is null, cannot display questions");
             return;
         }
         
@@ -1953,7 +1953,7 @@ IMPORTANT:
         }
         
         // Create UI elements for each question
-        if (questionsList != null && questionsList.Count > 0 && questionsParent != null)
+        if (questionsList != null && questionsList.Count > 0 && infoPanel != null)
         {
             float currentY = -60f;  // Start at the top
             float questionHeight = 54f;  // Height of each question block, adjust as needed
@@ -1965,7 +1965,7 @@ IMPORTANT:
                 if (string.IsNullOrWhiteSpace(q)) continue;
                 
                 // Instantiate the question prefab
-                GameObject go = Instantiate(questionPrefab, questionsParent);
+                GameObject go = Instantiate(questionPrefab, infoPanel);
                 go.name = "GeminiQuestion";
                 
                 // Position it correctly using the transform
@@ -2079,9 +2079,9 @@ IMPORTANT:
         }
         
         // Hide the questions panel
-        if (questionsParent != null)
+        if (infoPanel != null)
         {
-            questionsParent.gameObject.SetActive(false);
+            infoPanel.gameObject.SetActive(false);
         }
         
         // Clear any created questions
@@ -2171,9 +2171,9 @@ IMPORTANT:
         }
         
         // Hide the questions panel
-        if (questionsParent != null)
+        if (infoPanel != null)
         {
-            questionsParent.gameObject.SetActive(false);
+            infoPanel.gameObject.SetActive(false);
         }
         
         // Clear any created questions
@@ -2191,33 +2191,21 @@ IMPORTANT:
     /// <summary>
     /// Positions the menu canvas appropriately in the scene, similar to SurfaceScanOCR
     /// </summary>
-    private void PositionMenuCanvas()
+    private void PositionInfoPanelParent()
     {
-        if (menuCanvas == null) return;
+        if (infoPanelParent == null) return;
         
-        // Make sure it's not parented to anything
-        menuCanvas.SetParent(null);
+        infoPanelParent.SetParent(null);
         
-        // Set up LazyFollow behavior to follow the camera
-        LazyFollow lazyFollow = menuCanvas.GetComponent<LazyFollow>();
+        LazyFollow lazyFollow = infoPanelParent.GetComponent<LazyFollow>();
         if (lazyFollow != null)
         {
             lazyFollow.positionFollowMode = LazyFollow.PositionFollowMode.Follow;
         }
 
-        if (questionsParent != null)
+        if (infoPanel != null)
         {
-            questionsParent.gameObject.SetActive(true);
-        }
-        
-        // Activate the first three children if they exist
-        if (menuCanvas.childCount >= 3)
-        {
-            for (int i = 0; i < 3; i++)
-            {
-                if (menuCanvas.GetChild(i) != null)
-                    menuCanvas.GetChild(i).gameObject.SetActive(true);
-            }
+            infoPanel.gameObject.SetActive(true);
         }
     }
 
