@@ -106,7 +106,7 @@ public class RelationToggleController : MonoBehaviour
         {
             if (relationshipLineManager != null)
             {
-                relationshipLineManager.ClearAllLines();
+                relationshipLineManager.ClearAllLines(true);
             }
             
             if (activeGenerationCoroutine != null)
@@ -141,7 +141,7 @@ public class RelationToggleController : MonoBehaviour
             {
                 if (relationshipLineManager != null)
                 {
-                    relationshipLineManager.ClearAllLines();
+                    relationshipLineManager.ClearAllLines(true);
                 }
                 
                 if (toggle != null && toggle.m_Active)
@@ -218,7 +218,7 @@ public class RelationToggleController : MonoBehaviour
             // Clear any existing relationship lines
             if (relationshipLineManager != null)
             {
-                relationshipLineManager.ClearAllLines();
+                relationshipLineManager.ClearAllLines(true);
                 
                 // Log the action if state changed to OFF
                 if (ownerSphereToggle != null && ownerSphereToggle.labelUnderSphere != null && stateActuallyChanged)

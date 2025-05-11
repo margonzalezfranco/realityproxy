@@ -1988,7 +1988,7 @@
     "m_Title": "groundGrid",
     "m_Position": {
         "x": -3015.0,
-        "y": 1141.0
+        "y": 1140.9998779296875
     }
 }
 
@@ -3082,7 +3082,7 @@
     "m_Title": "groundGradient",
     "m_Position": {
         "x": -3727.5,
-        "y": 960.0
+        "y": 959.9999389648438
     }
 }
 
@@ -3592,8 +3592,8 @@
     "m_ObjectId": "529b1f36c68a40f296462d10644b6aeb",
     "m_Title": "groudMask",
     "m_Position": {
-        "x": -1985.5,
-        "y": 2876.5
+        "x": -1985.500244140625,
+        "y": 2876.499755859375
     }
 }
 
@@ -5134,7 +5134,7 @@
     "m_Hidden": false,
     "m_ShaderOutputName": "Alpha",
     "m_StageCapability": 2,
-    "m_Value": 0.6000000238418579,
+    "m_Value": 1.0,
     "m_DefaultValue": 1.0,
     "m_Labels": []
 }
@@ -5340,7 +5340,7 @@
     "m_ObjectId": "a8416e82e6ae4c2788ae8f732d2d2095",
     "m_Title": "Floor Effect",
     "m_Position": {
-        "x": -1717.5,
+        "x": -1717.500244140625,
         "y": 1558.0
     }
 }

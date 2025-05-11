@@ -506,7 +506,8 @@ public class RelationshipLineManager : MonoBehaviour
     /// <summary>
     /// Clears all relationship lines currently displayed.
     /// </summary>
-    public void ClearAllLines()
+    /// <param name="keepSourceColors">If true, doesn't reset the colors of source anchors. Default is false.</param>
+    public void ClearAllLines(bool keepSourceColors = false)
     {
         // Default color to restore anchors to when clearing relationships (#5E5E5E)
         Color defaultSphereColor = new Color(
@@ -517,7 +518,7 @@ public class RelationshipLineManager : MonoBehaviour
         );
         
         // Log clearing all relationship lines for user study
-        // LogUserStudy($"CLEAR_ALL_LINES: Count={activeLines.Count}");
+        // LogUserStudy($"CLEAR_ALL_LINES: Count={activeLines.Count}, KeepSourceColors={keepSourceColors}");
         
         // Restore original colors of source and target anchors
         HashSet<SceneObjectAnchor> processedAnchors = new HashSet<SceneObjectAnchor>();
@@ -527,26 +528,29 @@ public class RelationshipLineManager : MonoBehaviour
             // Reset source anchor color if it exists and hasn't been processed
             if (connection.source != null && connection.source.sphereObj != null && !processedAnchors.Contains(connection.source))
             {
-                // Reset sphere color
-                var renderer = connection.source.sphereObj.GetComponent<Renderer>();
-                if (renderer != null && renderer.material != null)
+                // Only reset source colors if keepSourceColors is false
+                if (!keepSourceColors)
                 {
-                    renderer.material.color = defaultSphereColor;
-                }
-
-                // Reset label color
-                var sourceLabelObj = connection.source.sphereObj.transform.GetChild(0)?.gameObject;
-                if (sourceLabelObj != null)
-                {
-                    var labelRenderer = sourceLabelObj.GetComponent<Renderer>();
-                    if (labelRenderer != null && labelRenderer.material != null)
+                    // Reset sphere color
+                    var renderer = connection.source.sphereObj.GetComponent<Renderer>();
+                    if (renderer != null && renderer.material != null)
                     {
-                        labelRenderer.material.color = defaultSphereColor;
+                        renderer.material.color = defaultSphereColor;
+                    }
+
+                    // Reset label color
+                    var sourceLabelObj = connection.source.sphereObj.transform.GetChild(0)?.gameObject;
+                    if (sourceLabelObj != null)
+                    {
+                        var labelRenderer = sourceLabelObj.GetComponent<Renderer>();
+                        if (labelRenderer != null && labelRenderer.material != null)
+                        {
+                            labelRenderer.material.color = defaultSphereColor;
+                        }
                     }
                 }
-
+                
                 processedAnchors.Add(connection.source);
-                Debug.Log($"Restored color for source anchor and label: {connection.source.label}");
             }
             
             // Reset target anchor color if it exists and hasn't been processed
@@ -581,7 +585,7 @@ public class RelationshipLineManager : MonoBehaviour
             }
         }
         
-        Debug.Log($"Cleared {activeLines.Count} relationship lines");
+        Debug.Log($"Cleared {activeLines.Count} relationship lines{(keepSourceColors ? " (keeping source colors)" : "")}");
         activeLines.Clear();
     }
 
