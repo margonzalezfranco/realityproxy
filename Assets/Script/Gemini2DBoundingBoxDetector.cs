@@ -19,6 +19,9 @@ public class Gemini2DBoundingBoxDetector : GeminiGeneral
 
     [Tooltip("Coordinates might require scaling if Gemini boxes are in 1000-based coords, etc.")]
     public bool boxesAreInPixelCoords = true;
+    
+    [Tooltip("Reference to the scan button's TextMeshPro component to update during scanning.")]
+    public TextMeshPro scanButtonText;
 
     public GeminiRaycast m_geminiRaycast;
 
@@ -59,6 +62,11 @@ public class Gemini2DBoundingBoxDetector : GeminiGeneral
     /// </summary>
     public void Request2DBoundingBoxes()
     {
+        if (scanButtonText != null)
+        {
+            scanButtonText.text = "Scanning";
+        }
+        
         // Capture the camera pose at the time the button is pressed
         if (m_geminiRaycast != null && m_geminiRaycast.xrCamera != null)
         {
@@ -135,6 +143,12 @@ public class Gemini2DBoundingBoxDetector : GeminiGeneral
 
         // Clean up texture
         Destroy(frameTex);
+        
+        // Update button text back to "Scan"
+        if (scanButtonText != null)
+        {
+            scanButtonText.text = "Scan";
+        }
     }
 
     // Keep all the bounding box specific methods
