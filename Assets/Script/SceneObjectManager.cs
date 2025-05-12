@@ -3,6 +3,7 @@ using UnityEngine;
 using TMPro;
 using PolySpatial.Template;
 using UnityEngine.XR.Interaction.Toolkit.UI;
+using System;
 
 /// <summary>
 /// Singleton manager that tracks all recognized objects in the scene,
@@ -11,6 +12,12 @@ using UnityEngine.XR.Interaction.Toolkit.UI;
 public class SceneObjectManager : MonoBehaviour
 {
     public static SceneObjectManager Instance { get; private set; }
+
+    // Event that fires when the anchor count changes (true = has objects, false = no objects)
+    public event Action<bool> OnAnchorCountChanged;
+    
+    // Property to check if there are any anchors in the scene
+    public bool HasAnchors => anchors != null && anchors.Count > 0;
 
     [Header("Matching Threshold")]
     [Tooltip("Distance threshold (in meters) to treat a new detection as the 'same' object.")]
@@ -57,6 +64,8 @@ public class SceneObjectManager : MonoBehaviour
     [Header("User Study Logging")]
     [SerializeField] private bool enableUserStudyLogging = true;
 
+    public GameObject askSceneToggle;
+
     private void Awake()
     {
         // Basic singleton pattern
@@ -67,6 +76,29 @@ public class SceneObjectManager : MonoBehaviour
         if (baselineModeController == null)
         {
             baselineModeController = FindObjectOfType<BaselineModeController>();
+        }
+        
+        OnAnchorCountChanged += HandleAnchorCountChanged;
+    }
+    
+    private void Start()
+    {
+        if (askSceneToggle != null)
+        {
+            askSceneToggle.SetActive(HasAnchors);
+        }
+    }
+    
+    private void OnDestroy()
+    {
+        OnAnchorCountChanged -= HandleAnchorCountChanged;
+    }
+    
+    private void HandleAnchorCountChanged(bool hasObjects)
+    {
+        if (askSceneToggle != null)
+        {
+            askSceneToggle.SetActive(hasObjects);
         }
     }
 
@@ -87,6 +119,8 @@ public class SceneObjectManager : MonoBehaviour
     /// </summary>
     public void RegisterOrUpdateAnchor(string newLabel, Vector3 hitPos)
     {
+        bool hadAnchors = HasAnchors;
+        
         // 1) Attempt to find an existing anchor within matchingRadius
         SceneObjectAnchor existing = CheckForExistingAnchor(hitPos);
         if (existing != null)
@@ -99,6 +133,12 @@ public class SceneObjectManager : MonoBehaviour
             // No match => create a new anchor
             SceneObjectAnchor newAnchor = CreateNewAnchor(newLabel, hitPos);
             anchors.Add(newAnchor);
+            
+            // If this is the first anchor, fire the event
+            if (!hadAnchors && OnAnchorCountChanged != null)
+            {
+                OnAnchorCountChanged(true);
+            }
         }
     }
 
@@ -310,6 +350,7 @@ public class SceneObjectManager : MonoBehaviour
     [ContextMenu("Clear All Anchors")]
     public void ClearAllAnchors()
     {
+        bool hadAnchors = HasAnchors;
         int anchorCount = anchors.Count;
         
         // Handle recorder toggle
@@ -404,6 +445,12 @@ public class SceneObjectManager : MonoBehaviour
         if (relationLineManager != null)
         {
             relationLineManager.ClearAllLines();
+        }
+        
+        // Fire the event if we had anchors before clearing
+        if (hadAnchors && OnAnchorCountChanged != null)
+        {
+            OnAnchorCountChanged(false);
         }
         
         Debug.Log("All anchors have been cleared from the scene");
