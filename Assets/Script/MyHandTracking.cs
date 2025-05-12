@@ -6,7 +6,7 @@ using System.Collections.Generic;
 public class MyHandTracking : MonoBehaviour
 {
     public XROrigin xrOrigin;
-    private XRHandSubsystem handSubsystem;
+    public XRHandSubsystem handSubsystem;
 
     [Header("Hand Prefabs")]
     [SerializeField] GameObject m_LeftHandPrefab;

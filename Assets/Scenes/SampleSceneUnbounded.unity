@@ -10633,6 +10633,7 @@ GameObject:
   - component: {fileID: 1483904742}
   - component: {fileID: 1483904743}
   - component: {fileID: 1483904744}
+  - component: {fileID: 1483904745}
   m_Layer: 2
   m_Name: Hand
   m_TagString: Untagged
@@ -10758,6 +10759,26 @@ MonoBehaviour:
   answerPanel: {fileID: 2103469973}
   questionAnswerer: {fileID: 1557741984}
   enableUserStudyLogging: 1
+--- !u!114 &1483904745
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1483904740}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9629032a1fd034b6abef7eca4f19fbb9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  geminiModelName: gemini-2.0-flash
+  geminiApiKey: AIzaSyBx5IRXG1FOUN3HdnKFMgsQA5zOcui7Mhc
+  cameraRenderTex: {fileID: 8400000, guid: 78e2b50f1cd8640efa61e2994d5eaec2, type: 2}
+  handTracking: {fileID: 1483904742}
+  sceneObjectManager: {fileID: 1242229081}
+  xrCamera: {fileID: 5030769454512039463}
+  longPinchDuration: 1
+  maxRayDistance: 5
 --- !u!1 &1490084817
 GameObject:
   m_ObjectHideFlags: 0
