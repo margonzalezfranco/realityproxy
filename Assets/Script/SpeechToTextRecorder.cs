@@ -26,19 +26,19 @@ public class SpeechToTextRecorder : GeminiGeneral
     [Header("Prompt Settings")]
     [Tooltip("System prompt template to use. Use {0} where the transcribed text should be inserted")]
     [TextArea(3, 10)]
-    [SerializeField] private string systemPromptTemplate = "You are a helpful AI assistant responding to the user's request. You can see what the user is currently looking at. Please respond concisely and avoid using markdown formatting. User request: {0}";
+    [SerializeField] protected string systemPromptTemplate = "You are a helpful AI assistant responding to the user's request. You can see what the user is currently looking at. Please respond concisely and avoid using markdown formatting. User request: {0}";
 
     [Tooltip("System prompt template to use with object context. Use {0} for object name and {1} for transcribed text")]
     [TextArea(3, 10)]
-    [SerializeField] private string objectContextPromptTemplate = "You are a helpful AI assistant responding to the user's request about {0}. You can see what the user is currently looking at, but you don't have to only rely on that. You don't have to wait to see the object to respond. Only respond information about this object. Please respond concisely and avoid using markdown formatting. User request: {1}";
+    [SerializeField] protected string objectContextPromptTemplate = "You are a helpful AI assistant responding to the user's request about {0}. You can see what the user is currently looking at, but you don't have to only rely on that. You don't have to wait to see the object to respond. Only respond information about this object. Please respond concisely and avoid using markdown formatting. User request: {1}";
 
     [Tooltip("System prompt template to use when user is pointing at a specific part. Use {0} for object name, {1} for part name, {2} for part description, and {3} for transcribed text")]
     [TextArea(3, 10)]
-    [SerializeField] private string pointingPromptTemplate = "You are a helpful AI assistant responding to the user's request about a specific part of an object. The user is pointing at the '{1}' part of {0}. This part is described as: '{2}'. Please provide specific information about this part. Respond concisely and avoid using markdown formatting. User request: {3}";
+    [SerializeField] protected string pointingPromptTemplate = "You are a helpful AI assistant responding to the user's request about a specific part of an object. The user is pointing at the '{1}' part of {0}. This part is described as: '{2}'. Please provide specific information about this part. Respond concisely and avoid using markdown formatting. User request: {3}";
 
     [Tooltip("System prompt template to use in global mode. Use {0} for scene context, {1} for object list, {2} for transcribed text")]
     [TextArea(5, 15)]
-    [SerializeField] private string environmentLevelPromptTemplate = @"You are analyzing a user's request within a scene.
+    [SerializeField] protected string environmentLevelPromptTemplate = @"You are analyzing a user's request within a scene.
 Scene context: {0}
 Detected objects: {1}
 User request: {2}
@@ -161,11 +161,11 @@ IMPORTANT:
 
     [Header("Scene Dependencies")] // Added Header
     [Tooltip("Manager that tracks all recognized objects in the scene.")]
-    [SerializeField] private SceneObjectManager sceneObjectManager;
+    [SerializeField] protected SceneObjectManager sceneObjectManager;
     [Tooltip("Manager that draws lines between related items.")]
-    [SerializeField] private RelationshipLineManager relationshipLineManager;
+    [SerializeField] protected RelationshipLineManager relationshipLineManager;
     [Tooltip("Manager that provides scene context.")]
-    [SerializeField] private SceneContextManager sceneContextManager;
+    [SerializeField] protected SceneContextManager sceneContextManager;
 
     [Header("Debug")]
     [SerializeField] private AudioClip recordedAudio;
@@ -186,7 +186,7 @@ IMPORTANT:
 
     [Header("Pointing Reference")]
     [Tooltip("Reference to the pointing plane used for part-specific interactions")]
-    [SerializeField] private GameObject pointingPlane;
+    [SerializeField] protected GameObject pointingPlane;
 
     private SpeechToTextGeneral speechToText;
     private float recordingStartTime;
@@ -194,11 +194,11 @@ IMPORTANT:
     private XRHandSubsystem handSubsystem; // Cache the hand subsystem
 
     // Add variables to track pointing state
-    private string currentPointingPartName = null;
-    private string currentPointingPartDescription = null;
+    protected string currentPointingPartName = null;
+    protected string currentPointingPartDescription = null;
 
     public bool objectLevelRecordingToggle = true;
-    private string currentObjectLabel = null;
+    protected string currentObjectLabel = null;
     private GameObject originalRecorderParent = null;
 
     [Header("User Study Logging")]
@@ -441,7 +441,7 @@ IMPORTANT:
     }
 
     // Function to find description text component by name in the scene
-    private TMPro.TextMeshPro FindDescriptionTextInScene()
+    protected TMPro.TextMeshPro FindDescriptionTextInScene()
     {
         // Try to find specific game objects with DescriptionText
         TMPro.TextMeshPro[] allTextComponents = FindObjectsByType<TMPro.TextMeshPro>(FindObjectsSortMode.None);
@@ -919,7 +919,7 @@ IMPORTANT:
         Debug.Log($"Saved recording to: {filePath}");
     }
 
-    public void TalkToGemini(string userQuery)
+    public virtual void TalkToGemini(string userQuery)
     {
         string finalPrompt;
         // Update this line to check both conditions
@@ -1033,7 +1033,7 @@ IMPORTANT:
         StartCoroutine(GeminiQueryRoutine(request, isObjectMode, userQuery));
     }
 
-    private IEnumerator GeminiQueryRoutine(RequestStatus requestStatus, bool isObjectMode, string originalQuery)
+    protected IEnumerator GeminiQueryRoutine(RequestStatus requestStatus, bool isObjectMode, string originalQuery)
     {
         Debug.Log("[SpeechRecorder] Waiting for Gemini response...");
         // Wait until the transcription task is completed
@@ -2514,7 +2514,7 @@ IMPORTANT:
     }
 
     // Helper method for creating timestamped user study logs
-    private void LogUserStudy(string message)
+    protected void LogUserStudy(string message)
     {
         if (!enableUserStudyLogging) return;
         string timestamp = System.DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
