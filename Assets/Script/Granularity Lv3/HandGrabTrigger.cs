@@ -125,11 +125,22 @@ public class HandGrabTrigger : MonoBehaviour
     [Range(0f, 1f)]
     public float proximitySoundVolume = 0.5f;
 
+    [Header("Hand-to-Anchor Proximity")]
+    [Tooltip("Distance threshold for detecting when hand is close to any anchor")]
+    public float proximityThresholdFromHandToAnchor = 0.3f; // 30cm default
+
     private float lastProximityCheckTime = 0f;
     private SceneObjectManager sceneObjectManager;
     private SphereToggleScript sphereToggleScript;
     private HashSet<SceneObjectAnchor> recentlyHighlighted = new HashSet<SceneObjectAnchor>();
     private AudioSource audioSource;
+
+    // Static variable to track if any hand is near any anchor
+    private static bool isAnyHandNearAnyAnchor = false;
+    // Static variable to track last time the toggle visibility changed
+    private static float lastToggleVisibilityChangeTime = 0f;
+    // Hysteresis time to prevent rapid visibility changes
+    private static float toggleVisibilityHysteresis = 0.5f;
 
     private float lastDetectionStartTime = 0f;
 
@@ -669,6 +680,9 @@ public class HandGrabTrigger : MonoBehaviour
         {
             InitializeGrabbingDetector();
         }
+
+        // Check if either hand is near any anchor
+        CheckHandProximityToAnchors();
 
         // MODIFIED: Only proceed with grabbing logic if there's an active anchor
         if (_currentActiveAnchor == null)
@@ -1452,5 +1466,225 @@ public class HandGrabTrigger : MonoBehaviour
         
         _aimingVisualizer.SetPosition(0, startPosition);
         _aimingVisualizer.SetPosition(1, endPosition);
+    }
+
+    /// <summary>
+    /// Checks if this hand is close to any anchor and shows/hides the objectTrackingToggle accordingly.
+    /// This is done in a static context across all hands to prevent multiple hands from conflicting.
+    /// </summary>
+    private void CheckHandProximityToAnchors()
+    {
+        // Only check at the specified interval to avoid performance issues
+        if (Time.time - lastProximityCheckTime < proximityCheckInterval || sceneObjectManager == null)
+        {
+            return;
+        }
+
+        lastProximityCheckTime = Time.time;
+        
+        // Get all anchors from SceneObjectManager
+        var allAnchors = sceneObjectManager.GetAllAnchors();
+        if (allAnchors == null || allAnchors.Count == 0)
+        {
+            // No anchors to check, hide toggle if it's visible
+            if (objectTrackingToggle != null && objectTrackingToggle.activeSelf)
+            {
+                SetObjectTrackingToggleVisibility(false);
+            }
+            return;
+        }
+        
+        // Get this hand's position
+        Vector3 handPosition = transform.position;
+        
+        // Check distance to each anchor
+        bool isNearAnchor = false;
+        foreach (var anchor in allAnchors)
+        {
+            if (anchor.sphereObj != null)
+            {
+                float distance = Vector3.Distance(handPosition, anchor.sphereObj.transform.position);
+                
+                // Check if hand is within proximity threshold
+                if (distance <= proximityThresholdFromHandToAnchor)
+                {
+                    isNearAnchor = true;
+                    break;
+                }
+            }
+        }
+        
+        // Update the static flag that tracks if any hand is near any anchor
+        if (isNearAnchor)
+        {
+            isAnyHandNearAnyAnchor = true;
+        }
+        else
+        {
+            // Check if the other hand is also not near any anchor
+            // We do this by checking if this is the left or right hand
+            bool isLeftHand = handType == "left";
+            
+            // Find the other hand's HandGrabTrigger
+            HandGrabTrigger[] allHandGrabTriggers = FindObjectsOfType<HandGrabTrigger>();
+            HandGrabTrigger otherHand = null;
+            
+            foreach (var trigger in allHandGrabTriggers)
+            {
+                if ((isLeftHand && trigger.handType == "right") || (!isLeftHand && trigger.handType == "left"))
+                {
+                    otherHand = trigger;
+                    break;
+                }
+            }
+            
+            // If there's no other hand, or if the other hand is also not near any anchor,
+            // then no hand is near any anchor
+            if (otherHand == null)
+            {
+                isAnyHandNearAnyAnchor = false;
+            }
+            else
+            {
+                // If the other hand is also not near any anchor, set the flag to false
+                bool isOtherHandNearAnchor = false;
+                Vector3 otherHandPosition = otherHand.transform.position;
+                
+                foreach (var anchor in allAnchors)
+                {
+                    if (anchor.sphereObj != null)
+                    {
+                        float distance = Vector3.Distance(otherHandPosition, anchor.sphereObj.transform.position);
+                        
+                        // Check if hand is within proximity threshold
+                        if (distance <= proximityThresholdFromHandToAnchor)
+                        {
+                            isOtherHandNearAnchor = true;
+                            break;
+                        }
+                    }
+                }
+                
+                // Only set to false if both hands are not near any anchor
+                if (!isOtherHandNearAnchor)
+                {
+                    isAnyHandNearAnyAnchor = false;
+                }
+            }
+        }
+        
+        // Update the toggle visibility based on the static flag
+        if (objectTrackingToggle != null)
+        {
+            // Only change visibility if sufficient time has passed since last change
+            // This prevents rapid toggling when right at the threshold distance
+            if (Time.time - lastToggleVisibilityChangeTime > toggleVisibilityHysteresis)
+            {
+                SetObjectTrackingToggleVisibility(isAnyHandNearAnyAnchor);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Sets the visibility of the object tracking toggle by adjusting colors instead of SetActive
+    /// </summary>
+    private void SetObjectTrackingToggleVisibility(bool isVisible)
+    {
+        if (objectTrackingToggle == null)
+            return;
+        
+        // Keep the object active regardless of visibility
+        if (objectTrackingToggle.activeSelf != true)
+        {
+            // Make sure the object is active so we can modify its renderers
+            objectTrackingToggle.SetActive(true);
+        }
+        
+        // Get renderer on the main toggle object
+        Renderer mainRenderer = objectTrackingToggle.GetComponent<Renderer>();
+        if (mainRenderer != null)
+        {
+            // For the main toggle object, change color to black when hidden
+            foreach (Material material in mainRenderer.materials)
+            {
+                if (material == null)
+                    continue;
+                    
+                if (material.HasProperty("_Color"))
+                {
+                    if (isVisible)
+                    {
+                        Color color = new Color(0.435f, 0.435f, 0.435f, 1.0f); // 6F6F6F
+                        material.color = color;
+                    }
+                    else
+                    {
+                        Color color = Color.black;
+                        material.color = color;
+                    }
+                }
+                
+                if (material.HasProperty("_BaseColor"))
+                {
+                    if (isVisible)
+                    {
+                        Color color = new Color(0.435f, 0.435f, 0.435f, 1.0f); // 6F6F6F
+                        material.SetColor("_BaseColor", color);
+                    }
+                    else
+                    {
+                        Color color = Color.black;
+                        material.SetColor("_BaseColor", color);
+                    }
+                }
+            }
+        }
+        
+        // For child objects like Text, adjust alpha instead
+        Transform[] childTransforms = objectTrackingToggle.GetComponentsInChildren<Transform>();
+        foreach (Transform childTransform in childTransforms)
+        {
+            // Skip the main toggle object
+            if (childTransform == objectTrackingToggle.transform)
+                continue;
+            
+            Renderer renderer = childTransform.GetComponent<Renderer>();
+            if (renderer != null)
+            {
+                float targetAlpha = isVisible ? 1.0f : 0.0f;
+                
+                foreach (Material material in renderer.materials)
+                {
+                    if (material == null)
+                        continue;
+                        
+                    if (material.HasProperty("_Color"))
+                    {
+                        Color color = material.color;
+                        color.a = targetAlpha;
+                        material.color = color;
+                    }
+                    
+                    if (material.HasProperty("_BaseColor"))
+                    {
+                        Color color = material.GetColor("_BaseColor");
+                        color.a = targetAlpha;
+                        material.SetColor("_BaseColor", color);
+                    }
+                }
+            }
+            
+            // Handle TextMeshPro components
+            TMPro.TextMeshPro tmp = childTransform.GetComponent<TMPro.TextMeshPro>();
+            if (tmp != null)
+            {
+                Color textColor = tmp.color;
+                textColor.a = isVisible ? 1.0f : 0.0f;
+                tmp.color = textColor;
+            }
+        }
+        
+        // Log the visibility change
+        lastToggleVisibilityChangeTime = Time.time;
     }
 }
