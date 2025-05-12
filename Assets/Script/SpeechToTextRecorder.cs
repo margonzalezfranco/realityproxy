@@ -13,6 +13,7 @@ using PolySpatial.Template; // Added for SceneObjectManager etc.
 using System.Linq;
 using UnityEngine.XR.Interaction.Toolkit.UI;
 using System.Text;
+using TMPro;
 
 [RequireComponent(typeof(SpeechToTextGeneral))]
 public class SpeechToTextRecorder : GeminiGeneral
@@ -139,8 +140,8 @@ IMPORTANT:
     [SerializeField] private bool useLeftHand = true;
 
     [Header("Gemini Response")]
-    [SerializeField] private TMPro.TextMeshPro requestText;
-    [SerializeField] private TMPro.TextMeshPro responseTextOnObject;
+    [SerializeField] private TextMeshPro requestText;
+    [SerializeField] private TextMeshPro responseTextOnObject;
     [SerializeField] private UnityEngine.Events.UnityEvent<string> onGeminiResponseReceived;
     [SerializeField] private GameObject chatboxOnObject;
 
@@ -229,7 +230,7 @@ IMPORTANT:
             // Try to find text component in the chatbox if it exists
             if (chatboxOnObject != null)
             {
-                TMPro.TextMeshPro[] textComponents = chatboxOnObject.GetComponentsInChildren<TMPro.TextMeshPro>(true);
+                TextMeshPro[] textComponents = chatboxOnObject.GetComponentsInChildren<TextMeshPro>(true);
                 if (textComponents.Length > 0)
                 {
                     // Use the first TextMeshPro component found
@@ -264,7 +265,7 @@ IMPORTANT:
                     Debug.LogError("ResponseTextOnObject is not a child of chatboxOnObject! Text won't display properly in the chatbox.");
                     
                     // Try to find an alternative TextMeshPro component in the chatbox
-                    TMPro.TextMeshPro[] chatboxTextComponents = chatboxOnObject.GetComponentsInChildren<TMPro.TextMeshPro>(true);
+                    TextMeshPro[] chatboxTextComponents = chatboxOnObject.GetComponentsInChildren<TextMeshPro>(true);
                     if (chatboxTextComponents.Length > 0)
                     {
                         responseTextOnObject = chatboxTextComponents[0];
@@ -441,10 +442,10 @@ IMPORTANT:
     }
 
     // Function to find description text component by name in the scene
-    protected TMPro.TextMeshPro FindDescriptionTextInScene()
+    protected TextMeshPro FindDescriptionTextInScene()
     {
         // Try to find specific game objects with DescriptionText
-        TMPro.TextMeshPro[] allTextComponents = FindObjectsByType<TMPro.TextMeshPro>(FindObjectsSortMode.None);
+        TextMeshPro[] allTextComponents = FindObjectsByType<TextMeshPro>(FindObjectsSortMode.None);
         foreach (var textComp in allTextComponents)
         {
             if (textComp.gameObject.name == "DescriptionText" && textComp.gameObject.activeInHierarchy)
@@ -481,11 +482,11 @@ IMPORTANT:
             // When pointing starts, we'll try to get current part info if possible
             if (pointingPlane != null && pointingPlane.activeSelf)
             {
-                var pointingPlaneText = pointingPlane.GetComponentInChildren<TMPro.TextMeshPro>();
+                var pointingPlaneText = pointingPlane.GetComponentInChildren<TextMeshPro>();
                 if (pointingPlaneText != null && !string.IsNullOrEmpty(pointingPlaneText.text) && pointingPlaneText.text != "none")
                 {
                     // Look for a description text component
-                    TMPro.TextMeshPro descriptionText = FindDescriptionTextInScene();
+                    TextMeshPro descriptionText = FindDescriptionTextInScene();
                     
                     // Update our pointing information
                     currentPointingPartName = pointingPlaneText.text;
@@ -943,14 +944,14 @@ IMPORTANT:
         else if (isObjectMode && pointingPlane != null && pointingPlane.activeSelf)
         {
             // Try to get the name of the part being pointed at
-            var pointingPlaneText = pointingPlane.GetComponentInChildren<TMPro.TextMeshPro>();
+            var pointingPlaneText = pointingPlane.GetComponentInChildren<TextMeshPro>();
             if (pointingPlaneText != null && !string.IsNullOrEmpty(pointingPlaneText.text) && pointingPlaneText.text != "none")
             {
                 isPointingAtPart = true;
                 pointingPartName = pointingPlaneText.text;
                 
                 // Find description text using our helper method
-                TMPro.TextMeshPro descriptionTextInPlane = FindDescriptionTextInScene();
+                TextMeshPro descriptionTextInPlane = FindDescriptionTextInScene();
                 
                 if (descriptionTextInPlane != null && !string.IsNullOrEmpty(descriptionTextInPlane.text))
                 {
@@ -1152,7 +1153,7 @@ IMPORTANT:
                     Debug.LogError("[SpeechRecorder] responseTextOnObject is null when trying to update after chatbox activation!");
                     
                     // Try to find responseTextOnObject in children of chatboxOnObject
-                    TMPro.TextMeshPro[] textComponents = chatboxOnObject.GetComponentsInChildren<TMPro.TextMeshPro>(true);
+                    TextMeshPro[] textComponents = chatboxOnObject.GetComponentsInChildren<TextMeshPro>(true);
                     if (textComponents.Length > 0)
                     {
                         Debug.Log($"[SpeechRecorder] Found {textComponents.Length} TextMeshPro components in chatboxOnObject children");
@@ -1977,7 +1978,7 @@ IMPORTANT:
                 }
                 
                 // Set the text
-                TMPro.TextMeshPro txt = go.GetComponentInChildren<TMPro.TextMeshPro>();
+                TextMeshPro txt = go.GetComponentInChildren<TextMeshPro>();
                 if (txt != null) txt.text = q;
                 
                 // Add button functionality
@@ -1988,9 +1989,9 @@ IMPORTANT:
                     button.WasPressed += (buttonText, renderer, index) =>
                     {
                         // Clear previous answer and set "Generating..."
-                        if (answerPanel != null && answerPanel.GetComponentInChildren<TMPro.TextMeshPro>() != null)
+                        if (answerPanel != null && answerPanel.GetComponentInChildren<TextMeshPro>() != null)
                         {
-                            answerPanel.GetComponentInChildren<TMPro.TextMeshPro>().text = "Generating...";
+                            answerPanel.GetComponentInChildren<TextMeshPro>().text = "Generating...";
                         }
                         
                         // Request answer if we have a question answerer
@@ -2445,7 +2446,7 @@ IMPORTANT:
         stepIndicator.transform.localRotation = Quaternion.identity;
         
         // Get the TextMeshPro component and update its text to show the step number
-        TMPro.TextMeshPro tmpText = stepIndicator.GetComponentInChildren<TMPro.TextMeshPro>();
+        TextMeshPro tmpText = stepIndicator.GetComponentInChildren<TextMeshPro>();
         if (tmpText != null)
         {
             // Just change the text content, don't modify font size or other properties
