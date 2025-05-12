@@ -1586,7 +1586,7 @@ public class HandGrabTrigger : MonoBehaviour
     }
 
     /// <summary>
-    /// Sets the visibility of the object tracking toggle by adjusting colors instead of SetActive
+    /// Sets the visibility of the object tracking toggle by adjusting colors and disabling hover effects
     /// </summary>
     private void SetObjectTrackingToggleVisibility(bool isVisible)
     {
@@ -1604,7 +1604,7 @@ public class HandGrabTrigger : MonoBehaviour
         Renderer mainRenderer = objectTrackingToggle.GetComponent<Renderer>();
         if (mainRenderer != null)
         {
-            // For the main toggle object, change color to black when hidden
+            // For the main toggle object, change color based on visibility
             foreach (Material material in mainRenderer.materials)
             {
                 if (material == null)
@@ -1638,6 +1638,13 @@ public class HandGrabTrigger : MonoBehaviour
                     }
                 }
             }
+        }
+        
+        // Enable/disable the VisionOSHoverEffect component
+        Unity.PolySpatial.VisionOSHoverEffect hoverEffect = objectTrackingToggle.GetComponent<Unity.PolySpatial.VisionOSHoverEffect>();
+        if (hoverEffect != null)
+        {
+            hoverEffect.enabled = isVisible;
         }
         
         // For child objects like Text, adjust alpha instead
