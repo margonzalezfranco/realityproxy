@@ -9114,7 +9114,7 @@ PrefabInstance:
     - target: {fileID: 5823296537338814655, guid: ad99367dbb9c7405c9eb94fb9072dfaa, type: 3}
       propertyPath: 'm_Materials.Array.data[0]'
       value: 
-      objectReference: {fileID: -876546973899608171, guid: e826de30e81994036b532cc1605f3d45, type: 3}
+      objectReference: {fileID: 2100000, guid: 179df120846b3424eb4f472dae795646, type: 2}
     - target: {fileID: 6077778735486634915, guid: ad99367dbb9c7405c9eb94fb9072dfaa, type: 3}
       propertyPath: m_Name
       value: ChatBoxOnObject
@@ -17140,6 +17140,6 @@ SceneRoots:
   - {fileID: 494701665}
   - {fileID: 779485458}
   - {fileID: 1876783132}
-  - {fileID: 387251131}
   - {fileID: 1965478088}
   - {fileID: 505788584}
+  - {fileID: 387251131}
