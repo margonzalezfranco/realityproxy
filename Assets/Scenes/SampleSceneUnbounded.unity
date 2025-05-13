@@ -4334,7 +4334,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_Sprite: {fileID: 21300000, guid: f8ecc54972abacc46a93f671b0602139, type: 3}
+  m_Sprite: {fileID: 21300000, guid: b463a9281af6c4eaba316b863a237b07, type: 3}
   m_Type: 0
   m_PreserveAspect: 0
   m_FillCenter: 1
@@ -4602,7 +4602,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_Sprite: {fileID: 21300000, guid: 31c64e1d14a5343f38017ef205881d61, type: 3}
+  m_Sprite: {fileID: 21300000, guid: 594ecb8412afb427cb3220917206d253, type: 3}
   m_Type: 0
   m_PreserveAspect: 0
   m_FillCenter: 1
@@ -5399,6 +5399,7 @@ MonoBehaviour:
   pointingPlane: {fileID: 505788586}
   objectLevelRecordingToggle: 1
   enableUserStudyLogging: 1
+  enableRelationContext: 1
 --- !u!114 &779485471
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -10782,6 +10783,9 @@ MonoBehaviour:
   xrCamera: {fileID: 5030769454512039463}
   longPinchDuration: 1
   maxRayDistance: 5
+  initialAlpha: 0.3
+  initialColor: {r: 0, g: 0, b: 0, a: 1}
+  transitionDuration: 1
 --- !u!1 &1490084817
 GameObject:
   m_ObjectHideFlags: 0
@@ -12268,6 +12272,7 @@ MonoBehaviour:
   pointingPlane: {fileID: 505788586}
   objectLevelRecordingToggle: 1
   enableUserStudyLogging: 1
+  enableRelationContext: 1
 --- !u!114 &1719634412
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -15560,7 +15565,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_Sprite: {fileID: 21300000, guid: 31c64e1d14a5343f38017ef205881d61, type: 3}
+  m_Sprite: {fileID: 21300000, guid: eab657d48f0e7441187997d7ca08c4f0, type: 3}
   m_Type: 0
   m_PreserveAspect: 0
   m_FillCenter: 1
