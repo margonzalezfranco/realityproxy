@@ -360,6 +360,50 @@ public class SceneObjectManager : MonoBehaviour
         return sphereObj;
     }
 
+    /// <summary>
+    /// Registers a manually created anchor directly with an existing GameObject.
+    /// This is used by ManualAnchorRegistration to ensure its transition anchors are properly tracked.
+    /// </summary>
+    /// <param name="label">The label for the anchor</param>
+    /// <param name="position">The world position of the anchor</param>
+    /// <param name="existingSphereObj">The existing GameObject representing the anchor</param>
+    /// <returns>The created SceneObjectAnchor</returns>
+    public SceneObjectAnchor RegisterManualAnchor(string label, Vector3 position, GameObject existingSphereObj)
+    {
+        bool hadAnchors = HasAnchors;
+
+        // Check if this object already has an associated anchor
+        SceneObjectAnchor existing = GetAnchorByGameObject(existingSphereObj);
+        if (existing != null)
+        {
+            // Just update the label if needed
+            UpdateAnchorLabel(existing, label);
+            return existing;
+        }
+
+        // Create a new anchor data object but use the existing GameObject
+        SceneObjectAnchor newAnchor = new SceneObjectAnchor
+        {
+            label = label,
+            position = position,
+            boundingRadius = matchingRadius,
+            userLocked = false,
+            sphereObj = existingSphereObj
+        };
+
+        // Add to the list
+        anchors.Add(newAnchor);
+
+        // If this is the first anchor, fire the event
+        if (!hadAnchors && OnAnchorCountChanged != null)
+        {
+            OnAnchorCountChanged(true);
+        }
+
+        LogUserStudy($"[SCENE_OBJECT_MANAGER] MANUAL_ANCHOR_REGISTERED: Object=\"{label}\", Position=\"{position}\", Radius={matchingRadius:F3}m");
+        return newAnchor;
+    }
+
     public SceneObjectAnchor GetAnchorByGameObject(GameObject obj)
     {
         return anchors.Find(a => a.sphereObj == obj);

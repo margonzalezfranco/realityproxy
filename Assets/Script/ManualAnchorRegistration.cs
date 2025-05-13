@@ -233,6 +233,12 @@ public class ManualAnchorRegistration : GeminiGeneral
         // Store reference to object
         if (isLeft) leftAnchorObj = anchorObj;
         else rightAnchorObj = anchorObj;
+        
+        // Register the transition anchor immediately with sceneObjectManager
+        // This ensures it's part of the anchors list and will be cleared by ClearAllAnchors()
+        sceneObjectManager.RegisterManualAnchor(placeholderLabel, position, anchorObj);
+        
+        Debug.Log($"Created transition anchor for {(isLeft ? "Left" : "Right")} hand at {position}");
     }
     
     private void UpdateAnchorTransition(bool isLeft)
@@ -316,8 +322,7 @@ public class ManualAnchorRegistration : GeminiGeneral
         {
             Debug.Log($"Gemini returned label: '{label}' for manual anchor.");
             
-            // We have two approaches to handle the anchor:
-            // Option 1: Update the existing transition anchor with the new label
+            // Update the existing anchor with the final label
             if (existingAnchorObj != null)
             {
                 // Update the label text
@@ -326,27 +331,15 @@ public class ManualAnchorRegistration : GeminiGeneral
                 {
                     tmpLabel.text = label;
                     Debug.Log($"Updated existing anchor object with label: {label}");
-                    
-                    // Find this object in the anchors list and update its label
-                    SceneObjectAnchor anchor = sceneObjectManager.GetAnchorByGameObject(existingAnchorObj);
-                    if (anchor != null)
-                    {
-                        anchor.label = label;
-                    }
-                    else
-                    {
-                        Debug.LogWarning("Could not find anchor in SceneObjectManager's list - may not be properly registered.");
-                    }
                 }
-                else
-                {
-                    Debug.LogWarning("Could not find TextMeshPro component on anchor to update label.");
-                }
+                
+                // Update the anchor in SceneObjectManager using the RegisterManualAnchor method
+                sceneObjectManager.RegisterManualAnchor(label, position, existingAnchorObj);
             }
-            // Option 2: (fallback) Register a new anchor and destroy the transition one
             else
             {
-                Debug.Log("Creating new anchor via SceneObjectManager.RegisterOrUpdateAnchor");
+                // Fallback - this shouldn't happen if our flow is working correctly
+                Debug.LogWarning("Existing anchor object is null at finalization time. Creating new anchor as fallback.");
                 sceneObjectManager.RegisterOrUpdateAnchor(label, position);
             }
         }
@@ -364,12 +357,8 @@ public class ManualAnchorRegistration : GeminiGeneral
                     tmpLabel.text = "Unknown Object";
                 }
                 
-                // Find this object in the anchors list and update its label
-                SceneObjectAnchor anchor = sceneObjectManager.GetAnchorByGameObject(existingAnchorObj);
-                if (anchor != null)
-                {
-                    anchor.label = "Unknown Object";
-                }
+                // Update the anchor in SceneObjectManager
+                sceneObjectManager.RegisterManualAnchor("Unknown Object", position, existingAnchorObj);
             }
             else
             {
