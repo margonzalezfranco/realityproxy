@@ -940,6 +940,23 @@ public class HandGrabTrigger : MonoBehaviour
             labelObj.SetActive(true);
         }
 
+        // Clear any active relationship if there's a current relationship anchor
+        if (currentRelationshipAnchor != null)
+        {
+            // Get the sphereToggleScript if we haven't already
+            if (sphereToggleScript == null)
+            {
+                sphereToggleScript = _grabbedAnchor.sphereObj.GetComponent<SphereToggleScript>();
+            }
+            
+            // Clear the relationship line
+            if (sphereToggleScript != null && sphereToggleScript.relationLineManager != null)
+            {
+                Debug.Log($"Clearing relationship line with '{currentRelationshipAnchor.label}' due to anchor release");
+                sphereToggleScript.ClearSpecificRelationship(currentRelationshipAnchor.label);
+            }
+        }
+
         // Store the last released anchor and mark as just released
         _lastReleasedAnchor = _grabbedAnchor;
         _justReleased = true;
