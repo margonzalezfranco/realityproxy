@@ -2257,12 +2257,17 @@ public class SphereToggleScript : MonoBehaviour
         // Update scene context to ensure we have the latest context
         UpdateSceneContext();
         
-        // Find the anchor for this object
         var myAnchor = sceneObjManager.GetAnchorByGameObject(this.gameObject);
         if (myAnchor == null)
         {
-            Debug.LogWarning($"No anchor found for this sphere GameObject!");
+            Debug.LogWarning($"No anchor found for this sphere GameObject: {this.gameObject.name}!");
             yield break;
+        }
+
+        if (!string.IsNullOrEmpty(objectA) && myAnchor.label != objectA)
+        {
+            Debug.LogWarning($"Anchor label mismatch! Expected '{objectA}' but got '{myAnchor.label}'. Updating to use current anchor's label.");
+            objectA = myAnchor.label;
         }
 
         // Find the anchor for the nearby object
@@ -2272,6 +2277,8 @@ public class SphereToggleScript : MonoBehaviour
             Debug.LogWarning($"No anchor found for nearby object '{objectB}'!");
             yield break;
         }
+
+        Debug.Log($"Confirmed relationship between current object (confirmed as '{myAnchor.label}') and '{otherAnchor.label}'");
 
         // Check if a relationship already exists
         string previousRelationship = null;

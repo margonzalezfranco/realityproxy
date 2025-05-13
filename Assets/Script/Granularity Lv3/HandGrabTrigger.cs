@@ -127,7 +127,7 @@ public class HandGrabTrigger : MonoBehaviour
 
     [Header("Hand-to-Anchor Proximity")]
     [Tooltip("Distance threshold for detecting when hand is close to any anchor")]
-    public float proximityThresholdFromHandToAnchor = 0.3f; // 30cm default
+    public float proximityThresholdFromHandToAnchor = 0.15f; // 30cm default
 
     private float lastProximityCheckTime = 0f;
     private SceneObjectManager sceneObjectManager;
@@ -539,6 +539,10 @@ public class HandGrabTrigger : MonoBehaviour
 
         // Hide relation and question toggles
         ActivateRelationAndQuestionToggles(false);
+
+        // Clear the sphereToggleScript reference and get a new one
+        sphereToggleScript = null;
+        sphereToggleScript = _grabbedAnchor.sphereObj.GetComponent<SphereToggleScript>();
 
         // Generate twin object
         if (objectMeshGenerator != null)
@@ -981,13 +985,12 @@ public class HandGrabTrigger : MonoBehaviour
             _aimingVisualizer.gameObject.SetActive(false);
         }
         
-        // Reset state
-        _grabbedAnchor = null;
-        labelObj = null;
-
-        // Reset relationship tracking
+        // Clear references
+        sphereToggleScript = null;
         currentRelationshipAnchor = null;
         timeStartedRelationship = 0f;
+        _grabbedAnchor = null;
+        labelObj = null;
     }
 
     /// <summary>
@@ -1257,6 +1260,15 @@ public class HandGrabTrigger : MonoBehaviour
                         Debug.LogWarning("No SphereToggleScript found on grabbed anchor!");
                         return;
                     }
+                }
+                
+                // IMPORTANT: Always get a fresh reference to the SphereToggleScript for the current grabbed anchor
+                // This ensures we're using the correct object when generating relationships
+                sphereToggleScript = _grabbedAnchor.sphereObj.GetComponent<SphereToggleScript>();
+                if (sphereToggleScript == null)
+                {
+                    Debug.LogWarning("No SphereToggleScript found on current grabbed anchor!");
+                    return;
                 }
                 
                 // Generate relationship between the two objects

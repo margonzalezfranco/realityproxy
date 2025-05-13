@@ -205,6 +205,15 @@ IMPORTANT:
     [Header("User Study Logging")]
     [SerializeField] private bool enableUserStudyLogging = true;
 
+    [Header("Relation Detection")]
+    [Tooltip("Whether to detect and include relation context when recording")]
+    [SerializeField] private bool enableRelationContext = true;
+
+    // Add reference to HandGrabTrigger to detect aiming relationships
+    private HandGrabTrigger currentHandGrabTrigger;
+    private SceneObjectAnchor currentAimedAnchor;
+    private string relationshipDescription;
+
     protected override void Awake()
     {
         base.Awake(); // Call GeminiGeneral's Awake to initialize the Gemini client
@@ -546,6 +555,32 @@ IMPORTANT:
             {
                 isRecording = false;
                 Debug.Log("Max recording length reached, stopping automatically.");
+            }
+        }
+
+        // Add this inside the existing Update method
+        // Check if we have currentObjectLabel but currentHandGrabTrigger is null
+        if (!string.IsNullOrEmpty(currentObjectLabel) && currentHandGrabTrigger == null)
+        {
+            // Try to find the HandGrabTrigger for the current object
+            SceneObjectAnchor currentAnchor = sceneObjectManager?.GetAnchorByLabel(currentObjectLabel);
+            if (currentAnchor != null)
+            {
+                HandGrabTrigger[] grabTriggers = FindObjectsOfType<HandGrabTrigger>();
+                foreach (var trigger in grabTriggers)
+                {
+                    var field = trigger.GetType().GetField("_grabbedAnchor", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                    if (field != null)
+                    {
+                        SceneObjectAnchor grabbedAnchor = field.GetValue(trigger) as SceneObjectAnchor;
+                        if (grabbedAnchor == currentAnchor)
+                        {
+                            currentHandGrabTrigger = trigger;
+                            Debug.Log($"[SpeechRecorder] Updated HandGrabTrigger for {currentObjectLabel} in Update loop");
+                            break;
+                        }
+                    }
+                }
             }
         }
     }
@@ -966,6 +1001,19 @@ IMPORTANT:
             }
         }
 
+        // Check for active relationship between objects
+        string sourceObject = null;
+        string targetObject = null;
+        string relationDescription = null;
+        bool hasActiveRelationship = CheckForActiveRelationship(out sourceObject, out targetObject, out relationDescription);
+
+        // Create a new relationship prompt template
+        string relationshipPromptTemplate = @"You are a helpful AI assistant responding to the user's request about a relationship between two objects.
+The user is holding a '{0}' and it has a relationship with '{1}'. 
+The relationship is described as: '{2}'.
+Please respond to the user query considering both objects and their relationship.
+Please respond concisely and avoid using markdown formatting. User request: {3}";
+
         // If pointing at a specific part of the object, use the pointing prompt template
         if (isObjectMode && isPointingAtPart)
         {
@@ -975,6 +1023,16 @@ IMPORTANT:
             
             // Log context for user study
             LogUserStudy($"[VOICE_INPUT] [OBJECT_POINTING] CONTEXT: Type=\"{contextType}\", Object=\"{currentObjectLabel}\", Part=\"{pointingPartName}\", PartDescription=\"{pointingPartDescription}\"");
+        }
+        // NEW: If there's an active relationship between objects, use relationship context
+        else if (isObjectMode && hasActiveRelationship)
+        {
+            finalPrompt = string.Format(relationshipPromptTemplate, sourceObject, targetObject, relationDescription ?? "being related to", userQuery);
+            Debug.Log($"[SpeechRecorder] Using RELATIONSHIP context prompt for '{sourceObject}' and '{targetObject}'");
+            contextType = "RELATIONSHIP_BETWEEN_OBJECTS";
+            
+            // Log context for user study
+            LogUserStudy($"[VOICE_INPUT] [OBJECT_RELATIONSHIP] CONTEXT: Type=\"{contextType}\", SourceObject=\"{sourceObject}\", TargetObject=\"{targetObject}\", Relationship=\"{relationDescription}\"");
         }
         // Otherwise, if in object mode, use the object context prompt template
         else if (isObjectMode)
@@ -2541,6 +2599,174 @@ IMPORTANT:
         if (!enableUserStudyLogging) return;
         string timestamp = System.DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
         Debug.Log($"[USER_STUDY_LOG][{timestamp}] {message}");
+    }
+
+    private void Start()
+    {
+        // Find existing code similar to this and add after it
+        if (sceneObjectManager == null) sceneObjectManager = FindFirstObjectByType<SceneObjectManager>();
+        if (relationshipLineManager == null) relationshipLineManager = FindFirstObjectByType<RelationshipLineManager>();
+        
+        // Add this new code to find and subscribe to HandGrabTrigger events
+        SubscribeToHandGrabEvents();
+    }
+
+    private void OnDestroy()
+    {
+        // Find existing OnDestroy method and add this at the end
+        UnsubscribeFromHandGrabEvents();
+    }
+
+    // New method to find and subscribe to HandGrabTrigger events
+    private void SubscribeToHandGrabEvents()
+    {
+        // Subscribe to HandGrabTrigger's events
+        HandGrabTrigger.OnAnchorGrabbed += HandleAnchorGrabbed;
+        HandGrabTrigger.OnAnchorReleased += HandleAnchorReleased;
+        Debug.Log("[SpeechRecorder] Subscribed to HandGrabTrigger events");
+    }
+
+    // New method to unsubscribe from HandGrabTrigger events
+    private void UnsubscribeFromHandGrabEvents()
+    {
+        HandGrabTrigger.OnAnchorGrabbed -= HandleAnchorGrabbed;
+        HandGrabTrigger.OnAnchorReleased -= HandleAnchorReleased;
+    }
+
+    // Handler for when an anchor is grabbed
+    private void HandleAnchorGrabbed(SceneObjectAnchor anchor)
+    {
+        // First, clear any previous HandGrabTrigger references
+        if (currentHandGrabTrigger != null)
+        {
+            Debug.Log($"[SpeechRecorder] Clearing previous HandGrabTrigger reference when grabbing new anchor: {anchor.label}");
+            currentHandGrabTrigger = null;
+            currentAimedAnchor = null;
+            relationshipDescription = null;
+        }
+
+        // Find which HandGrabTrigger has this anchor
+        HandGrabTrigger[] grabTriggers = FindObjectsOfType<HandGrabTrigger>();
+        foreach (var trigger in grabTriggers)
+        {
+            // Use reflection to access the private _grabbedAnchor field
+            var field = trigger.GetType().GetField("_grabbedAnchor", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            if (field != null)
+            {
+                SceneObjectAnchor grabbedAnchor = field.GetValue(trigger) as SceneObjectAnchor;
+                if (grabbedAnchor == anchor)
+                {
+                    currentHandGrabTrigger = trigger;
+                    Debug.Log($"[SpeechRecorder] Found HandGrabTrigger for anchor: {anchor.label}");
+                    
+                    // Set the current object label to the new object
+                    if (anchor != null && !string.IsNullOrEmpty(anchor.label))
+                    {
+                        SetObjectLabel(anchor.label, anchor.sphereObj);
+                        Debug.Log($"[SpeechRecorder] Updated currentObjectLabel to: {anchor.label}");
+                    }
+                    
+                    break;
+                }
+            }
+        }
+    }
+
+    // Handler for when an anchor is released
+    private void HandleAnchorReleased(SceneObjectAnchor anchor)
+    {
+        if (currentHandGrabTrigger != null)
+        {
+            currentHandGrabTrigger = null;
+            currentAimedAnchor = null;
+            relationshipDescription = null;
+            Debug.Log("[SpeechRecorder] HandGrabTrigger reference cleared");
+        }
+    }
+
+    // Add a new method to check for active relationship
+    private bool CheckForActiveRelationship(out string sourceObject, out string targetObject, out string relation)
+    {
+        sourceObject = null;
+        targetObject = null;
+        relation = null;
+        
+        if (!enableRelationContext || string.IsNullOrEmpty(currentObjectLabel))
+            return false;
+        
+        // First try to get currentHandGrabTrigger if it's null but we have a currentObjectLabel
+        if (currentHandGrabTrigger == null && !string.IsNullOrEmpty(currentObjectLabel))
+        {
+            // Try to find the HandGrabTrigger for this object
+            SceneObjectAnchor currentAnchor = sceneObjectManager.GetAnchorByLabel(currentObjectLabel);
+            if (currentAnchor != null)
+            {
+                Debug.Log($"[SpeechRecorder] Trying to recover HandGrabTrigger for {currentObjectLabel}");
+                HandGrabTrigger[] grabTriggers = FindObjectsOfType<HandGrabTrigger>();
+                foreach (var trigger in grabTriggers)
+                {
+                    var field = trigger.GetType().GetField("_grabbedAnchor", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                    if (field != null)
+                    {
+                        SceneObjectAnchor grabbedAnchor = field.GetValue(trigger) as SceneObjectAnchor;
+                        if (grabbedAnchor == currentAnchor)
+                        {
+                            currentHandGrabTrigger = trigger;
+                            Debug.Log($"[SpeechRecorder] Recovered HandGrabTrigger for {currentObjectLabel}");
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        
+        // If we still don't have a valid HandGrabTrigger, return false
+        if (currentHandGrabTrigger == null)
+            return false;
+        
+        // Try to access the currentRelationshipAnchor field using reflection
+        var relationshipField = currentHandGrabTrigger.GetType().GetField("currentRelationshipAnchor", 
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        
+        if (relationshipField != null)
+        {
+            SceneObjectAnchor relationshipAnchor = relationshipField.GetValue(currentHandGrabTrigger) as SceneObjectAnchor;
+            if (relationshipAnchor != null)
+            {
+                // We have an active relationship!
+                sourceObject = currentObjectLabel;
+                targetObject = relationshipAnchor.label;
+                
+                // Try to get the relationship description from the line manager
+                if (relationshipLineManager != null)
+                {
+                    // Find the current anchor
+                    SceneObjectAnchor currentAnchor = sceneObjectManager.GetAnchorByLabel(currentObjectLabel);
+                    if (currentAnchor != null)
+                    {
+                        relation = relationshipLineManager.GetExistingRelationship(currentAnchor, relationshipAnchor);
+                        
+                        // Double-check that a relationship line actually exists
+                        if (string.IsNullOrEmpty(relation))
+                        {
+                            relation = relationshipLineManager.GetExistingRelationship(relationshipAnchor, currentAnchor);
+                            if (!string.IsNullOrEmpty(relation))
+                            {
+                                // Swap source and target to match the actual relationship direction
+                                string temp = sourceObject;
+                                sourceObject = targetObject;
+                                targetObject = temp;
+                            }
+                        }
+                    }
+                }
+                
+                Debug.Log($"[SpeechRecorder] Active relationship detected: {sourceObject} -> {targetObject} ({relation})");
+                return true;
+            }
+        }
+        
+        return false;
     }
 }
 
