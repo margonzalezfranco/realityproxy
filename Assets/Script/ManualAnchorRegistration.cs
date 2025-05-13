@@ -17,6 +17,9 @@ public class ManualAnchorRegistration : GeminiGeneral
     [Tooltip("Reference to the XR Camera for raycasting origin/direction")]
     public Camera xrCamera; 
     
+    [Tooltip("Reference to the DragSurface component to prevent conflicts")]
+    public DragSurface dragSurface;
+    
     [Header("Settings")]
     [Tooltip("Minimum duration (in seconds) to hold a pinch to trigger registration")]
     public float longPinchDuration = 1.0f;
@@ -67,6 +70,13 @@ public class ManualAnchorRegistration : GeminiGeneral
         if (handTracking == null) Debug.LogError("MyHandTracking reference not set in ManualAnchorRegistration.");
         if (sceneObjectManager == null) Debug.LogError("SceneObjectManager reference not set in ManualAnchorRegistration.");
         if (xrCamera == null) Debug.LogError("XR Camera reference not set in ManualAnchorRegistration.");
+        
+        if (dragSurface == null) 
+        {
+            dragSurface = FindAnyObjectByType<DragSurface>();
+            if (dragSurface == null) Debug.LogWarning("DragSurface reference not found. Surface scanning conflict prevention disabled.");
+        }
+        
         // Check inherited fields after base Awake has run
         if (geminiClient == null) Debug.LogError("Gemini client failed to initialize in base class.");
         if (cameraRenderTex == null) Debug.LogError("Camera RenderTexture reference not set in the inherited GeminiGeneral component."); 
@@ -95,6 +105,9 @@ public class ManualAnchorRegistration : GeminiGeneral
         if (handTracking == null || sceneObjectManager == null || xrCamera == null || cameraRenderTex == null)
             return;
         if (handTracking.handSubsystem == null || !handTracking.handSubsystem.running)
+            return;
+            
+        if (dragSurface != null && IsDragSurfaceActive())
             return;
 
         bool isCurrentlyPinching = handTracking.IsPinching(isLeft);
@@ -412,5 +425,11 @@ public class ManualAnchorRegistration : GeminiGeneral
             rightAnchorMaterial = null;
             rightRegistrationCoroutine = null;
         }
+    }
+
+    private bool IsDragSurfaceActive()
+    {
+        GameObject surfaceObject = GameObject.Find("DragSurface");
+        return surfaceObject != null;
     }
 } 
