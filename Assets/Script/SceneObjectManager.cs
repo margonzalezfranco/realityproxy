@@ -385,7 +385,6 @@ public class SceneObjectManager : MonoBehaviour
         if (objectTrackingToggle != null) functionToggles.Add(objectTrackingToggle);
         if (questionToggle != null) functionToggles.Add(questionToggle);
         if (relationToggle != null) functionToggles.Add(relationToggle);
-        if (askSceneToggle != null) functionToggles.Add(askSceneToggle);
 
         // Reset all toggles to known good state BEFORE handling anchors
         foreach (var toggle in functionToggles)
