@@ -266,7 +266,7 @@ public class SceneObjectManager : MonoBehaviour
     /// This is basically the logic you had in GeminiRaycast, but extracted here so it's
     /// only done once per unique object anchor.
     /// </summary>
-    private GameObject SpawnSphereWithLabel(Vector3 position, string label)
+    public GameObject SpawnSphereWithLabel(Vector3 position, string label)
     {
         GameObject sphereObj = (spherePrefab != null)
             ? Instantiate(spherePrefab, position, Quaternion.identity)

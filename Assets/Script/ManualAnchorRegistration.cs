@@ -24,16 +24,35 @@ public class ManualAnchorRegistration : GeminiGeneral
     [Tooltip("Maximum distance for the raycast from the hand")]
     public float maxRayDistance = 5.0f;
 
+    [Header("Transition Settings")]
+    [Tooltip("Initial alpha value (transparency) of the anchor sphere")]
+    [Range(0.1f, 1.0f)] public float initialAlpha = 0.3f;
+    
+    [Tooltip("Initial color of the anchor sphere")]
+    public Color initialColor = new Color(0f, 0f, 0f); // Black (000000)
+    
+    [Tooltip("How long the transparency/color transition should take")]
+    public float transitionDuration = 1.0f;
+
     // TODO: Add prefab for the temporary visual indicator
     // public GameObject temporaryVisualPrefab;
 
     // Internal state variables
     private float leftPinchStartTime = -1f;
     private float rightPinchStartTime = -1f;
+    private bool isTransitioningLeft = false;
+    private bool isTransitioningRight = false;
+    private float leftTransitionStartTime = -1f;
+    private float rightTransitionStartTime = -1f;
+    private GameObject leftAnchorObj = null;
+    private GameObject rightAnchorObj = null;
+    private Material leftAnchorMaterial = null;
+    private Material rightAnchorMaterial = null;
     private bool isRegisteringLeft = false;
     private bool isRegisteringRight = false;
-    private Coroutine leftRegistrationCoroutine = null; // Track coroutines
+    private Coroutine leftRegistrationCoroutine = null;
     private Coroutine rightRegistrationCoroutine = null;
+    private string placeholderLabel = "Identifying...";
 
     // Override Awake if needed, but remember to call base.Awake()
     protected override void Awake()
@@ -55,167 +74,354 @@ public class ManualAnchorRegistration : GeminiGeneral
 
     void Update()
     {
-        // --- Left Hand Long Pinch Detection ---
+        // Handle pinch detection for both hands
         HandleLongPinch(true);
-
-        // --- Right Hand Long Pinch Detection ---
         HandleLongPinch(false);
+        
+        // Update transitions for both hands
+        if (isTransitioningLeft && leftAnchorObj != null)
+        {
+            UpdateAnchorTransition(isLeft: true);
+        }
+        if (isTransitioningRight && rightAnchorObj != null)
+        {
+            UpdateAnchorTransition(isLeft: false);
+        }
     }
 
     private void HandleLongPinch(bool isLeft)
     {
-        // Ensure dependencies are set before proceeding (removed geminiInteraction check)
+        // Skip if any essential component is missing
         if (handTracking == null || sceneObjectManager == null || xrCamera == null || cameraRenderTex == null)
             return;
-
-        // Access handSubsystem from MyHandTracking directly if public
-        // If handSubsystem is not public in MyHandTracking, you'll need to make it public or add a getter.
-        // Assuming handTracking.handSubsystem is accessible:
-        if (handTracking.handSubsystem == null || !handTracking.handSubsystem.running) 
-            return; // Exit if hand tracking isn't running
+        if (handTracking.handSubsystem == null || !handTracking.handSubsystem.running)
+            return;
 
         bool isCurrentlyPinching = handTracking.IsPinching(isLeft);
         ref float startTime = ref (isLeft ? ref leftPinchStartTime : ref rightPinchStartTime);
         ref bool isCurrentlyRegistering = ref (isLeft ? ref isRegisteringLeft : ref isRegisteringRight);
-        ref Coroutine registrationCoroutine = ref (isLeft ? ref leftRegistrationCoroutine : ref rightRegistrationCoroutine);
-
+        ref bool isTransitioning = ref (isLeft ? ref isTransitioningLeft : ref isTransitioningRight);
+        ref float transitionStartTime = ref (isLeft ? ref leftTransitionStartTime : ref rightTransitionStartTime);
+        
         if (isCurrentlyPinching)
         {
-            if (startTime < 0) 
+            if (startTime < 0) // Pinch just started
             {
                 startTime = Time.time;
             }
-            else if (!isCurrentlyRegistering) 
+            else if (!isCurrentlyRegistering && !isTransitioning) // Not already in transition/registration
             {
                 if (Time.time - startTime >= longPinchDuration)
                 {
-                    Debug.Log($"{(isLeft ? "Left" : "Right")} hand long pinch detected. Starting registration.");
-                    if(registrationCoroutine != null) StopCoroutine(registrationCoroutine); 
-                    registrationCoroutine = StartCoroutine(RegisterAnchorProcess(isLeft)); 
-                    isCurrentlyRegistering = true;
-                    startTime = -1f; 
+                    // Long pinch confirmed - start transition phase
+                    Debug.Log($"{(isLeft ? "Left" : "Right")} hand long pinch detected. Creating semi-transparent anchor.");
+                    
+                    // Get current pinch position
+                    Vector3 pinchPosition;
+                    if (handTracking.TryGetPinchPosition(isLeft, out pinchPosition))
+                    {
+                        // Create the semi-transparent anchor
+                        CreateTransitionAnchor(isLeft, pinchPosition);
+                        
+                        // Start transition
+                        isTransitioning = true;
+                        transitionStartTime = Time.time;
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"Could not get pinch position for {(isLeft ? "Left" : "Right")} hand.");
+                    }
                 }
             }
         }
-        else 
+        else // Not pinching
         {
-            if (startTime >= 0) 
+            if (isTransitioning) // Was transitioning and now released
             {
-                 startTime = -1f;
-                 // Optional: Cancellation logic if pinch released during registration
+                Debug.Log($"{(isLeft ? "Left" : "Right")} hand pinch released. Finalizing anchor.");
+                
+                // Get the anchor object and position before we reset
+                GameObject anchorObj = isLeft ? leftAnchorObj : rightAnchorObj;
+                Vector3 finalPosition = anchorObj != null ? anchorObj.transform.position : Vector3.zero;
+                
+                // Ensure anchor is fully opaque at release
+                Material material = isLeft ? leftAnchorMaterial : rightAnchorMaterial;
+                if (material != null)
+                {
+                    // Set final color/alpha
+                    Color finalColor = material.color;
+                    finalColor.a = 1.0f;
+                    material.color = finalColor;
+                }
+                
+                // Stop transition phase
+                isTransitioning = false;
+                transitionStartTime = -1f;
+                
+                // Start Gemini processing
+                if (finalPosition != Vector3.zero)
+                {
+                    if (isLeft) leftRegistrationCoroutine = StartCoroutine(FinalizeAnchor(isLeft, finalPosition, anchorObj));
+                    else rightRegistrationCoroutine = StartCoroutine(FinalizeAnchor(isLeft, finalPosition, anchorObj));
+                    isCurrentlyRegistering = true;
+                }
+                
+                // Don't clear anchor objects yet - they'll be updated with final label by FinalizeAnchor
             }
-            startTime = -1f;
+            
+            // Reset pinch timer if not transitioning or registering
+            if (!isTransitioning && !isCurrentlyRegistering)
+            {
+                startTime = -1f;
+            }
         }
     }
-
-    private IEnumerator RegisterAnchorProcess(bool isLeft)
+    
+    private void CreateTransitionAnchor(bool isLeft, Vector3 position)
+    {
+        // Check if we already have an anchor for this hand (shouldn't happen, but just in case)
+        if ((isLeft && leftAnchorObj != null) || (!isLeft && rightAnchorObj != null))
+        {
+            Debug.LogWarning($"Anchor for {(isLeft ? "Left" : "Right")} hand already exists. Destroying old one.");
+            if (isLeft)
+            {
+                Destroy(leftAnchorObj);
+                leftAnchorObj = null;
+                leftAnchorMaterial = null;
+            }
+            else
+            {
+                Destroy(rightAnchorObj);
+                rightAnchorObj = null;
+                rightAnchorMaterial = null;
+            }
+        }
+        
+        // Create a new anchor object at the pinch position with placeholder label
+        GameObject anchorObj = sceneObjectManager.SpawnSphereWithLabel(position, placeholderLabel);
+        
+        // Get the anchor's renderer to modify the material
+        Renderer renderer = anchorObj.GetComponentInChildren<Renderer>();
+        if (renderer != null)
+        {
+            // Create a new material instance based on the current material to avoid affecting other objects
+            Material newMaterial = new Material(renderer.material);
+            
+            // Set initial color and transparency
+            Color color = initialColor;
+            color.a = initialAlpha;
+            newMaterial.color = color;
+            
+            // Enable transparency on the material
+            newMaterial.SetFloat("_Mode", 3); // Transparent mode in Standard shader
+            newMaterial.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            newMaterial.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            newMaterial.SetInt("_ZWrite", 0);
+            newMaterial.DisableKeyword("_ALPHATEST_ON");
+            newMaterial.EnableKeyword("_ALPHABLEND_ON");
+            newMaterial.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+            newMaterial.renderQueue = 3000; // Transparent render queue
+            
+            // Apply the new material to the renderer
+            renderer.material = newMaterial;
+            
+            // Store reference to material
+            if (isLeft) leftAnchorMaterial = newMaterial;
+            else rightAnchorMaterial = newMaterial;
+        }
+        
+        // Store reference to object
+        if (isLeft) leftAnchorObj = anchorObj;
+        else rightAnchorObj = anchorObj;
+    }
+    
+    private void UpdateAnchorTransition(bool isLeft)
+    {
+        GameObject anchorObj = isLeft ? leftAnchorObj : rightAnchorObj;
+        Material material = isLeft ? leftAnchorMaterial : rightAnchorMaterial;
+        float transitionStartTime = isLeft ? leftTransitionStartTime : rightTransitionStartTime;
+        
+        if (anchorObj == null || material == null)
+        {
+            Debug.LogWarning($"Cannot update transition for {(isLeft ? "Left" : "Right")} hand - missing anchor or material.");
+            return;
+        }
+        
+        // Update anchor position to follow pinch
+        Vector3 pinchPosition;
+        if (handTracking.TryGetPinchPosition(isLeft, out pinchPosition))
+        {
+            anchorObj.transform.position = pinchPosition;
+        }
+        
+        // Calculate transition progress (0 to 1)
+        float elapsedTime = Time.time - transitionStartTime;
+        float progress = Mathf.Clamp01(elapsedTime / transitionDuration);
+        
+        // Update material color and alpha
+        Color currentColor = material.color;
+        Color targetColor = Color.white; // or whatever final color you want
+        targetColor.a = 1.0f; // fully opaque
+        
+        Color newColor = Color.Lerp(initialColor, targetColor, progress);
+        newColor.a = Mathf.Lerp(initialAlpha, 1.0f, progress);
+        material.color = newColor;
+    }
+    
+    private IEnumerator FinalizeAnchor(bool isLeft, Vector3 position, GameObject existingAnchorObj)
     {
         string handSide = isLeft ? "Left" : "Right";
-        Debug.Log($"Starting RegisterAnchorProcess for {handSide} hand.");
-
-        // 1. Determine Pointing Direction & Raycast
-        Vector3 rayOrigin;
-        Vector3 pointDirection;
-        bool gotPose = false;
-
-        // Assuming handTracking.handSubsystem is accessible
-        XRHand hand = isLeft ? handTracking.handSubsystem.leftHand : handTracking.handSubsystem.rightHand;
-        if (hand.isTracked && hand.GetJoint(XRHandJointID.IndexTip).TryGetPose(out Pose indexTipPose) && hand.GetJoint(XRHandJointID.IndexIntermediate).TryGetPose(out Pose indexKnucklePose))
+        Debug.Log($"Starting finalization for {handSide} hand anchor at position {position}.");
+        
+        // 1. Capture Image
+        Debug.Log("Capturing camera view for label identification...");
+        Texture2D capturedImage = CaptureFrame(cameraRenderTex);
+        if (capturedImage == null)
         {
-            rayOrigin = indexTipPose.position;
-            pointDirection = (indexTipPose.position - indexKnucklePose.position).normalized;
-            gotPose = true;
-             Debug.Log($"Using {handSide} index finger direction for raycast. Origin: {rayOrigin}, Direction: {pointDirection}");
+            Debug.LogError("Failed to capture frame from RenderTexture.");
+            CleanupRegistration(isLeft, existingAnchorObj);
+            yield break;
+        }
+        
+        // 2. Convert Image to Base64
+        string base64Image = ConvertTextureToBase64(capturedImage);
+        if (string.IsNullOrEmpty(base64Image))
+        {
+            Debug.LogError("Failed to convert captured image to Base64.");
+            Destroy(capturedImage);
+            CleanupRegistration(isLeft, existingAnchorObj);
+            yield break;
+        }
+        
+        // 3. Call Gemini
+        string prompt = $"Identify the object at this pinch point location ({position}). Provide only the object's name.";
+        Debug.Log("Sending image and prompt to Gemini...");
+        var request = MakeGeminiRequest(prompt, base64Image);
+        while (!request.IsCompleted)
+        {
+            yield return null;
+        }
+        
+        string response = request.Result;
+        string label = null;
+        
+        if (!string.IsNullOrEmpty(response))
+        {
+            label = ParseGeminiRawResponse(response);
+            if (label != null) label = label.Trim();
+        }
+        
+        // 4. Update or register anchor
+        if (!string.IsNullOrEmpty(label))
+        {
+            Debug.Log($"Gemini returned label: '{label}' for manual anchor.");
+            
+            // We have two approaches to handle the anchor:
+            // Option 1: Update the existing transition anchor with the new label
+            if (existingAnchorObj != null)
+            {
+                // Update the label text
+                TMPro.TextMeshPro tmpLabel = existingAnchorObj.GetComponentInChildren<TMPro.TextMeshPro>();
+                if (tmpLabel != null)
+                {
+                    tmpLabel.text = label;
+                    Debug.Log($"Updated existing anchor object with label: {label}");
+                    
+                    // Find this object in the anchors list and update its label
+                    SceneObjectAnchor anchor = sceneObjectManager.GetAnchorByGameObject(existingAnchorObj);
+                    if (anchor != null)
+                    {
+                        anchor.label = label;
+                    }
+                    else
+                    {
+                        Debug.LogWarning("Could not find anchor in SceneObjectManager's list - may not be properly registered.");
+                    }
+                }
+                else
+                {
+                    Debug.LogWarning("Could not find TextMeshPro component on anchor to update label.");
+                }
+            }
+            // Option 2: (fallback) Register a new anchor and destroy the transition one
+            else
+            {
+                Debug.Log("Creating new anchor via SceneObjectManager.RegisterOrUpdateAnchor");
+                sceneObjectManager.RegisterOrUpdateAnchor(label, position);
+            }
         }
         else
         {
-            Debug.LogWarning($"Could not get {handSide} index finger pose. Falling back to camera center raycast.");
-            rayOrigin = xrCamera.transform.position;
-            pointDirection = xrCamera.transform.forward;
-        }
-
-        RaycastHit hit;
-        GameObject tempVisual = null;
-        Texture2D capturedImage = null;
-
-        if (Physics.Raycast(rayOrigin, pointDirection, out hit, maxRayDistance))
-        {
-            Debug.Log($"Raycast hit object: {hit.collider.name} at point: {hit.point}");
-
-            // 2. Spawn Temporary Visual (Placeholder)
-
-            // 3. Capture Image - Call inherited method directly
-            Debug.Log("Capturing camera view...");
-            capturedImage = CaptureFrame(cameraRenderTex); 
-            if (capturedImage == null)
-            {
-                Debug.LogError("Failed to capture frame from RenderTexture.");
-                yield break; 
-            }
+            Debug.LogWarning("Gemini did not return a valid label. Using 'Unknown Object' as fallback.");
             
-            // 4. Convert Image to Base64 - Call inherited method directly
-            string base64Image = ConvertTextureToBase64(capturedImage);
-            if (string.IsNullOrEmpty(base64Image))
+            // Use a fallback label
+            if (existingAnchorObj != null)
             {
-                 Debug.LogError("Failed to convert captured image to Base64.");
-                 Destroy(capturedImage); 
-                 yield break;
-            }
-
-            // 5. Call Gemini - Call inherited method directly
-            string prompt = "Describe the main object visible in the center of the image. Provide only the object's name.";
-            Debug.Log("Sending image and prompt to Gemini...");
-            var request = MakeGeminiRequest(prompt, base64Image);
-            while (!request.IsCompleted)
-            {
-                yield return null; 
-            }
-            
-            string response = request.Result;
-            string label = null;
-
-            if (!string.IsNullOrEmpty(response))
-            {
-                // Parse the response - Call inherited method directly
-                 label = ParseGeminiRawResponse(response); 
-                 if (label != null) label = label.Trim(); 
+                // Update the existing object with fallback label
+                TMPro.TextMeshPro tmpLabel = existingAnchorObj.GetComponentInChildren<TMPro.TextMeshPro>();
+                if (tmpLabel != null)
+                {
+                    tmpLabel.text = "Unknown Object";
+                }
+                
+                // Find this object in the anchors list and update its label
+                SceneObjectAnchor anchor = sceneObjectManager.GetAnchorByGameObject(existingAnchorObj);
+                if (anchor != null)
+                {
+                    anchor.label = "Unknown Object";
+                }
             }
             else
             {
-                 Debug.LogWarning("Gemini request failed or returned empty response.");
+                // Fallback to creating a new anchor
+                sceneObjectManager.RegisterOrUpdateAnchor("Unknown Object", position);
             }
-
-            // 6. Register Anchor
-            if (!string.IsNullOrEmpty(label))
-            {
-                Debug.Log($"Gemini returned label: '{label}'. Registering anchor at {hit.point}.");
-                sceneObjectManager.RegisterOrUpdateAnchor(label, hit.point);
-            }
-            else
-            {
-                 Debug.LogWarning("Gemini did not return a valid label. Anchor not registered.");
-            }
-
-            // 7. Cleanup 
-            if (tempVisual != null) Destroy(tempVisual);
-            if (capturedImage != null) Destroy(capturedImage); 
         }
-        else
-        {
-            Debug.Log("Manual registration raycast did not hit any object within range.");
-        }
-
-        // Reset registration flag - Use direct assignment instead of ref locals
+        
+        // 5. Cleanup
+        if (capturedImage != null) Destroy(capturedImage);
+        
+        // Reset registration state (keep the anchor object as it's now fully integrated)
         if (isLeft)
         {
             isRegisteringLeft = false;
+            leftAnchorObj = null;
+            leftAnchorMaterial = null;
             leftRegistrationCoroutine = null;
         }
         else
         {
             isRegisteringRight = false;
+            rightAnchorObj = null;
+            rightAnchorMaterial = null;
             rightRegistrationCoroutine = null;
         }
-        Debug.Log($"Finished RegisterAnchorProcess for {handSide} hand.");
+        
+        Debug.Log($"Finished anchor finalization for {handSide} hand.");
+    }
+    
+    private void CleanupRegistration(bool isLeft, GameObject existingAnchorObj)
+    {
+        // Destroy the existing anchor object if registration failed
+        if (existingAnchorObj != null)
+        {
+            Destroy(existingAnchorObj);
+        }
+        
+        // Reset state
+        if (isLeft)
+        {
+            isRegisteringLeft = false;
+            leftAnchorObj = null;
+            leftAnchorMaterial = null;
+            leftRegistrationCoroutine = null;
+        }
+        else
+        {
+            isRegisteringRight = false;
+            rightAnchorObj = null;
+            rightAnchorMaterial = null;
+            rightRegistrationCoroutine = null;
+        }
     }
 } 

@@ -183,6 +183,7 @@ MonoBehaviour:
   m_ToggleBackground: {fileID: 2671951222293235138}
   m_Text: {fileID: 2311217571615358831}
   textOn: Listening
+  m_Active: 0
   textOn_Useful: 0
   enableInteraction: 1
   m_SelectedMaterial: {fileID: 0}
@@ -413,7 +414,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: Coca-Cola Strabarry Flavor Coke
+  m_text: 
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: f675742eaf9c20a4f909d78ee7a14fed, type: 2}
   m_sharedMaterial: {fileID: 4687939059374929122, guid: f675742eaf9c20a4f909d78ee7a14fed, type: 2}
