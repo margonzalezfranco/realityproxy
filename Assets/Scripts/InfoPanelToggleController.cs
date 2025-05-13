@@ -179,6 +179,12 @@ public class InfoPanelToggleController : MonoBehaviour
                         recT.PressEnd();
                     }
                 }
+
+                // Hide the response from the recorder
+                SpeechToTextRecorder recorderComponent = recorderToggle.GetComponent<SpeechToTextRecorder>();
+                if (recorderComponent != null)   recorderComponent.HideAskResponse();
+
+
                 isHandlingFunctionToggleExclusivity = false;
             }
             else if (!isVisible && stateActuallyChanged) // Panel is being turned OFF

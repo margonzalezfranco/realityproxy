@@ -271,6 +271,11 @@ public class RelationToggleController : MonoBehaviour
                 recT.PressEnd();
             }
         }
+
+        if (ownerSphereToggle.recorderToggle != null)
+        {
+            ownerSphereToggle.recorderToggle.GetComponent<SpeechToTextRecorder>().HideAskResponse();
+        }
     }
 
     /// <summary>

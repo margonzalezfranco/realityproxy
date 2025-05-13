@@ -5393,7 +5393,7 @@ MonoBehaviour:
   transcriptionResult: 
   isProcessing: 0
   geminiResponse: 
-  responseDisplayDuration: 10
+  responseDisplayDuration: 20
   enableResponseAutoHide: 1
   stepIndicatorPrefab: {fileID: 1336632255144453280, guid: a369a714ca5524eadb8ac4ff33c81217, type: 3}
   pointingPlane: {fileID: 505788586}
@@ -9389,6 +9389,9 @@ MonoBehaviour:
   pointingPlaneText: {fileID: 1799472516}
   handTracking: {fileID: 1483904742}
   recorderToggle: {fileID: 779485459}
+  objectTrackingToggle: {fileID: 0}
+  questionToggle: {fileID: 0}
+  relationToggle: {fileID: 0}
   baselineModeController: {fileID: 1750616586}
   enableUserStudyLogging: 1
   askSceneToggle: {fileID: 2038933164}
@@ -12259,7 +12262,7 @@ MonoBehaviour:
   transcriptionResult: 
   isProcessing: 0
   geminiResponse: 
-  responseDisplayDuration: 10
+  responseDisplayDuration: 20
   enableResponseAutoHide: 1
   stepIndicatorPrefab: {fileID: 1336632255144453280, guid: a369a714ca5524eadb8ac4ff33c81217, type: 3}
   pointingPlane: {fileID: 505788586}

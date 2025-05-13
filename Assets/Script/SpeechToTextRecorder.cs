@@ -2068,37 +2068,58 @@ IMPORTANT:
 
     public void HideChatbox()
     {
-        if (chatboxOnObject != null)
-        {
-            chatboxOnObject.SetActive(false);
-        }
-        
-        // Also clear the request text when hiding the chatbox
-        if (requestText != null)
-        {
-            requestText.text = "";
-        }
-        
-        // Hide the questions panel
+        HideAskResponse();
+
         if (infoPanel != null)
         {
             infoPanel.gameObject.SetActive(false);
         }
         
-        // Clear any created questions
         ClearPreviousQuestions();
         
-        // Hide the answer panel if it exists
         if (answerPanel != null)
         {
             answerPanel.SetActive(false);
         }
         
-        // Cancel any existing hide timer when manually hiding
         if (responseHideCoroutine != null)
         {
             StopCoroutine(responseHideCoroutine);
             responseHideCoroutine = null;
+        }
+    }
+
+    public void HideAskResponse()
+    {
+        if (chatboxOnObject != null)
+        {
+            chatboxOnObject.SetActive(false);
+        }
+
+        if (responseTextOnObject != null)
+        {
+            responseTextOnObject.text = "";
+        }
+
+        if (requestText != null)
+        {
+            requestText.text = "";
+        }
+
+        // Stop the auto-hide coroutine if it's running
+        if (responseHideCoroutine != null)
+        {
+            StopCoroutine(responseHideCoroutine);
+            responseHideCoroutine = null;
+        }
+        
+        // Also reset the relationship line manager's auto-hide state
+        if (relationshipLineManager != null && relationshipLineManager.hasActiveHighlights)
+        {
+            // Reset the internal state to prevent auto-hiding
+            relationshipLineManager.hasActiveHighlights = false;
+            relationshipLineManager.highlightTimer = 0f;
+            Debug.Log("[SpeechRecorder] Reset relationship line manager auto-hide state");
         }
     }
 
