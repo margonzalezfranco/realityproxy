@@ -92,21 +92,12 @@ public class Gemini2DBoundingBoxDetector : GeminiGeneral
         Texture2D frameTex = null;
         bool shouldContinue = true;
 
-        // Set scanning state
-        if (scanButtonText != null)
-        {
-            scanButtonText.text = "Scanning";
-        }
-        else
-        {
-            Debug.LogWarning("Scan button text reference missing!");
-        }
+        if (scanButtonText != null) scanButtonText.text = "Scanning";
 
         try
         {
             Debug.Log("Detecting bounding boxes...");
             
-            // Capture frame from RenderTexture
             frameTex = CaptureFrame(cameraRenderTex);
             if (frameTex == null)
             {
@@ -173,23 +164,19 @@ public class Gemini2DBoundingBoxDetector : GeminiGeneral
             yield break;
         }
 
-        // Build prompt specific to bounding box detection
         string prompt = "Detect SKU items, with no more than 20 items. " +
             "Output a json list where each entry contains the 2D bounding box in \"box_2d\" " +
             "and a text label of their name indicating exactly what the item is (the product name) in \"label\".";
 
-        // Call Gemini - this is now outside any try block so yield is allowed
         var request = MakeGeminiRequest(prompt, base64Image);
         while (!request.IsCompleted)
         {
             yield return null;
         }
 
-        // Process results
         List<Box2DResult> boxResults = null;
         try
         {
-            // Check for errors
             if (request.Error != null)
             {
                 Debug.LogError($"Gemini request failed: {request.Error}");
@@ -204,7 +191,6 @@ public class Gemini2DBoundingBoxDetector : GeminiGeneral
                 if (boxResults == null)
                 {
                     Debug.LogError("No valid boxes found or parsing error.");
-                    // We'll still continue to clear old boxes
                 }
                 else
                 {
@@ -284,7 +270,6 @@ public class Gemini2DBoundingBoxDetector : GeminiGeneral
         }
     }
 
-    // Keep all the bounding box specific methods
     private List<Box2DResult> ParseBoundingBoxResponse(string response)
     {
         try
