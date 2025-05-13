@@ -194,6 +194,13 @@ public class HandGrabTrigger : MonoBehaviour
     // Reference to the aiming visualizer line renderer
     private LineRenderer _aimingVisualizer;
 
+    // Add these private fields after the existing toggle references
+    [SerializeField]
+    private GameObject relationToggle;
+
+    [SerializeField]
+    private GameObject questionToggle;
+
     private void Start()
     {
         // Auto-detect which hand this is based on the GameObject name if not set
@@ -226,6 +233,10 @@ public class HandGrabTrigger : MonoBehaviour
 
         if (objectTrackingToggle == null) objectTrackingToggle = GameObject.Find("ObjectTrackingToggle");
         if (objectTrackingUIToggle == null) objectTrackingUIToggle = objectTrackingToggle.GetComponent<SpatialUIToggle>();
+        
+        // Find the relation and question toggles if they're not assigned
+        if (relationToggle == null) relationToggle = GameObject.Find("RelationToggle");
+        if (questionToggle == null) questionToggle = GameObject.Find("QuestionToggle");
     }
     
     private void AutoDetectHandType()
@@ -431,6 +442,9 @@ public class HandGrabTrigger : MonoBehaviour
                 }));
             }
             
+            // Hide relation and question toggles
+            ActivateRelationAndQuestionToggles(false);
+            
             // Log the auto-grab event for user study
             LogUserStudy($"[GRAB] AUTO_GRAB: Hand=\"{handType}\", Object=\"{anchorToGrab.label}\", Confidence={grabbingInfo.confidence:F2}");
 
@@ -446,6 +460,12 @@ public class HandGrabTrigger : MonoBehaviour
             // No active anchor to grab
             Debug.Log("No current active anchor to grab. Make sure a toggle is in ON state.");
         }
+    }
+
+    public void ActivateRelationAndQuestionToggles(bool activate)
+    {
+        if (relationToggle != null) relationToggle.SetActive(activate);
+        if (questionToggle != null) questionToggle.SetActive(activate);
     }
 
     public void ManualGrabAnchor()
@@ -516,6 +536,9 @@ public class HandGrabTrigger : MonoBehaviour
         {
             sphereMeshRenderer.enabled = false;
         }
+
+        // Hide relation and question toggles
+        ActivateRelationAndQuestionToggles(false);
 
         // Generate twin object
         if (objectMeshGenerator != null)
@@ -874,6 +897,9 @@ public class HandGrabTrigger : MonoBehaviour
             _preventAutoGrabAfterManualRelease = true;
             Debug.Log($"HandGrabTrigger: Preventing auto-grab after manual release");
         }
+
+        // Show relation and question toggles again
+        ActivateRelationAndQuestionToggles(true);
 
         // Remove from the static dictionary of grabbed anchors
         if (_allGrabbedAnchors.ContainsKey(_grabbedAnchor))

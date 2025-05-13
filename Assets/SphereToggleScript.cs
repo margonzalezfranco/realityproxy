@@ -817,8 +817,8 @@ public class SphereToggleScript : MonoBehaviour
                     }
                 }
                 
-                // Make sure the toggle is active when toggled on
-                toggle.SetActive(true);
+                // // Make sure the toggle is active when toggled on
+                // toggle.SetActive(true);
             }
             else
             {
@@ -837,11 +837,11 @@ public class SphereToggleScript : MonoBehaviour
                     if (recorder == null && toggle.transform.parent != null) recorder = toggle.transform.parent.GetComponent<SpeechToTextRecorder>();
                     if (recorder != null)   recorder.ResetObjectLabel();
                     
-                    // New logic: If in baseline mode, set the toggle inactive when toggled off
-                    if (baselineModeController != null && baselineModeController.baselineMode)
-                    {
-                        toggle.SetActive(false);
-                    }
+                    // // New logic: If in baseline mode, set the toggle inactive when toggled off
+                    // if (baselineModeController != null && baselineModeController.baselineMode)
+                    // {
+                    //     toggle.SetActive(false);
+                    // }
                 }
                 else if (toggleType == "relation")
                 {
