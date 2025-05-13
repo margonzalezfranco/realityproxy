@@ -12246,7 +12246,7 @@ MonoBehaviour:
   onGeminiResponseReceived:
     m_PersistentCalls:
       m_Calls: []
-  chatboxOnObject: {fileID: 1208220120}
+  chatboxOnObject: {fileID: 6077778735184122599}
   infoPanelParent: {fileID: 1192232517}
   infoPanel: {fileID: 2035281880}
   questionPrefab: {fileID: 8332209716421791987, guid: afb3b284441664fef8669ab537fb8b5f, type: 3}

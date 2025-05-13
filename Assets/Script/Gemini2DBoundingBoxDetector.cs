@@ -89,65 +89,198 @@ public class Gemini2DBoundingBoxDetector : GeminiGeneral
 
     private System.Collections.IEnumerator DetectBoxesRoutine()
     {
-        Debug.Log("Detecting bounding boxes...");
-        // 1) Capture frame from RenderTexture
-        Texture2D frameTex = CaptureFrame(cameraRenderTex);
+        Texture2D frameTex = null;
+        bool shouldContinue = true;
 
-        // 2) Convert to base64 (PNG)
-        string base64Image = ConvertTextureToBase64(frameTex);
+        // Set scanning state
+        if (scanButtonText != null)
+        {
+            scanButtonText.text = "Scanning";
+        }
+        else
+        {
+            Debug.LogWarning("Scan button text reference missing!");
+        }
 
-        // 3) Build prompt specific to bounding box detection. [need to refine]
+        try
+        {
+            Debug.Log("Detecting bounding boxes...");
+            
+            // Capture frame from RenderTexture
+            frameTex = CaptureFrame(cameraRenderTex);
+            if (frameTex == null)
+            {
+                Debug.LogError("Failed to capture frame from RenderTexture.");
+                shouldContinue = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"Error capturing frame: {ex}");
+            shouldContinue = false;
+        }
+
+        // Early exit if frame capture failed
+        if (!shouldContinue)
+        {
+            // Reset button text
+            if (scanButtonText != null)
+            {
+                scanButtonText.text = "Scan";
+            }
+            
+            // Clean up texture
+            if (frameTex != null)
+            {
+                Destroy(frameTex);
+            }
+            
+            yield break;
+        }
+
+        // Convert to base64 (PNG)
+        string base64Image = null;
+        try
+        {
+            base64Image = ConvertTextureToBase64(frameTex);
+            if (string.IsNullOrEmpty(base64Image))
+            {
+                Debug.LogError("Failed to convert texture to Base64.");
+                shouldContinue = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"Error converting texture to base64: {ex}");
+            shouldContinue = false;
+        }
+        
+        // Early exit if base64 conversion failed
+        if (!shouldContinue)
+        {
+            // Reset button text
+            if (scanButtonText != null)
+            {
+                scanButtonText.text = "Scan";
+            }
+            
+            // Clean up texture
+            if (frameTex != null)
+            {
+                Destroy(frameTex);
+            }
+            
+            yield break;
+        }
+
+        // Build prompt specific to bounding box detection
         string prompt = "Detect SKU items, with no more than 20 items. " +
             "Output a json list where each entry contains the 2D bounding box in \"box_2d\" " +
             "and a text label of their name indicating exactly what the item is (the product name) in \"label\".";
 
-        // 4) Call Gemini
-        // This now uses the new RequestStatus system which supports concurrent API calls
-        // from multiple components without interfering with each other
+        // Call Gemini - this is now outside any try block so yield is allowed
         var request = MakeGeminiRequest(prompt, base64Image);
         while (!request.IsCompleted)
         {
             yield return null;
         }
-        string response = request.Result;
 
-        // Debug.Log(response);
-
-        // 5) Parse JSON
-        List<Box2DResult> boxResults = ParseBoundingBoxResponse(response);
-        if (boxResults == null)
+        // Process results
+        List<Box2DResult> boxResults = null;
+        try
         {
-            Debug.LogError("No valid boxes found or parsing error.");
-        }
-        else
-        {
-            Debug.Log($"Got {boxResults.Count} boxes from Gemini!");
-            if (m_geminiRaycast != null && boxResults.Count > 0)
+            // Check for errors
+            if (request.Error != null)
             {
-                // Pass the captured camera pose with the boxes
-                m_geminiRaycast.OnBoxesUpdatedWithCameraPose(boxResults, capturedCameraPose);
+                Debug.LogError($"Gemini request failed: {request.Error}");
+                shouldContinue = false;
+            }
+            else
+            {
+                string response = request.Result;
+
+                // Parse JSON
+                boxResults = ParseBoundingBoxResponse(response);
+                if (boxResults == null)
+                {
+                    Debug.LogError("No valid boxes found or parsing error.");
+                    // We'll still continue to clear old boxes
+                }
+                else
+                {
+                    Debug.Log($"Got {boxResults.Count} boxes from Gemini!");
+                    if (m_geminiRaycast != null)
+                    {
+                        // Ensure capturedCameraPose is valid before calling
+                        if (capturedCameraPose.position == default && capturedCameraPose.rotation == default)
+                        {
+                            Debug.LogWarning("Captured camera pose is default/invalid. Using current pose as fallback.");
+                            // Recapture pose if invalid
+                            if (m_geminiRaycast.xrCamera != null)
+                            {
+                                capturedCameraPose = new CameraPoseData(
+                                    m_geminiRaycast.xrCamera.transform,
+                                    m_geminiRaycast.offsetNode
+                                );
+                            }
+                            else
+                            {
+                                Debug.LogError("Cannot recapture pose - xrCamera is null in GeminiRaycast.");
+                                shouldContinue = false;
+                            }
+                        }
+
+                        if (shouldContinue)
+                        {
+                            // Pass the boxes to GeminiRaycast
+                            m_geminiRaycast.OnBoxesUpdatedWithCameraPose(boxResults, capturedCameraPose);
+                        }
+                    }
+                    else
+                    {
+                        Debug.LogError("GeminiRaycast reference is missing in Gemini2DBoundingBoxDetector!");
+                    }
+                }
             }
         }
-
-        // 6) Clear old boxes
-        ClearOldBoxes();
-
-        // 7) Instantiate new bounding boxes
-        if (boxResults != null)
+        catch (Exception ex)
         {
-            foreach (var box in boxResults)
-            {
-                CreateBoundingBoxUI(box);
-            }
+            Debug.LogError($"Error processing Gemini results: {ex}");
+            shouldContinue = false;
         }
 
-        // Clean up texture
-        Destroy(frameTex);
-        
-        // Update button text back to "Scan"
-        if (scanButtonText != null)
+        try
         {
-            scanButtonText.text = "Scan";
+            // Clear old UI boxes (separate from scene anchors)
+            ClearOldBoxes();
+
+            // Instantiate new UI bounding boxes if available
+            if (boxResults != null)
+            {
+                foreach (var box in boxResults)
+                {
+                    CreateBoundingBoxUI(box);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"Error creating bounding box UI: {ex}");
+        }
+        finally
+        {
+            // Always reset button text
+            if (scanButtonText != null)
+            {
+                scanButtonText.text = "Scan";
+                Debug.Log("Scan button text reset.");
+            }
+
+            // Always clean up texture
+            if (frameTex != null)
+            {
+                Destroy(frameTex);
+            }
         }
     }
 

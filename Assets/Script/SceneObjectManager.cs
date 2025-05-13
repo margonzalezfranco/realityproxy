@@ -58,6 +58,15 @@ public class SceneObjectManager : MonoBehaviour
     public MyHandTracking handTracking;
     public GameObject recorderToggle;
     
+    [Tooltip("Reference to the Object Tracking toggle UI element.")]
+    public GameObject objectTrackingToggle;
+
+    [Tooltip("Reference to the Question toggle UI element.")]
+    public GameObject questionToggle;
+
+    [Tooltip("Reference to the Relation toggle UI element.")]
+    public GameObject relationToggle;
+
     [Tooltip("Reference to the BaselineModeController for mode-specific behaviors")]
     public BaselineModeController baselineModeController;
 
@@ -77,7 +86,21 @@ public class SceneObjectManager : MonoBehaviour
         {
             baselineModeController = FindObjectOfType<BaselineModeController>();
         }
-        
+
+        // Find toggles if not assigned in Inspector
+        if (recorderToggle == null) recorderToggle = GameObject.Find("RecorderToggle");
+        if (objectTrackingToggle == null) objectTrackingToggle = GameObject.Find("ObjectTrackingToggle");
+        if (questionToggle == null) questionToggle = GameObject.Find("QuestionToggle");
+        if (relationToggle == null) relationToggle = GameObject.Find("RelationToggle");
+        if (askSceneToggle == null) askSceneToggle = GameObject.Find("AskSceneToggle"); // Ensure correct name
+
+        // Add warnings if any are still null after attempting to find them
+        if (recorderToggle == null) Debug.LogWarning("SceneObjectManager: RecorderToggle not found!");
+        if (objectTrackingToggle == null) Debug.LogWarning("SceneObjectManager: ObjectTrackingToggle not found!");
+        if (questionToggle == null) Debug.LogWarning("SceneObjectManager: QuestionToggle not found!");
+        if (relationToggle == null) Debug.LogWarning("SceneObjectManager: RelationToggle not found!");
+        if (askSceneToggle == null) Debug.LogWarning("SceneObjectManager: AskSceneToggle not found!");
+
         OnAnchorCountChanged += HandleAnchorCountChanged;
     }
     
@@ -350,86 +373,69 @@ public class SceneObjectManager : MonoBehaviour
     [ContextMenu("Clear All Anchors")]
     public void ClearAllAnchors()
     {
+        Debug.Log("Clear All Anchors operation starting...");
         bool hadAnchors = HasAnchors;
         int anchorCount = anchors.Count;
+
+        // 1. ensure all functional toggles are reset and unparented
         
-        // Handle recorder toggle
-        if (recorderToggle != null)
+        // List of toggles to manage using the persistent references
+        List<GameObject> functionToggles = new List<GameObject>();
+        if (recorderToggle != null) functionToggles.Add(recorderToggle);
+        if (objectTrackingToggle != null) functionToggles.Add(objectTrackingToggle);
+        if (questionToggle != null) functionToggles.Add(questionToggle);
+        if (relationToggle != null) functionToggles.Add(relationToggle);
+        if (askSceneToggle != null) functionToggles.Add(askSceneToggle);
+
+        // Reset all toggles to known good state BEFORE handling anchors
+        foreach (var toggle in functionToggles)
         {
-            // Apply the same settings as used in SphereToggleScript.UpdateTogglePosition when setting parent to null
-            recorderToggle.transform.SetParent(null);
-            
-            // Update reference scale using SpatialUI component
-            var spatialUI = recorderToggle.GetComponent<SpatialUI>();
-            if (spatialUI != null) spatialUI.UpdateReferenceScale();
-            
-            // Reset position and rotation
-            recorderToggle.transform.localPosition = Vector3.zero;
-            recorderToggle.transform.localRotation = Quaternion.identity;
-            
-            // Enable LazyFollow if it exists
-            var lazyFollow = recorderToggle.GetComponent<LazyFollow>();
-            if (lazyFollow != null) lazyFollow.enabled = true;
-            
-            // Reset object label in the recorder component
-            SpeechToTextRecorder recorder = recorderToggle.GetComponent<SpeechToTextRecorder>();
-            if (recorder == null && recorderToggle.transform.parent != null) 
-                recorder = recorderToggle.transform.parent.GetComponent<SpeechToTextRecorder>();
-            if (recorder != null) recorder.ResetObjectLabel();
-            
-            // Handle baseline mode if available
-            if (baselineModeController != null && baselineModeController.baselineMode)
-            {
-                // In baseline mode, set inactive - but we'll need to reactivate it for new spheres
-                recorderToggle.SetActive(false);
-            }
-            else
-            {
-                // In normal mode, make sure it's active
-                recorderToggle.SetActive(true);
-            }
-            
-            // Store this recorder toggle in a static variable so it can be accessed by new spheres
-            StoreRecorderToggleReference();
+            ResetFunctionToggleState(toggle);
         }
-        
-        // Handle object tracking toggle if we can find one
-        GameObject objectTrackingToggle = GameObject.Find("ObjectTrackingToggle");
-        if (objectTrackingToggle != null)
+
+        // 2. check if any are still children of anchors
+        List<SceneObjectAnchor> anchorsToProcess = new List<SceneObjectAnchor>(anchors);
+        foreach (var anchor in anchorsToProcess)
         {
-            // Apply the same settings as the recorder toggle
-            objectTrackingToggle.transform.SetParent(null);
-            
-            var spatialUI = objectTrackingToggle.GetComponent<SpatialUI>();
-            if (spatialUI != null) spatialUI.UpdateReferenceScale();
-            
-            objectTrackingToggle.transform.localPosition = Vector3.zero;
-            objectTrackingToggle.transform.localRotation = Quaternion.identity;
-            
-            var lazyFollow = objectTrackingToggle.GetComponent<LazyFollow>();
-            if (lazyFollow != null) lazyFollow.enabled = true;
-            
-            // Handle visibility based on baseline mode
-            if (baselineModeController != null && baselineModeController.baselineMode)
+            if (anchor.sphereObj == null) continue;
+
+            // Check children of each anchor
+            List<Transform> childrenToCheck = new List<Transform>();
+            foreach (Transform child in anchor.sphereObj.transform)
             {
-                // In baseline mode, always hide the object tracking toggle
-                objectTrackingToggle.SetActive(false);
+                childrenToCheck.Add(child);
             }
-            else
+
+            foreach (Transform childTransform in childrenToCheck)
             {
-                // In normal mode, make sure it's visible
-                objectTrackingToggle.SetActive(true);
-            }
-            
-            // Make sure all sphere toggles have a reference to this toggle
-            SphereToggleScript[] allToggles = FindObjectsOfType<SphereToggleScript>();
-            foreach (var toggle in allToggles)
-            {
-                toggle.objectTrackingToggle = objectTrackingToggle;
+                // Check if this is one of our function toggles
+                if (functionToggles.Contains(childTransform.gameObject))
+                {
+                    Debug.LogWarning($"Toggle '{childTransform.name}' is still a child of anchor '{anchor.label}' - unparenting again");
+                    ResetFunctionToggleState(childTransform.gameObject);
+                }
+                else if (childTransform.name.Contains("Toggle") || 
+                         childTransform.name.Contains("Question") ||
+                         childTransform.name.Contains("Relation") ||
+                         childTransform.name.Contains("Recorder") ||
+                         childTransform.name.Contains("ObjectTracking"))
+                {
+                    // This is potentially another toggle we don't have in our list
+                    Debug.LogWarning($"Found unknown toggle '{childTransform.name}' under anchor '{anchor.label}' - unparenting");
+                    childTransform.SetParent(null);
+                }
             }
         }
         
-        // Destroy all the sphere GameObjects
+        // 3. clear relationship lines
+        if (relationLineManager != null)
+        {
+            Debug.Log("Clearing all relationship lines");
+            relationLineManager.ClearAllLines();
+        }
+
+        // 4. destroy all anchors
+        Debug.Log($"Destroying {anchors.Count} anchors");
         foreach (var anchor in anchors)
         {
             if (anchor.sphereObj != null)
@@ -437,38 +443,195 @@ public class SceneObjectManager : MonoBehaviour
                 Destroy(anchor.sphereObj);
             }
         }
-
-        // Clear the anchors list
         anchors.Clear();
-        
-        // Also clear relationship lines if we have a reference to the manager
-        if (relationLineManager != null)
+
+        // 5. reset state of all toggles one more time
+        foreach (var toggle in functionToggles)
         {
-            relationLineManager.ClearAllLines();
+            if (toggle == null)
+            {
+                Debug.LogError("A function toggle reference was unexpectedly null after clearing anchors!");
+                continue;
+            }
+
+            // Set Active State based on game logic
+            bool shouldBeActive = true; // Default
+            if (toggle == recorderToggle || toggle == objectTrackingToggle)
+            {
+                shouldBeActive = (baselineModeController == null || !baselineModeController.baselineMode);
+            }
+            else if (toggle == askSceneToggle)
+            {
+                shouldBeActive = false; // Since there are no anchors
+            }
+
+            toggle.SetActive(shouldBeActive);
+            Debug.Log($"Set {toggle.name} active state to: {shouldBeActive}");
         }
-        
+
         // Fire the event if we had anchors before clearing
         if (hadAnchors && OnAnchorCountChanged != null)
         {
             OnAnchorCountChanged(false);
         }
-        
-        Debug.Log("All anchors have been cleared from the scene");
+
+        Debug.Log($"Successfully cleared all {anchorCount} anchors from the scene");
         LogUserStudy($"[SCENE_OBJECT_MANAGER] ALL_ANCHORS_CLEARED: Count={anchorCount}");
     }
-    
-    // Helper method to store a reference to the recorder toggle
-    private void StoreRecorderToggleReference()
+
+    // Helper function to reset a function toggle
+    private void ResetFunctionToggleState(GameObject toggle)
     {
-        if (recorderToggle != null)
+        if (toggle == null) return;
+
+        Debug.Log($"Resetting function toggle: {toggle.name}");
+
+        // First, force the visual state to inactive if it's a SpatialUIToggle
+        SpatialUIToggle spatialUIToggle = toggle.GetComponent<SpatialUIToggle>();
+        if (spatialUIToggle != null && spatialUIToggle.m_Active)
         {
-            // Get all SphereToggleScript components in the scene
-            SphereToggleScript[] allToggles = FindObjectsOfType<SphereToggleScript>();
-            foreach (var toggle in allToggles)
+            Debug.Log($"Forcing {toggle.name} toggle to inactive state");
+            // Use PassiveToggleWithoutInvoke to avoid triggering events
+            spatialUIToggle.PassiveToggleWithoutInvokeOff();
+        }
+
+        // Reset parent 
+        toggle.transform.SetParent(null);
+
+        // Update reference scale
+        var spatialUI = toggle.GetComponent<SpatialUI>();
+        if (spatialUI != null) spatialUI.UpdateReferenceScale();
+
+        // Reset position and rotation
+        toggle.transform.localPosition = Vector3.zero;
+        toggle.transform.localRotation = Quaternion.identity;
+
+        // Disable DualTargetLazyFollow if present
+        var dualLazyFollow = toggle.GetComponent<DualTargetLazyFollow>();
+        if (dualLazyFollow != null)
+        {
+            Debug.Log($"Disabling DualTargetLazyFollow on {toggle.name}");
+            dualLazyFollow.enabled = false;
+            
+            // For more thorough cleanup, destroy it completely
+            Destroy(dualLazyFollow);
+        }
+
+        // Enable standard LazyFollow for default floating behavior
+        var lazyFollow = toggle.GetComponent<LazyFollow>();
+        if (lazyFollow != null)
+        {
+            Debug.Log($"Enabling LazyFollow on {toggle.name}");
+            
+            // Reset LazyFollow parameters to defaults
+            lazyFollow.enabled = false; // Disable first
+            
+            // Configure optimal parameters before re-enabling
+            lazyFollow.positionFollowMode = LazyFollow.PositionFollowMode.Follow;
+            lazyFollow.rotationFollowMode = LazyFollow.RotationFollowMode.LookAt;
+            
+            if (Camera.main != null)
             {
-                // Update the recorder toggle reference
-                toggle.recorderToggle = recorderToggle;
+                lazyFollow.target = Camera.main.transform;
+                lazyFollow.snapOnEnable = true; // Force a snap to target position
             }
+            
+            lazyFollow.enabled = true; // Re-enable
+        }
+
+        // Specific resets based on toggle type
+        if (toggle == recorderToggle)
+        {
+            // Reset recorder
+            SpeechToTextRecorder recorder = toggle.GetComponent<SpeechToTextRecorder>();
+            if (recorder == null && toggle.transform.parent != null) 
+                recorder = toggle.transform.parent.GetComponent<SpeechToTextRecorder>();
+                
+            if (recorder != null)
+            {
+                Debug.Log("Resetting recorder object label");
+                recorder.ResetObjectLabel();
+                
+                // Ensure recording is stopped if active
+                var isRecordingField = recorder.GetType().GetField("isRecording", 
+                    System.Reflection.BindingFlags.Instance | 
+                    System.Reflection.BindingFlags.NonPublic |
+                    System.Reflection.BindingFlags.Public);
+                    
+                if (isRecordingField != null)
+                {
+                    bool isRecording = (bool)isRecordingField.GetValue(recorder);
+                    if (isRecording)
+                    {
+                        Debug.Log("Stopping active recording during reset");
+                        // Can't directly access internal methods, so use toggle
+                        if (spatialUIToggle != null && spatialUIToggle.enableInteraction)
+                        {
+                            spatialUIToggle.PressStart();
+                            spatialUIToggle.PressEnd();
+                        }
+                    }
+                }
+            }
+        }
+        else if (toggle == relationToggle)
+        {
+            // Reset relation toggle
+            var controller = toggle.GetComponent<RelationToggleController>();
+            if (controller != null)
+            {
+                Debug.Log("Resetting relation toggle controller");
+                
+                // Clear references
+                controller.ownerSphereToggle = null;
+                
+                // Ensure relationships are cleared
+                if (controller.relationshipLineManager != null)
+                {
+                    controller.relationshipLineManager.ClearAllLines();
+                }
+                
+                // Reset toggle state
+                if (controller.toggle != null && controller.toggle.m_Active)
+                {
+                    controller.ToggleRelationshipLines(false); // Logical off
+                    controller.toggle.PassiveToggleWithoutInvokeOff(); // Visual off
+                }
+            }
+        }
+        else if (toggle == questionToggle)
+        {
+            // Reset question toggle
+            var controller = toggle.GetComponent<InfoPanelToggleController>();
+            if (controller != null)
+            {
+                Debug.Log("Resetting question toggle controller");
+                
+                // Clear references
+                controller.sphereToggleScript = null;
+                
+                // Hide panels
+                if (controller.infoPanel != null && controller.infoPanel.activeSelf)
+                {
+                    controller.SetInfoPanelVisibility(false);
+                }
+                
+                if (controller.answerPanel != null && controller.answerPanel.activeSelf)
+                {
+                    controller.answerPanel.SetActive(false);
+                }
+                
+                // Reset toggle state
+                if (controller.toggle != null && controller.toggle.m_Active)
+                {
+                    controller.toggle.PassiveToggleWithoutInvokeOff();
+                }
+            }
+        }
+        else if (toggle == objectTrackingToggle)
+        {
+            // Reset object tracking toggle if needed
+            // This is mostly handled by the general reset above
         }
     }
     
