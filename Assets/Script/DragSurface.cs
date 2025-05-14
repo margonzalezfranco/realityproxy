@@ -200,11 +200,19 @@ public class DragSurface : MonoBehaviour
         if (isLeft && !allowLeftHand)
             return;
             
+        // Debug.Log($"DragSurface detected pinch start with {(isLeft ? "left" : "right")} hand. Current state: {currentState}");
+            
         float currentTime = Time.time;
         
         // Handle double-pinch detection - now more permissive
         if (isAwaitingSecondPinch && (currentTime - lastPinchTime) < doublePinchTimeThreshold)
         {
+            // Store that we're processing this pinch to help prevent conflicts
+            lastPinchTime = currentTime;
+            lastPinchWasLeft = isLeft;
+            
+            // Debug.Log($"DragSurface recognized double-pinch with {(isLeft ? "left" : "right")} hand in state {currentState}");
+            
             // This is a pinch during the waiting period - accept it even if from different hand
             isAwaitingSecondPinch = false;
             hasLoggedTimeoutWarning = false;
@@ -213,11 +221,13 @@ public class DragSurface : MonoBehaviour
             {
                 case SurfaceCreationState.AwaitingSecondPinch:
                     // Double-pinch to start drawing a new surface
+                    Debug.Log($"Starting length drawing after double-pinch with {(isLeft ? "left" : "right")} hand");
                     StartLengthDrawing(isLeft);
                     break;
                     
                 case SurfaceCreationState.Completed:
                     // Double-pinch to clear the previous surface
+                    Debug.Log($"Clearing surface after double-pinch with {(isLeft ? "left" : "right")} hand");
                     ClearCurrentSurface();
                     currentState = SurfaceCreationState.None;
                     Debug.Log("Previous surface cleared. Double-pinch to start drawing a new surface.");
@@ -240,7 +250,7 @@ public class DragSurface : MonoBehaviour
                 lastPinchTime = currentTime;
                 lastPinchWasLeft = isLeft;
                 currentState = SurfaceCreationState.AwaitingSecondPinch;
-                // Debug.Log($"First pinch detected with {(isLeft ? "left" : "right")} hand. Pinch again within 1 second to start drawing.");
+                Debug.Log($"First pinch detected with {(isLeft ? "left" : "right")} hand. Pinch again within {doublePinchTimeThreshold} seconds to start drawing.");
                 break;
                 
             case SurfaceCreationState.DrawingHeight:
@@ -253,7 +263,7 @@ public class DragSurface : MonoBehaviour
                 hasLoggedTimeoutWarning = false;
                 lastPinchTime = currentTime;
                 lastPinchWasLeft = isLeft;
-                // Debug.Log($"First pinch detected with {(isLeft ? "left" : "right")} hand. Pinch again within 1 second to clear the surface.");
+                Debug.Log($"First pinch detected with {(isLeft ? "left" : "right")} hand while surface complete. Pinch again within {doublePinchTimeThreshold} seconds to clear the surface.");
                 break;
                 
             default:

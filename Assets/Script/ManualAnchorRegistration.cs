@@ -84,6 +84,18 @@ public class ManualAnchorRegistration : GeminiGeneral
 
     void Update()
     {
+        // Skip anchor registration completely if DragSurface is active
+        // This helps prevent conflicts with double-pinch detection in DragSurface
+        if (dragSurface != null && IsDragSurfaceActive())
+        {
+            // Debug.Log("ManualAnchorRegistration skipping pinch handling since DragSurface is active");
+            
+            // Reset pinch times when DragSurface is active to avoid accidental registration
+            leftPinchStartTime = -1f;
+            rightPinchStartTime = -1f;
+            return;
+        }
+        
         // Handle pinch detection for both hands
         HandleLongPinch(true);
         HandleLongPinch(false);
@@ -108,7 +120,10 @@ public class ManualAnchorRegistration : GeminiGeneral
             return;
             
         if (dragSurface != null && IsDragSurfaceActive())
+        {
+            // Debug.Log($"ManualAnchorRegistration: Skipping {(isLeft ? "left" : "right")} hand long pinch due to active DragSurface");
             return;
+        }
 
         bool isCurrentlyPinching = handTracking.IsPinching(isLeft);
         ref float startTime = ref (isLeft ? ref leftPinchStartTime : ref rightPinchStartTime);
@@ -121,6 +136,7 @@ public class ManualAnchorRegistration : GeminiGeneral
             if (startTime < 0) // Pinch just started
             {
                 startTime = Time.time;
+                // Debug.Log($"ManualAnchorRegistration: {(isLeft ? "Left" : "Right")} hand pinch started");
             }
             else if (!isCurrentlyRegistering && !isTransitioning) // Not already in transition/registration
             {
@@ -429,7 +445,32 @@ public class ManualAnchorRegistration : GeminiGeneral
 
     private bool IsDragSurfaceActive()
     {
-        GameObject surfaceObject = GameObject.Find("DragSurface");
-        return surfaceObject != null;
+        // Check if we have a direct reference to dragSurface
+        if (dragSurface != null)
+        {
+            // Check if the DragSurface component is enabled and its GameObject is active
+            if (dragSurface.isActiveAndEnabled)
+            {
+                // Look for an active surface object
+                GameObject surfaceObject = GameObject.Find("DragSurface");
+                if (surfaceObject != null)
+                {
+                    return true;
+                }
+                
+                // Additionally check if DragSurface is in any drawing state
+                // This will prevent interference with the double-pinch detection
+                var currentStateField = dragSurface.GetType().GetField("currentState", 
+                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                if (currentStateField != null)
+                {
+                    int currentState = (int)currentStateField.GetValue(dragSurface);
+                    // Check if currentState is not 0 (None) - any other state means DragSurface is active
+                    return currentState != 0;
+                }
+            }
+        }
+        
+        return false;
     }
 } 

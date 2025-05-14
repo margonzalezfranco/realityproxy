@@ -2197,16 +2197,6 @@ public class SurfaceScanOCR : GeminiGeneral
         }
 
         questionsParent.gameObject.SetActive(true);
-        
-        // Activate the first three children if they exist
-        if (menuCanvas.childCount >= 3)
-        {
-            for (int i = 0; i < 3; i++)
-            {
-                if (menuCanvas.GetChild(i) != null)
-                    menuCanvas.GetChild(i).gameObject.SetActive(true);
-            }
-        }
     }
 
     /// <summary>
@@ -2295,6 +2285,9 @@ public class SurfaceScanOCR : GeminiGeneral
             float currentY = -60f;  // Start at the top
             float questionHeight = 54f;  // Height of each question block, adjust as needed
             float spacing = 0f;  // Space between questions
+
+            // clear the title of the questionPanel, find the first child that has the textmeshpro component
+            questionsParent.GetComponentInChildren<TextMeshPro>().text = "";
             
             foreach (var q in questionsList)
             {
