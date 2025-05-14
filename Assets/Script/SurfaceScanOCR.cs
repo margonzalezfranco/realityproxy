@@ -1927,7 +1927,7 @@ public class SurfaceScanOCR : GeminiGeneral
             float centerY = line.boundingBox.y + (line.boundingBox.height / 2f);
             
             float normalizedX = centerX / croppedTextureWidth;
-            float normalizedY = centerY / croppedTextureHeight;
+            float normalizedY = 1.0f - (centerY / croppedTextureHeight);
             
             // Calculate position in world space on the surface
             Vector3 linePosition = surfacePoint1 + 
