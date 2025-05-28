@@ -10701,6 +10701,7 @@ MonoBehaviour:
   m_RightHandPrefab: {fileID: 2367959041761150376, guid: 35c1d8053047c4b6ab2445f83284d2f7, type: 3}
   m_SpawnedLeftHand: {fileID: 0}
   m_SpawnedRightHand: {fileID: 0}
+  enableAimingVisualization: 0
   pinchThreshold: 0.01
   pinchReleaseThreshold: 0.016
   middlePinchThreshold: 0.01

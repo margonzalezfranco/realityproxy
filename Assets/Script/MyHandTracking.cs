@@ -15,6 +15,10 @@ public class MyHandTracking : MonoBehaviour
     public GameObject m_SpawnedLeftHand;
     public GameObject m_SpawnedRightHand;
 
+    [Header("HandGrabTrigger Settings")]
+    [Tooltip("Enable visualization of the aiming direction ray when grabbing objects")]
+    public bool enableAimingVisualization = true;
+
     [Header("Pinch Detection")]
     [Tooltip("Maximum distance between thumb and index finger to register as a pinch (in meters)")]
     [SerializeField] float pinchThreshold = 0.005f;
@@ -89,6 +93,7 @@ public class MyHandTracking : MonoBehaviour
             if (leftHandGrabber != null)
             {
                 leftHandGrabber.handType = "left";
+                leftHandGrabber.visualizeAiming = enableAimingVisualization;
                 // Debug.Log("Added HandGrabTrigger to left hand with handType = left");
             }
         }
@@ -100,6 +105,7 @@ public class MyHandTracking : MonoBehaviour
             if (rightHandGrabber != null)
             {
                 rightHandGrabber.handType = "right";
+                rightHandGrabber.visualizeAiming = enableAimingVisualization;
                 // Debug.Log("Added HandGrabTrigger to right hand with handType = right");
             }
         }
