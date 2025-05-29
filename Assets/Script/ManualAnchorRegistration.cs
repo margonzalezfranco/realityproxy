@@ -329,7 +329,7 @@ public class ManualAnchorRegistration : GeminiGeneral
         }
         
         // 3. Call Gemini
-        string prompt = $"Identify the object at this pinch point location ({position}). Provide only the object's name.";
+        string prompt = $"Identify the object in front of me that is next to my hand. Provide only the object's name.";
         Debug.Log("Sending image and prompt to Gemini...");
         var request = MakeGeminiRequest(prompt, base64Image);
         while (!request.IsCompleted)
