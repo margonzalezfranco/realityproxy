@@ -12292,7 +12292,7 @@ MonoBehaviour:
   transcriptionResult: 
   isProcessing: 0
   geminiResponse: 
-  responseDisplayDuration: 20
+  responseDisplayDuration: 10
   enableResponseAutoHide: 1
   stepIndicatorPrefab: {fileID: 1336632255144453280, guid: a369a714ca5524eadb8ac4ff33c81217, type: 3}
   pointingPlane: {fileID: 505788586}

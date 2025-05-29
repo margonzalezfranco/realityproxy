@@ -214,6 +214,9 @@ IMPORTANT:
     private SceneObjectAnchor currentAimedAnchor;
     private string relationshipDescription;
 
+    // Track highlighted anchors for proper cleanup
+    private HashSet<SceneObjectAnchor> currentlyHighlightedAnchors = new HashSet<SceneObjectAnchor>();
+
     protected override void Awake()
     {
         base.Awake(); // Call GeminiGeneral's Awake to initialize the Gemini client
@@ -1700,6 +1703,9 @@ Please respond concisely and avoid using markdown formatting. User request: {3}"
         // Clear all previous highlights before starting new ones
         relationshipLineManager.ClearAllHighlightsAndLines();
         
+        // Clear and reset any previously highlighted anchors to their default colors
+        ResetHighlightedAnchorsToDefault();
+        
         // Note: We don't need to manually set these anymore as the ShowRelationships method will handle it
         // Keep using auto-timeout for LLM-generated highlights (timeout = true)
         
@@ -1741,6 +1747,8 @@ Please respond concisely and avoid using markdown formatting. User request: {3}"
                     }
 
                     highlightedAnchors.Add(anchor);
+                    // Track this anchor for later cleanup
+                    currentlyHighlightedAnchors.Add(anchor);
                     Debug.Log($"[SpeechRecorder] Highlighted object and label: {anchor.label}");
                 }
             }
@@ -2149,6 +2157,9 @@ Please respond concisely and avoid using markdown formatting. User request: {3}"
 
     public void HideAskResponse()
     {
+        // Reset any highlighted anchors to their default colors
+        ResetHighlightedAnchorsToDefault();
+        
         if (chatboxOnObject != null)
         {
             chatboxOnObject.SetActive(false);
@@ -2210,6 +2221,9 @@ Please respond concisely and avoid using markdown formatting. User request: {3}"
         yield return new WaitForSeconds(delay);
         
         Debug.Log($"[SpeechRecorder] Auto-hiding response UI after {delay} seconds");
+        
+        // Reset any highlighted anchors to their default colors
+        ResetHighlightedAnchorsToDefault();
         
         // Explicitly clear all visual elements first, but only if they were created via voice interactions
         // (relationships created by manual anchor toggling won't be affected)
@@ -2599,6 +2613,46 @@ Please respond concisely and avoid using markdown formatting. User request: {3}"
         if (!enableUserStudyLogging) return;
         string timestamp = System.DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
         Debug.Log($"[USER_STUDY_LOG][{timestamp}] {message}");
+    }
+
+    // Reset highlighted anchors to their default colors
+    private void ResetHighlightedAnchorsToDefault()
+    {
+        // Default color: 6F6F6F (gray)
+        Color defaultColor = new Color(
+            r: 0.435f,  // 111/255 = 0.435f
+            g: 0.435f,  // 111/255 = 0.435f
+            b: 0.435f,  // 111/255 = 0.435f
+            a: 1.0f     // 100% alpha
+        );
+        
+        foreach (var anchor in currentlyHighlightedAnchors)
+        {
+            if (anchor != null && anchor.sphereObj != null)
+            {
+                // Reset the sphere to default color (6F6F6F gray)
+                var renderer = anchor.sphereObj.GetComponent<Renderer>();
+                if (renderer != null && renderer.material != null)
+                {
+                    renderer.material.color = defaultColor;
+                }
+                
+                // Reset the child label object to default color (6F6F6F gray)
+                var labelObj = anchor.sphereObj.transform.GetChild(0)?.gameObject;
+                if (labelObj != null)
+                {
+                    var labelRenderer = labelObj.GetComponent<Renderer>();
+                    if (labelRenderer != null && labelRenderer.material != null)
+                    {
+                        labelRenderer.material.color = defaultColor;
+                    }
+                }
+            }
+        }
+        
+        // Clear the set of currently highlighted anchors
+        currentlyHighlightedAnchors.Clear();
+        Debug.Log("[SpeechRecorder] Reset all highlighted anchors to default colors (6F6F6F)");
     }
 
     private void Start()

@@ -158,7 +158,7 @@ MonoBehaviour:
   m_AudioSource: {fileID: 8774430617517951951}
   m_ScaleBackground: 1
   m_SelectedColor: {r: 0.1254, g: 0.5882, b: 0.9529, a: 1}
-  m_UnselectedColor: {r: 0.6792453, g: 0.6792453, b: 0.6792453, a: 1}
+  m_UnselectedColor: {r: 0.43529412, g: 0.43529412, b: 0.43529412, a: 1}
   m_PressStart:
     m_PersistentCalls:
       m_Calls: []
