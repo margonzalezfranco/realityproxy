@@ -13,11 +13,8 @@ public class MultiSelectManager : MonoBehaviour
     public MyHandTracking handTracking;
     
     [Header("Multi-Select Settings")]
-    [Tooltip("Duration to keep multi-select mode active after left pinch ends")]
-    public float multiSelectModeDuration = 2.0f;
-    
-    private float leftPinchEndTime = -1f;
-    private bool wasLeftPinching = false;
+    [Tooltip("Multi-select mode is active only while left hand is pinching")]
+    public bool debugMode = false;
     
     void Start()
     {
@@ -49,45 +46,38 @@ public class MultiSelectManager : MonoBehaviour
     
     void Update()
     {
-        // Check if we should exit multi-select mode
-        if (SphereToggleScript.IsMultiSelectMode)
+        bool leftCurrentlyPinching = handTracking.IsPinching(true); // true = left hand
+        
+        // Update multi-select mode based on current left hand pinch state
+        if (leftCurrentlyPinching && !SphereToggleScript.IsMultiSelectMode)
         {
-            bool leftCurrentlyPinching = handTracking.IsPinching(true); // true = left hand
-            
-            // If left hand is not pinching and enough time has passed since it stopped
-            if (!leftCurrentlyPinching && leftPinchEndTime > 0 && 
-                Time.time - leftPinchEndTime > multiSelectModeDuration)
-            {
-                ExitMultiSelectMode();
-            }
+            // Left hand started pinching - enter multi-select mode
+            EnterMultiSelectMode();
+        }
+        else if (!leftCurrentlyPinching && SphereToggleScript.IsMultiSelectMode)
+        {
+            // Left hand stopped pinching - exit multi-select mode immediately
+            ExitMultiSelectMode();
         }
     }
     
     private void HandlePinchStarted(bool isLeftHand)
     {
-        if (isLeftHand)
+        if (!isLeftHand)
         {
-            // Left hand pinch started - enter multi-select mode
-            EnterMultiSelectMode();
-            wasLeftPinching = true;
-        }
-        else
-        {
-            // Right hand pinch started - ensure single-select mode
+            // Right hand pinch started - force single-select mode
             ExitMultiSelectMode();
+            Debug.Log("Right hand pinch started - forced single-select mode");
         }
-        
-        Debug.Log($"Pinch started - {(isLeftHand ? "Left" : "Right")} hand. Multi-select mode: {SphereToggleScript.IsMultiSelectMode}");
     }
     
     private void HandlePinchEnded(bool isLeftHand)
     {
-        if (isLeftHand && wasLeftPinching)
+        // We handle mode changes in Update() based on current pinch state
+        // This is just for logging purposes
+        if (isLeftHand)
         {
-            // Left hand pinch ended - mark the time but keep multi-select mode active for a while
-            leftPinchEndTime = Time.time;
-            wasLeftPinching = false;
-            Debug.Log($"Left hand pinch ended. Multi-select mode will remain active for {multiSelectModeDuration} seconds");
+            Debug.Log("Left hand pinch ended - multi-select mode will exit");
         }
     }
     
@@ -96,8 +86,7 @@ public class MultiSelectManager : MonoBehaviour
         if (!SphereToggleScript.IsMultiSelectMode)
         {
             SphereToggleScript.IsMultiSelectMode = true;
-            leftPinchEndTime = -1f; // Reset the timer
-            Debug.Log("Entered multi-select mode (left hand pinching)");
+            if (debugMode) Debug.Log("Entered multi-select mode (left hand pinching)");
         }
     }
     
@@ -106,16 +95,15 @@ public class MultiSelectManager : MonoBehaviour
         if (SphereToggleScript.IsMultiSelectMode)
         {
             SphereToggleScript.IsMultiSelectMode = false;
-            leftPinchEndTime = -1f; // Reset the timer
             
             // Clear all multi-selections and go back to single-select mode
             if (SphereToggleScript.SelectedToggles.Count > 1)
             {
-                Debug.Log($"Exiting multi-select mode. Clearing {SphereToggleScript.SelectedToggles.Count} selected objects");
+                if (debugMode) Debug.Log($"Exiting multi-select mode. Clearing {SphereToggleScript.SelectedToggles.Count} selected objects");
                 SphereToggleScript.ClearAllMultiSelections();
             }
             
-            Debug.Log("Exited multi-select mode (returning to single-select)");
+            if (debugMode) Debug.Log("Exited multi-select mode (returning to single-select)");
         }
     }
     
