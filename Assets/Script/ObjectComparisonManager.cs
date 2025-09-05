@@ -32,6 +32,7 @@ public class ObjectComparisonManager : MonoBehaviour
     private ComparisonData currentComparison = null;
     private GameObject activePanelInstance = null;
     private List<SphereToggleScript> lastSelectedObjects = new List<SphereToggleScript>();
+    private bool isProcessingComparison = false;
     
     // Comparison data structure matching the 2D web version
     [System.Serializable]
@@ -77,6 +78,9 @@ public class ObjectComparisonManager : MonoBehaviour
     
     void Update()
     {
+        // Don't interfere with selection monitoring while processing a comparison
+        if (isProcessingComparison) return;
+        
         // Monitor selected objects and trigger comparison when exactly 2 are selected
         List<SphereToggleScript> currentSelected = SphereToggleScript.SelectedToggles.Where(t => t != null && t.isOn).ToList();
         
@@ -112,23 +116,28 @@ public class ObjectComparisonManager : MonoBehaviour
     
     private IEnumerator CompareObjects(SphereToggleScript obj1, SphereToggleScript obj2)
     {
-        if (obj1?.labelUnderSphere?.text == null || obj2?.labelUnderSphere?.text == null)
+        // Set processing flag to prevent Update() from interfering
+        isProcessingComparison = true;
+        
+        try 
         {
-            Debug.LogWarning("ObjectComparisonManager: One or both objects have no valid labels");
-            yield break;
-        }
-        
-        string item1 = obj1.labelUnderSphere.text;
-        string item2 = obj2.labelUnderSphere.text;
-        
-        if (enableDebugLog) Debug.Log($"Starting comparison between: {item1} and {item2}");
-        
-        // Get scene context (similar to 2D version)
-        string sceneContext = GetSceneContext();
-        string taskContext = GetTaskContext();
-        
-        // Build the comparison prompt (matching 2D web version exactly)
-        string prompt = $@"Given this scene context: ""{sceneContext}"",
+            if (obj1?.labelUnderSphere?.text == null || obj2?.labelUnderSphere?.text == null)
+            {
+                Debug.LogWarning("ObjectComparisonManager: One or both objects have no valid labels");
+                yield break;
+            }
+            
+            string item1 = obj1.labelUnderSphere.text;
+            string item2 = obj2.labelUnderSphere.text;
+            
+            if (enableDebugLog) Debug.Log($"Starting comparison between: {item1} and {item2}");
+            
+            // Get scene context (similar to 2D version)
+            string sceneContext = GetSceneContext();
+            string taskContext = GetTaskContext();
+            
+            // Build the comparison prompt (matching 2D web version exactly)
+            string prompt = $@"Given this scene context: ""{sceneContext}"",
         and the potential task: ""{taskContext}"",
         
         Compare {item1} and {item2} in a structured format. Output a JSON object with the following structure:
@@ -145,10 +154,16 @@ public class ObjectComparisonManager : MonoBehaviour
         
         Keep each point concise (max 15 words per point).";
         
-        if (enableDebugLog) Debug.Log($"Comparison prompt: {prompt}");
-        
-        // Call Gemini API
-        yield return StartCoroutine(CallGeminiForComparison(prompt, item1, item2, obj1.transform.position, obj2.transform.position));
+            if (enableDebugLog) Debug.Log($"Comparison prompt: {prompt}");
+            
+            // Call Gemini API
+            yield return StartCoroutine(CallGeminiForComparison(prompt, item1, item2, obj1.transform.position, obj2.transform.position));
+        }
+        finally
+        {
+            // Always clear processing flag, even if an error occurs
+            isProcessingComparison = false;
+        }
     }
     
     private IEnumerator CallGeminiForComparison(string prompt, string item1, string item2, Vector3 pos1, Vector3 pos2)
@@ -310,7 +325,7 @@ public class ObjectComparisonManager : MonoBehaviour
     {
         if (currentComparison == null)
         {
-            Debug.LogError("Cannot show comparison panel: currentComparison is null! This means the comparison data was not created properly.");
+            Debug.LogError("Cannot show comparison panel: currentComparison is null! This was likely cleared by Update() during selection changes.");
             return;
         }
         
@@ -415,7 +430,11 @@ public class ObjectComparisonManager : MonoBehaviour
             if (enableDebugLog) Debug.Log("Comparison panel hidden");
         }
         
-        currentComparison = null;
+        // Don't clear currentComparison if we're still processing a comparison
+        if (!isProcessingComparison)
+        {
+            currentComparison = null;
+        }
     }
     
     private string GetSceneContext()
