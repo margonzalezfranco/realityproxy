@@ -5,6 +5,7 @@ using PolySpatial.Template;
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using Newtonsoft.Json;
 using UnityEngine.XR.Interaction.Toolkit.UI;
 using UnityEngine.XR.Hands;
@@ -17,8 +18,14 @@ using System.Text;
 /// </summary>
 public class SphereToggleScript : MonoBehaviour
 {
-    // Static reference to the currently active toggle
+    // Static reference to the currently active toggle (single-select mode)
     public static SphereToggleScript CurrentActiveToggle { get; private set; }
+    
+    // Static list to track all selected toggles (multi-select mode)
+    public static List<SphereToggleScript> SelectedToggles { get; private set; } = new List<SphereToggleScript>();
+    
+    // Static flag to track if we're in multi-select mode (left hand pinching)
+    public static bool IsMultiSelectMode { get; set; } = false;
 
     [Header("References")]
     [Tooltip("The Toggle component on this sphere.")]
@@ -713,19 +720,80 @@ public class SphereToggleScript : MonoBehaviour
     // New method to deactivate all other toggles when this one is activated
     private void DeactivateAllOtherToggles()
     {
-        // If there's already an active toggle that isn't this one, deactivate it
-        if (CurrentActiveToggle != null && CurrentActiveToggle != this && CurrentActiveToggle.isOn)
+        if (IsMultiSelectMode)
         {
-            // Log that we're auto-turning off the previous toggle
-            if (CurrentActiveToggle.labelUnderSphere != null)
+            // Multi-select mode: Don't deactivate other toggles, just add this one to the list
+            if (!SelectedToggles.Contains(this))
             {
-                Debug.Log($"Auto-toggling off previous sphere: {CurrentActiveToggle.labelUnderSphere.text}");
-                LogUserStudy($"[OBJECT] AUTO_TOGGLE_OFF: Object=\"{CurrentActiveToggle.labelUnderSphere.text}\", Reason=\"New toggle activated\"");
+                SelectedToggles.Add(this);
+                Debug.Log($"Added to multi-select: {labelUnderSphere?.text}. Total selected: {SelectedToggles.Count}");
+                LogUserStudy($"[OBJECT] MULTI_SELECT_ADD: Object=\"{labelUnderSphere?.text}\", TotalSelected={SelectedToggles.Count}");
+                
+                // Hide function toggles if multiple objects are selected
+                UpdateFunctionToggleVisibility();
+            }
+        }
+        else
+        {
+            // Single-select mode: Deactivate all other toggles
+            if (CurrentActiveToggle != null && CurrentActiveToggle != this && CurrentActiveToggle.isOn)
+            {
+                // Log that we're auto-turning off the previous toggle
+                if (CurrentActiveToggle.labelUnderSphere != null)
+                {
+                    Debug.Log($"Auto-toggling off previous sphere: {CurrentActiveToggle.labelUnderSphere.text}");
+                    LogUserStudy($"[OBJECT] AUTO_TOGGLE_OFF: Object=\"{CurrentActiveToggle.labelUnderSphere.text}\", Reason=\"New toggle activated\"");
+                }
+                
+                // Turn off the other toggle
+                CurrentActiveToggle.TurnOffToggle();
             }
             
-            // Turn off the other toggle
-            CurrentActiveToggle.TurnOffToggle();
+            // Clear multi-select list and only keep this one
+            SelectedToggles.Clear();
+            SelectedToggles.Add(this);
+            
+            // Show function toggles for single selection
+            UpdateFunctionToggleVisibility();
         }
+    }
+    
+    // Method to update function toggle visibility based on selection count
+    private void UpdateFunctionToggleVisibility()
+    {
+        bool shouldShowToggles = SelectedToggles.Count <= 1;
+        
+        // Find and hide/show function toggles
+        if (sceneObjManager != null)
+        {
+            if (sceneObjManager.questionToggle != null)
+                sceneObjManager.questionToggle.SetActive(shouldShowToggles);
+            
+            if (sceneObjManager.relationToggle != null)
+                sceneObjManager.relationToggle.SetActive(shouldShowToggles);
+                
+            if (sceneObjManager.recorderToggle != null)
+                sceneObjManager.recorderToggle.SetActive(shouldShowToggles);
+                
+            if (sceneObjManager.objectTrackingToggle != null)
+                sceneObjManager.objectTrackingToggle.SetActive(shouldShowToggles);
+        }
+        
+        Debug.Log($"Function toggles visibility: {shouldShowToggles} (Selected objects: {SelectedToggles.Count})");
+    }
+    
+    // Static method to clear all multi-selections
+    public static void ClearAllMultiSelections()
+    {
+        foreach (var toggle in SelectedToggles.ToList())
+        {
+            if (toggle != null && toggle.isOn)
+            {
+                toggle.TurnOffToggle();
+            }
+        }
+        SelectedToggles.Clear();
+        Debug.Log("Cleared all multi-selections");
     }
     
     // New method to programmatically turn off this toggle
@@ -733,6 +801,17 @@ public class SphereToggleScript : MonoBehaviour
     {
         // Only do something if we're currently on
         if (!isOn) return;
+        
+        // Remove from multi-select list
+        if (SelectedToggles.Contains(this))
+        {
+            SelectedToggles.Remove(this);
+            Debug.Log($"Removed from multi-select: {labelUnderSphere?.text}. Remaining selected: {SelectedToggles.Count}");
+            LogUserStudy($"[OBJECT] MULTI_SELECT_REMOVE: Object=\"{labelUnderSphere?.text}\", RemainingSelected={SelectedToggles.Count}");
+            
+            // Update function toggle visibility
+            UpdateFunctionToggleVisibility();
+        }
         
         // Use isHandlingToggle to prevent any feedback loops
         isHandlingToggle = true;
