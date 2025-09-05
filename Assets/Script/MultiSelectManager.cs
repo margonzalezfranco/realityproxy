@@ -103,14 +103,10 @@ public class MultiSelectManager : MonoBehaviour
         {
             SphereToggleScript.IsMultiSelectMode = false;
             
-            // Clear all multi-selections and go back to single-select mode
-            if (SphereToggleScript.SelectedToggles.Count > 1)
-            {
-                if (debugMode) Debug.Log($"Exiting multi-select mode. Clearing {SphereToggleScript.SelectedToggles.Count} selected objects");
-                SphereToggleScript.ClearAllMultiSelections();
-            }
+            // Do NOT clear selections - leave all selected objects as they are
+            // Only exit the mode so no new multi-selections can be made
             
-            if (debugMode) Debug.Log("Exited multi-select mode (returning to single-select)");
+            if (debugMode) Debug.Log($"Exited multi-select mode. {SphereToggleScript.SelectedToggles.Count} objects remain selected");
         }
     }
     
