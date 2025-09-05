@@ -3,8 +3,8 @@ using System.Collections.Generic;
 
 /// <summary>
 /// Manages multi-select functionality based on hand middle-finger pinch gestures.
-/// Left hand middle-finger pinching = multi-select mode
-/// Right hand normal pinching = single-select mode
+/// Any hand middle-finger pinching = multi-select mode
+/// Any hand index-finger pinching = manual anchor detection (handled separately)
 /// </summary>
 public class MultiSelectManager : MonoBehaviour
 {
@@ -13,7 +13,7 @@ public class MultiSelectManager : MonoBehaviour
     public MyHandTracking handTracking;
     
     [Header("Multi-Select Settings")]
-    [Tooltip("Multi-select mode is active only while left hand is middle-finger pinching")]
+    [Tooltip("Multi-select mode is active while any hand is middle-finger pinching")]
     public bool debugMode = false;
     
     void Start()
@@ -30,12 +30,9 @@ public class MultiSelectManager : MonoBehaviour
             return;
         }
         
-        // Subscribe to middle finger pinch events
+        // Subscribe to middle finger pinch events for multi-select mode
         MyHandTracking.OnMiddlePinchStarted += HandleMiddlePinchStarted;
         MyHandTracking.OnMiddlePinchEnded += HandleMiddlePinchEnded;
-        
-        // Subscribe to regular pinch events for right hand single-select
-        MyHandTracking.OnPinchStarted += HandlePinchStarted;
         
         Debug.Log("MultiSelectManager: Initialized and subscribed to middle-finger pinch events");
     }
@@ -45,53 +42,49 @@ public class MultiSelectManager : MonoBehaviour
         // Unsubscribe from events
         MyHandTracking.OnMiddlePinchStarted -= HandleMiddlePinchStarted;
         MyHandTracking.OnMiddlePinchEnded -= HandleMiddlePinchEnded;
-        MyHandTracking.OnPinchStarted -= HandlePinchStarted;
     }
     
     void Update()
     {
-        bool leftCurrentlyMiddlePinching = handTracking.IsMiddlePinching(true); // true = left hand
+        bool leftMiddlePinching = handTracking.IsMiddlePinching(true); // Left hand
+        bool rightMiddlePinching = handTracking.IsMiddlePinching(false); // Right hand
+        bool anyMiddlePinching = leftMiddlePinching || rightMiddlePinching;
         
-        // Update multi-select mode based on current left hand middle-finger pinch state
-        if (leftCurrentlyMiddlePinching && !SphereToggleScript.IsMultiSelectMode)
+        // Update multi-select mode based on any hand middle-finger pinch state
+        if (anyMiddlePinching && !SphereToggleScript.IsMultiSelectMode)
         {
-            // Left hand started middle-finger pinching - enter multi-select mode
+            // Any hand started middle-finger pinching - enter multi-select mode
             EnterMultiSelectMode();
         }
-        else if (!leftCurrentlyMiddlePinching && SphereToggleScript.IsMultiSelectMode)
+        else if (!anyMiddlePinching && SphereToggleScript.IsMultiSelectMode)
         {
-            // Left hand stopped middle-finger pinching - exit multi-select mode immediately
+            // No hand middle-finger pinching - exit multi-select mode immediately
             ExitMultiSelectMode();
         }
     }
     
     private void HandleMiddlePinchStarted(bool isLeftHand)
     {
-        if (isLeftHand)
-        {
-            // Left hand middle-finger pinch started - enter multi-select mode
-            EnterMultiSelectMode();
-            if (debugMode) Debug.Log("Left hand middle-finger pinch started - entered multi-select mode");
-        }
+        // Any hand middle-finger pinch started - enter multi-select mode
+        EnterMultiSelectMode();
+        if (debugMode) Debug.Log($"{(isLeftHand ? "Left" : "Right")} hand middle-finger pinch started - entered multi-select mode");
     }
     
     private void HandleMiddlePinchEnded(bool isLeftHand)
     {
-        if (isLeftHand)
+        // Check if any hand is still middle-finger pinching before exiting
+        bool leftStillPinching = handTracking.IsMiddlePinching(true);
+        bool rightStillPinching = handTracking.IsMiddlePinching(false);
+        
+        if (!leftStillPinching && !rightStillPinching)
         {
-            // Left hand middle-finger pinch ended - exit multi-select mode
+            // No hand is middle-finger pinching - exit multi-select mode
             ExitMultiSelectMode();
-            if (debugMode) Debug.Log("Left hand middle-finger pinch ended - exited multi-select mode");
+            if (debugMode) Debug.Log($"{(isLeftHand ? "Left" : "Right")} hand middle-finger pinch ended - exited multi-select mode");
         }
-    }
-    
-    private void HandlePinchStarted(bool isLeftHand)
-    {
-        if (!isLeftHand)
+        else
         {
-            // Right hand normal pinch started - force single-select mode
-            ExitMultiSelectMode();
-            if (debugMode) Debug.Log("Right hand pinch started - forced single-select mode");
+            if (debugMode) Debug.Log($"{(isLeftHand ? "Left" : "Right")} hand middle-finger pinch ended - but other hand still pinching");
         }
     }
     
@@ -100,7 +93,7 @@ public class MultiSelectManager : MonoBehaviour
         if (!SphereToggleScript.IsMultiSelectMode)
         {
             SphereToggleScript.IsMultiSelectMode = true;
-            if (debugMode) Debug.Log("Entered multi-select mode (left hand middle-finger pinching)");
+            if (debugMode) Debug.Log("Entered multi-select mode (any hand middle-finger pinching)");
         }
     }
     
