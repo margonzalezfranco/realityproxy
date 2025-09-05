@@ -153,8 +153,11 @@ public class ObjectComparisonManager : MonoBehaviour
     
     private IEnumerator CallGeminiForComparison(string prompt, string item1, string item2, Vector3 pos1, Vector3 pos2)
     {
+        if (enableDebugLog) Debug.Log($"Starting CallGeminiForComparison for {item1} vs {item2}");
+        
         // Calculate center position for panel placement
         Vector3 centerPosition = (pos1 + pos2) / 2f;
+        if (enableDebugLog) Debug.Log($"Center position calculated: {centerPosition}");
         
         // Use GeminiGeneral to make the API call
         bool isComplete = false;
@@ -164,24 +167,29 @@ public class ObjectComparisonManager : MonoBehaviour
         System.Action<string> onComplete = (response) => {
             responseText = response;
             isComplete = true;
+            if (enableDebugLog) Debug.Log("API call completed, setting isComplete = true");
         };
+        
+        if (enableDebugLog) Debug.Log("About to start Gemini API call...");
         
         // Make the API call using GeminiGeneral
         StartCoroutine(MakeGeminiAPICall(prompt, onComplete));
         
         // Wait for response
+        if (enableDebugLog) Debug.Log("Waiting for API response...");
         while (!isComplete)
         {
             yield return null;
         }
         
-        if (enableDebugLog) Debug.Log($"Comparison response: {responseText}");
+        if (enableDebugLog) Debug.Log($"Comparison response received: {responseText}");
         
         // Parse the response
         ComparisonResult comparisonResult = ParseComparisonResponse(responseText);
         if (enableDebugLog) Debug.Log($"Parsed comparison result: {(comparisonResult != null ? "Success" : "Failed")}");
         
         // Create comparison data
+        if (enableDebugLog) Debug.Log("About to create currentComparison...");
         currentComparison = new ComparisonData
         {
             items = new string[] { item1, item2 },
@@ -190,8 +198,10 @@ public class ObjectComparisonManager : MonoBehaviour
         };
         
         if (enableDebugLog) Debug.Log($"Created comparison data for items: {item1} vs {item2} at position: {centerPosition}");
+        if (enableDebugLog) Debug.Log($"currentComparison is now: {(currentComparison != null ? "NOT NULL" : "NULL")}");
         
         // Show the comparison panel
+        if (enableDebugLog) Debug.Log("About to call ShowComparisonPanel...");
         ShowComparisonPanel();
     }
     
@@ -300,7 +310,7 @@ public class ObjectComparisonManager : MonoBehaviour
     {
         if (currentComparison == null)
         {
-            if (enableDebugLog) Debug.LogWarning("Cannot show comparison panel: currentComparison is null");
+            Debug.LogError("Cannot show comparison panel: currentComparison is null! This means the comparison data was not created properly.");
             return;
         }
         
