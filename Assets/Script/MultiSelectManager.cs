@@ -5,6 +5,8 @@ using System.Collections.Generic;
 /// Manages multi-select functionality based on hand middle-finger pinch gestures.
 /// Any hand middle-finger pinching = multi-select mode
 /// Any hand index-finger pinching = manual anchor detection (handled separately)
+/// 
+/// For Unity Play Mode testing: Hold Shift key to simulate multi-select mode
 /// </summary>
 public class MultiSelectManager : MonoBehaviour
 {
@@ -13,7 +15,7 @@ public class MultiSelectManager : MonoBehaviour
     public MyHandTracking handTracking;
     
     [Header("Multi-Select Settings")]
-    [Tooltip("Multi-select mode is active while any hand is middle-finger pinching")]
+    [Tooltip("Multi-select mode is active while any hand is middle-finger pinching (or Shift key in Unity Play Mode)")]
     public bool debugMode = false;
     
     void Start()
@@ -50,16 +52,27 @@ public class MultiSelectManager : MonoBehaviour
         bool rightMiddlePinching = handTracking.IsMiddlePinching(false); // Right hand
         bool anyMiddlePinching = leftMiddlePinching || rightMiddlePinching;
         
-        // Update multi-select mode based on any hand middle-finger pinch state
-        if (anyMiddlePinching && !SphereToggleScript.IsMultiSelectMode)
+        // For Unity Play Mode testing - use Shift key to simulate middle-finger pinching
+        bool shiftKeyPressed = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+        
+        // Check if we're in Unity Editor Play Mode for testing
+        bool isInPlayMode = Application.isPlaying && !Application.isMobilePlatform;
+        
+        // Combine hand tracking and keyboard input
+        bool multiSelectTrigger = anyMiddlePinching || (isInPlayMode && shiftKeyPressed);
+        
+        // Update multi-select mode based on multi-select trigger
+        if (multiSelectTrigger && !SphereToggleScript.IsMultiSelectMode)
         {
-            // Any hand started middle-finger pinching - enter multi-select mode
+            // Multi-select trigger activated - enter multi-select mode
             EnterMultiSelectMode();
+            if (debugMode && shiftKeyPressed) Debug.Log("Multi-select mode activated via Shift key (Unity Play Mode)");
         }
-        else if (!anyMiddlePinching && SphereToggleScript.IsMultiSelectMode)
+        else if (!multiSelectTrigger && SphereToggleScript.IsMultiSelectMode)
         {
-            // No hand middle-finger pinching - exit multi-select mode immediately
+            // Multi-select trigger released - exit multi-select mode immediately
             ExitMultiSelectMode();
+            if (debugMode && !shiftKeyPressed) Debug.Log("Multi-select mode deactivated - Shift key released (Unity Play Mode)");
         }
     }
     
