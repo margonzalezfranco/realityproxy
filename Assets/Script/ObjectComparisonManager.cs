@@ -26,7 +26,7 @@ public class ObjectComparisonManager : MonoBehaviour
     
     [Header("Debug Settings")]
     [Tooltip("Enable debug logging")]
-    public bool enableDebugLog = false;
+    public bool enableDebugLog = true;
     
     // Current comparison state
     private ComparisonData currentComparison = null;
@@ -179,6 +179,7 @@ public class ObjectComparisonManager : MonoBehaviour
         
         // Parse the response
         ComparisonResult comparisonResult = ParseComparisonResponse(responseText);
+        if (enableDebugLog) Debug.Log($"Parsed comparison result: {(comparisonResult != null ? "Success" : "Failed")}");
         
         // Create comparison data
         currentComparison = new ComparisonData
@@ -187,6 +188,8 @@ public class ObjectComparisonManager : MonoBehaviour
             comparison = comparisonResult,
             centerPosition = centerPosition
         };
+        
+        if (enableDebugLog) Debug.Log($"Created comparison data for items: {item1} vs {item2} at position: {centerPosition}");
         
         // Show the comparison panel
         ShowComparisonPanel();
@@ -295,41 +298,102 @@ public class ObjectComparisonManager : MonoBehaviour
     
     private void ShowComparisonPanel()
     {
-        if (currentComparison == null || comparisonPanelPrefab == null) return;
+        if (currentComparison == null)
+        {
+            if (enableDebugLog) Debug.LogWarning("Cannot show comparison panel: currentComparison is null");
+            return;
+        }
+        
+        if (comparisonPanelPrefab == null)
+        {
+            // For testing without prefab, just log the comparison data
+            Debug.LogWarning("Comparison Panel Prefab not assigned. Logging comparison data instead:");
+            LogComparisonData(currentComparison);
+            return;
+        }
         
         // Hide existing panel first
         HideComparisonPanel();
         
-        // Calculate panel position (center point offset towards camera)
-        Vector3 panelPosition = currentComparison.centerPosition;
-        
-        // Offset panel slightly towards the camera/user
-        Camera mainCamera = Camera.main;
-        if (mainCamera != null)
+        try
         {
-            Vector3 cameraDirection = (mainCamera.transform.position - panelPosition).normalized;
-            panelPosition += cameraDirection * panelDistance;
+            if (enableDebugLog) Debug.Log("Starting to show comparison panel...");
+            
+            // Calculate panel position (center point offset towards camera)
+            Vector3 panelPosition = currentComparison.centerPosition;
+            if (enableDebugLog) Debug.Log($"Panel center position: {panelPosition}");
+            
+            // Offset panel slightly towards the camera/user
+            Camera mainCamera = Camera.main;
+            if (mainCamera != null)
+            {
+                if (enableDebugLog) Debug.Log($"Main camera found at: {mainCamera.transform.position}");
+                Vector3 cameraDirection = (mainCamera.transform.position - panelPosition).normalized;
+                panelPosition += cameraDirection * panelDistance;
+                if (enableDebugLog) Debug.Log($"Panel position after camera offset: {panelPosition}");
+            }
+            else
+            {
+                Debug.LogWarning("Main camera not found - panel will appear at center position");
+            }
+            
+            // Check prefab before instantiation
+            if (comparisonPanelPrefab == null)
+            {
+                Debug.LogError("Comparison panel prefab is null!");
+                LogComparisonData(currentComparison);
+                return;
+            }
+            
+            if (enableDebugLog) Debug.Log("About to instantiate panel prefab...");
+            
+            // Instantiate the panel
+            activePanelInstance = Instantiate(comparisonPanelPrefab, panelPosition, Quaternion.identity);
+            if (activePanelInstance == null)
+            {
+                Debug.LogError("Failed to instantiate comparison panel prefab - returned null");
+                LogComparisonData(currentComparison);
+                return;
+            }
+            
+            if (enableDebugLog) Debug.Log("Panel instantiated successfully");
+            
+            activePanelInstance.transform.localScale = Vector3.one * panelScale;
+            
+            // Configure the panel with comparison data
+            ComparisonPanel panelComponent = activePanelInstance.GetComponent<ComparisonPanel>();
+            if (panelComponent != null)
+            {
+                if (enableDebugLog) Debug.Log("Setting comparison data on panel component");
+                panelComponent.SetComparisonData(currentComparison);
+            }
+            else
+            {
+                Debug.LogWarning("ComparisonPanel component not found on instantiated prefab - panel will be empty");
+            }
+            
+            // Make panel face the camera
+            if (mainCamera != null)
+            {
+                activePanelInstance.transform.LookAt(mainCamera.transform);
+                activePanelInstance.transform.Rotate(0, 180, 0); // Flip to face camera correctly
+            }
+            
+            Debug.Log($"Comparison panel shown successfully at position: {panelPosition}");
         }
-        
-        // Instantiate the panel
-        activePanelInstance = Instantiate(comparisonPanelPrefab, panelPosition, Quaternion.identity);
-        activePanelInstance.transform.localScale = Vector3.one * panelScale;
-        
-        // Configure the panel with comparison data
-        ComparisonPanel panelComponent = activePanelInstance.GetComponent<ComparisonPanel>();
-        if (panelComponent != null)
+        catch (System.Exception e)
         {
-            panelComponent.SetComparisonData(currentComparison);
+            Debug.LogError($"Error showing comparison panel: {e.Message}");
+            Debug.LogError($"Stack trace: {e.StackTrace}");
+            if (currentComparison != null)
+            {
+                LogComparisonData(currentComparison);
+            }
+            else
+            {
+                Debug.LogError("currentComparison is null - cannot log comparison data");
+            }
         }
-        
-        // Make panel face the camera
-        if (mainCamera != null)
-        {
-            activePanelInstance.transform.LookAt(mainCamera.transform);
-            activePanelInstance.transform.Rotate(0, 180, 0); // Flip to face camera correctly
-        }
-        
-        if (enableDebugLog) Debug.Log($"Comparison panel shown at position: {panelPosition}");
     }
     
     private void HideComparisonPanel()
@@ -374,6 +438,54 @@ public class ObjectComparisonManager : MonoBehaviour
     public void ForceHidePanel()
     {
         HideComparisonPanel();
+    }
+    
+    // Method to log comparison data for debugging when prefab is not available
+    private void LogComparisonData(ComparisonData data)
+    {
+        if (data?.comparison == null) return;
+        
+        Debug.Log("=== COMPARISON RESULTS ===");
+        Debug.Log($"Comparing: {string.Join(" vs ", data.items)}");
+        
+        var comp = data.comparison;
+        
+        if (!string.IsNullOrEmpty(comp.original))
+        {
+            Debug.Log($"Raw Response: {comp.original}");
+        }
+        else
+        {
+            if (comp.similarities != null && comp.similarities.Length > 0)
+            {
+                Debug.Log($"Similarities: {string.Join(", ", comp.similarities)}");
+            }
+            
+            if (comp.differences != null && comp.differences.Length > 0)
+            {
+                Debug.Log($"Differences: {string.Join(", ", comp.differences)}");
+            }
+            
+            if (comp.functions != null)
+            {
+                foreach (var kvp in comp.functions)
+                {
+                    Debug.Log($"{kvp.Key} Function: {kvp.Value}");
+                }
+            }
+            
+            if (!string.IsNullOrEmpty(comp.relationship))
+            {
+                Debug.Log($"Relationship: {comp.relationship}");
+            }
+            
+            if (!string.IsNullOrEmpty(comp.usage))
+            {
+                Debug.Log($"Usage: {comp.usage}");
+            }
+        }
+        
+        Debug.Log("========================");
     }
     
     // Public method to get current comparison state
