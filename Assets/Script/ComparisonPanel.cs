@@ -1,7 +1,5 @@
 using UnityEngine;
-using UnityEngine.UI;
 using TMPro;
-using PolySpatial.Template;
 
 /// <summary>
 /// UI component for displaying object comparison results in 3D space.
@@ -11,37 +9,10 @@ public class ComparisonPanel : MonoBehaviour
 {
     [Header("UI References")]
     [Tooltip("Title text showing what objects are being compared")]
-    public TextMeshProUGUI titleText;
+    public TextMeshPro titleText;
     
-    [Tooltip("Container for similarities section")]
-    public GameObject similaritiesContainer;
-    
-    [Tooltip("Template for similarity list items")]
-    public GameObject similarityItemTemplate;
-    
-    [Tooltip("Container for differences section")]
-    public GameObject differencesContainer;
-    
-    [Tooltip("Template for difference list items")]
-    public GameObject differenceItemTemplate;
-    
-    [Tooltip("Container for functions section")]
-    public GameObject functionsContainer;
-    
-    [Tooltip("Template for function description items")]
-    public GameObject functionItemTemplate;
-    
-    [Tooltip("Text for relationship description")]
-    public TextMeshProUGUI relationshipText;
-    
-    [Tooltip("Text for usage description")]
-    public TextMeshProUGUI usageText;
-    
-    [Tooltip("Fallback text for raw responses")]
-    public TextMeshProUGUI fallbackText;
-    
-    [Tooltip("Close button")]
-    public SpatialUIButton closeButton;
+    [Tooltip("Main content text showing all comparison information")]
+    public TextMeshPro contentText;
     
     [Header("Display Settings")]
     [Tooltip("Maximum number of items to show per section")]
@@ -54,16 +25,7 @@ public class ComparisonPanel : MonoBehaviour
     
     void Start()
     {
-        // Set up close button if available
-        if (closeButton != null)
-        {
-            closeButton.WasPressed += OnCloseButtonPressed;
-        }
-        
-        // Hide templates
-        if (similarityItemTemplate != null) similarityItemTemplate.SetActive(false);
-        if (differenceItemTemplate != null) differenceItemTemplate.SetActive(false);
-        if (functionItemTemplate != null) functionItemTemplate.SetActive(false);
+        // Panel will auto-hide when selection changes - no manual close needed
     }
     
     public void SetComparisonData(ObjectComparisonManager.ComparisonData data)
@@ -84,163 +46,85 @@ public class ComparisonPanel : MonoBehaviour
             titleText.text = $"Comparing: {currentData.items[0]} vs {currentData.items[1]}";
         }
         
-        // Check if we have structured data or fallback to original text
+        // Format all content into a single string
+        string content = FormatComparisonContent(comparison);
+        
+        // Set content text
+        if (contentText != null)
+        {
+            contentText.text = content;
+        }
+        
+        if (enableDebugLog) Debug.Log("ComparisonPanel populated with simplified content");
+    }
+    
+    private string FormatComparisonContent(ObjectComparisonManager.ComparisonResult comparison)
+    {
+        if (comparison == null) return "No comparison data available.";
+        
+        // If we have raw/original text, use that
         if (!string.IsNullOrEmpty(comparison.original))
         {
-            // Use fallback display for unparsed responses
-            DisplayFallbackContent(comparison.original);
-        }
-        else
-        {
-            // Display structured comparison data
-            DisplayStructuredContent(comparison);
+            return comparison.original;
         }
         
-        if (enableDebugLog) Debug.Log("ComparisonPanel populated with data");
-    }
-    
-    private void DisplayStructuredContent(ObjectComparisonManager.ComparisonResult comparison)
-    {
-        // Hide fallback text
-        if (fallbackText != null) fallbackText.gameObject.SetActive(false);
+        // Otherwise format the structured data
+        System.Text.StringBuilder content = new System.Text.StringBuilder();
         
-        // Populate similarities
-        PopulateListSection(similaritiesContainer, similarityItemTemplate, comparison.similarities, "Similarities");
-        
-        // Populate differences
-        PopulateListSection(differencesContainer, differenceItemTemplate, comparison.differences, "Differences");
-        
-        // Populate functions
-        if (comparison.functions != null && functionsContainer != null && functionItemTemplate != null)
+        // Add similarities
+        if (comparison.similarities != null && comparison.similarities.Length > 0)
         {
-            ClearContainer(functionsContainer, functionItemTemplate);
-            
+            content.AppendLine("SIMILARITIES:");
+            foreach (string similarity in comparison.similarities)
+            {
+                if (!string.IsNullOrEmpty(similarity))
+                    content.AppendLine($"• {similarity}");
+            }
+            content.AppendLine();
+        }
+        
+        // Add differences  
+        if (comparison.differences != null && comparison.differences.Length > 0)
+        {
+            content.AppendLine("DIFFERENCES:");
+            foreach (string difference in comparison.differences)
+            {
+                if (!string.IsNullOrEmpty(difference))
+                    content.AppendLine($"• {difference}");
+            }
+            content.AppendLine();
+        }
+        
+        // Add functions
+        if (comparison.functions != null && comparison.functions.Count > 0)
+        {
+            content.AppendLine("FUNCTIONS:");
             foreach (var kvp in comparison.functions)
             {
-                CreateFunctionItem(functionsContainer, functionItemTemplate, kvp.Key, kvp.Value);
+                content.AppendLine($"• {kvp.Key}: {kvp.Value}");
             }
+            content.AppendLine();
         }
         
-        // Set relationship text
-        if (relationshipText != null)
+        // Add relationship
+        if (!string.IsNullOrEmpty(comparison.relationship))
         {
-            relationshipText.text = !string.IsNullOrEmpty(comparison.relationship) ? 
-                $"Relationship: {comparison.relationship}" : "";
-            relationshipText.gameObject.SetActive(!string.IsNullOrEmpty(comparison.relationship));
+            content.AppendLine("RELATIONSHIP:");
+            content.AppendLine(comparison.relationship);
+            content.AppendLine();
         }
         
-        // Set usage text
-        if (usageText != null)
+        // Add usage
+        if (!string.IsNullOrEmpty(comparison.usage))
         {
-            usageText.text = !string.IsNullOrEmpty(comparison.usage) ? 
-                $"Usage: {comparison.usage}" : "";
-            usageText.gameObject.SetActive(!string.IsNullOrEmpty(comparison.usage));
+            content.AppendLine("USAGE:");
+            content.AppendLine(comparison.usage);
         }
+        
+        return content.ToString().TrimEnd();
     }
     
-    private void DisplayFallbackContent(string originalText)
-    {
-        // Hide structured content containers
-        if (similaritiesContainer != null) similaritiesContainer.SetActive(false);
-        if (differencesContainer != null) differencesContainer.SetActive(false);
-        if (functionsContainer != null) functionsContainer.SetActive(false);
-        if (relationshipText != null) relationshipText.gameObject.SetActive(false);
-        if (usageText != null) usageText.gameObject.SetActive(false);
-        
-        // Show fallback text
-        if (fallbackText != null)
-        {
-            fallbackText.text = originalText;
-            fallbackText.gameObject.SetActive(true);
-        }
-    }
-    
-    private void PopulateListSection(GameObject container, GameObject template, string[] items, string sectionName)
-    {
-        if (container == null || template == null || items == null) return;
-        
-        // Clear existing items (except template)
-        ClearContainer(container, template);
-        
-        // Add new items
-        int itemCount = Mathf.Min(items.Length, maxItemsPerSection);
-        for (int i = 0; i < itemCount; i++)
-        {
-            if (!string.IsNullOrEmpty(items[i]))
-            {
-                CreateListItem(container, template, items[i]);
-            }
-        }
-        
-        // Show/hide container based on whether we have items
-        container.SetActive(itemCount > 0);
-        
-        if (enableDebugLog) Debug.Log($"Populated {sectionName} with {itemCount} items");
-    }
-    
-    private void CreateListItem(GameObject container, GameObject template, string text)
-    {
-        GameObject item = Instantiate(template, container.transform);
-        item.SetActive(true);
-        
-        // Find and set text component
-        TextMeshProUGUI textComponent = item.GetComponentInChildren<TextMeshProUGUI>();
-        if (textComponent != null)
-        {
-            textComponent.text = $"• {text}";
-        }
-    }
-    
-    private void CreateFunctionItem(GameObject container, GameObject template, string itemName, string functionDescription)
-    {
-        GameObject item = Instantiate(template, container.transform);
-        item.SetActive(true);
-        
-        // Find text components - assume template has multiple text elements
-        TextMeshProUGUI[] textComponents = item.GetComponentsInChildren<TextMeshProUGUI>();
-        
-        if (textComponents.Length >= 2)
-        {
-            // First text for item name, second for description
-            textComponents[0].text = $"{itemName}:";
-            textComponents[1].text = functionDescription;
-        }
-        else if (textComponents.Length == 1)
-        {
-            // Single text component - combine both
-            textComponents[0].text = $"{itemName}: {functionDescription}";
-        }
-    }
-    
-    private void ClearContainer(GameObject container, GameObject template)
-    {
-        // Remove all children except the template
-        for (int i = container.transform.childCount - 1; i >= 0; i--)
-        {
-            GameObject child = container.transform.GetChild(i).gameObject;
-            if (child != template && child.activeInHierarchy)
-            {
-                Destroy(child);
-            }
-        }
-    }
-    
-    private void OnCloseButtonPressed(string buttonText, MeshRenderer meshRenderer, int buttonIndex)
-    {
-        // Find and notify the comparison manager to hide the panel
-        ObjectComparisonManager comparisonManager = FindObjectOfType<ObjectComparisonManager>();
-        if (comparisonManager != null)
-        {
-            comparisonManager.ForceHidePanel();
-        }
-        else
-        {
-            // Fallback - just destroy this panel
-            Destroy(gameObject);
-        }
-        
-        if (enableDebugLog) Debug.Log("Comparison panel closed by user");
-    }
+    // No manual close needed - panel auto-hides when selection changes
     
     void Update()
     {
@@ -253,12 +137,5 @@ public class ComparisonPanel : MonoBehaviour
         }
     }
     
-    void OnDestroy()
-    {
-        // Clean up button listener
-        if (closeButton != null)
-        {
-            closeButton.WasPressed -= OnCloseButtonPressed;
-        }
-    }
+    // No cleanup needed - no button events to unsubscribe
 }

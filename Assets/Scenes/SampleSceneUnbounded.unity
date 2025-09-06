@@ -10629,7 +10629,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   geminiGeneral: {fileID: 1557741981}
-  comparisonPanelPrefab: {fileID: 4782464712918690379, guid: bb635486d67cf44158a59bb9597ef7e3, type: 3}
+  comparisonPanelPrefab: {fileID: 4387139779300848087, guid: bb635486d67cf44158a59bb9597ef7e3, type: 3}
   panelDistance: 0.3
   panelScale: 1
   enableDebugLog: 1
