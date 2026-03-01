@@ -35,7 +35,7 @@ If you use this work or find it helpful for your research, please cite the **UIS
 ```bibtex
 @inproceedings{liu2025realityproxy,
   title={Reality Proxy: Fluid Interactions with Real-World Objects in MR via Abstract Representations},
-  author={Liu, Xiaoan and Jia, Difan and Liu, Xianhao Carton and Gonzalez-Franco, Mar and Chen, Zhutian  },
+  author={Liu, Xiaoan and Jia, Difan and Liu, Xianhao Carton and Gonzalez-Franco, Mar and Chen, Zhu-Tian  },
   booktitle={Proceedings of the 38th Annual ACM Symposium on User Interface Software and Technology (UIST '25)},
   year={2025},
   doi={10.1145/3746059.3747709},
