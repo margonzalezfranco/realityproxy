@@ -45,6 +45,6 @@ If you use this work or find it helpful for your research, please cite the **UIS
 
 ## 👥 Main Contributors
 
-Xiaoan Liu - University of Colorado
-Mar Gonzalez-Franco - Google
-Zhutian Cheng - University of Minnesota
+* Xiaoan Liu - University of Colorado
+* Mar Gonzalez-Franco - Google
+* Zhutian Cheng - University of Minnesota
